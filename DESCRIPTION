@@ -1,11 +1,14 @@
 Package: taxonAlign
-Title: What the Package Does (One Line, Title Case)
+Title: Combine multiple taxonomic references to create a personalised taxonomic resource for fuzzy matching of taxonomic names
 Version: 0.0.0.9000
-Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+Authors@R: c(
+    person("Elizabeth", "Wenk", role = c("aut", "ctb", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
+    person(given = "Fonti", family = "Kar", role = c("aut", "cre"), email = "f.kar@unsw.edu.au", comment = c(ORCID = "0000-0002-2760-3974"))
+    )
+Description: This package provides functions that enables users to: 
+  1) create their own taxonomic resource by flexibly combining distinct taxonomic references together
+  and 2) to match taxonomic lists to the user's specified taxonomic resource to maxinise alignment coverage. 
+License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
