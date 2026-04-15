@@ -1,5 +1,5 @@
 ---
-title: "README"
+title: "taxonAlign"
 format: gfm
 ---
 
@@ -14,8 +14,6 @@ knitr::opts_chunk$set(
   out.width = "100%"
 )
 ```
-
-# taxonAlign
 
 <!-- badges: start -->
 <!-- badges: end -->
