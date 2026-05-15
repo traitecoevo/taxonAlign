@@ -9,7 +9,7 @@
 ####                                          ####
 ##################################################
 
-source("~/Github/ausinvertraits.addons/scripts/AusInvertAlign_required_functions.R")
+# source("~/Github/ausinvertraits.addons/scripts/AusInvertAlign_required_functions.R")
 
 library(APCalign)
 library(tidyverse)
@@ -27,16 +27,16 @@ library(tidyverse)
 ## ideal would be to have an interactive function where the user is asked to select a tibble (like in traits.build `metadata_add_locations`), then from the tibble the available columns for which column includes each of the required columns
 ## so that the names don't have to initially align
 ## I'm thinking how in traits.build, for `metadata_create_template()` the user is prompted to specify various columns - could we do the same?
-## in traits.build all the columns not already selected are listed to choose from. Here there would be an added option "create column" for `taxon_rank` and `taxonomic_status`, 
+## in traits.build all the columns not already selected are listed to choose from. Here there would be an added option "create column" for `taxon_rank` and `taxonomic_status`,
 ## which would generate a column with a fixed value `species` for `taxon_rank` and `accepted` for `taxonomic_status`
 ## open-text prompt asking what the name of the taxonomic_reference should be - as in `AFD`, `APC`, `iNaturalist`, etc.; stored in a column `taxonomic_reference`
 
-## very fancy would be the ability to add multiple taxonomic references that are bound together, cycling through each... 
+## very fancy would be the ability to add multiple taxonomic references that are bound together, cycling through each...
 
 
-taxon_resources <- read_csv("~/GitHub/ausinvertraits.addons/data_extra/taxon_list_for_AusInvertAlign.csv")
+# taxon_resources <- read_csv("~/GitHub/ausinvertraits.addons/data_extra/taxon_list_for_AusInvertAlign.csv")
 
-## But then in addition, I think there needs to be a prompt for which taxon_ranks you're interested in, and filter the list to only include those. 
+## But then in addition, I think there needs to be a prompt for which taxon_ranks you're interested in, and filter the list to only include those.
 ## I guess create a list of all the ranks below + species, subspecies, form, variety and have people select which to retain
 ## And from that filter, and then in the `align_taxa` function generate the taxon_ranks_to_check vector
 
@@ -45,7 +45,7 @@ taxon_resources <- read_csv("~/GitHub/ausinvertraits.addons/data_extra/taxon_lis
 # XXX or something interactive at the start of align_taxa that has a list of all possibilities and you select those that you want to match against
 taxon_ranks_to_check <- c("subgenus", "genus", "family", "superfamily", "subclass", "class", "subfamily", "order", "infraorder", "suborder", "superorder", "tribe")
 
-## work out way to have order people read in references retained; through a secondary counter column? 
+## work out way to have order people read in references retained; through a secondary counter column?
 ## or I guess at the end they could be asked to prioritise lists, but that seems overkill
 ## but if multiple lists probably one is the main list (ie. APC over APNI) and `align_taxa` assumes that priority names appear first
 
@@ -62,7 +62,7 @@ taxon_resources <- taxon_resources %>%
     ## strip_names removes punctuation and filler words associated with
     ## infraspecific taxa (subsp, var, f, ser)
     stripped_canonical = strip_names(canonical_name),
-    ## strip_names_extra removes extra filler words associated with 
+    ## strip_names_extra removes extra filler words associated with
     ## species name cases (x, sp)
     ## strip_names_extra is essential for the matches involving 2 or 3 words,
     ## since you want those words to not count filler words
@@ -113,7 +113,7 @@ taxa_raw <-
     checked = logical(0L)
   ) %>%
   bind_rows(ausinvertraits$traits %>% distinct(taxon_name, dataset_id) %>% rename(original_name = taxon_name, identifier = dataset_id))
-  
+
 taxa <- list()
 
 # second item in taxa list that are the taxa not yet checked - this starts out as all taxa
@@ -148,7 +148,7 @@ taxa[["tocheck"]] <-
       taxon_rank = NA_character_,
       alignment_code = NA_character_
     ) %>%
-dplyr::bind_rows(taxa_raw) %>% 
+dplyr::bind_rows(taxa_raw) %>%
   dplyr::mutate(
     checked = FALSE,
     known = FALSE,
@@ -166,12 +166,12 @@ dplyr::bind_rows(taxa_raw) %>%
 ##################################################
 
 aligned_names_b <- match_taxa(
-    taxa = taxa, 
+    taxa = taxa,
     resources = resources,
-    fuzzy_abs_dist = 3, 
-    fuzzy_rel_dist = 0.2, 
-    fuzzy_matches = TRUE, 
-    imprecise_fuzzy_matches = FALSE, 
+    fuzzy_abs_dist = 3,
+    fuzzy_rel_dist = 0.2,
+    fuzzy_matches = TRUE,
+    imprecise_fuzzy_matches = FALSE,
     identifier = taxa$dataset_id
 )
 
@@ -179,7 +179,7 @@ aligned_names_b <- match_taxa(
 ## I guess there could also be a "characters_changed_prop"
 ## That is something most other packages do, that we just never bothered with, but I now often wish there were a column that told me that
 
-## XXX-TODO For `resources` (the taxonomic reference) there needs to be a check that the 
+## XXX-TODO For `resources` (the taxonomic reference) there needs to be a check that the
 ## required columns exist with an error otherwise to run the "prepare_taxonomic_references" function
 
 ### XX-TODO - will need to include a parameter that is a list of the taxon ranks to be considered
@@ -191,14 +191,14 @@ aligned_names_b <- match_taxa(
 ####################################################
 
 #' @title Match taxonomic names to names in a taxonomic dataset
-#' 
+#'
 #' @description
 #' This function attempts to match input strings to Australia's specified taxonomic datasets. It attempts:
 #' 1. perfect matches and fuzzy matches
 #' 2. matches to infraspecies, species, genus, and family names
 #' 3. matches to the entire input string and subsets there-of
 #' 4. searches for string patterns that suggest a specific taxon rank
-#' 
+#'
 #' @details
 #' - It cycles through more than 20 different string patterns, sequentially
 #'  searching for additional match patterns.
@@ -208,7 +208,7 @@ aligned_names_b <- match_taxa(
 #' - It prioritises matches that do not require fuzzy matching (i.e. synonyms,
 #'  orthographic variants) over those that do.
 #' - Taxonomic datasets are sorted, so names align to the top priority taxonomic dataset if a name is present in multiple lists.
-#' 
+#'
 #' @param taxa The list of taxa requiring checking
 #
 #' @param resources The list(s) of accepted names to check against,
@@ -216,14 +216,14 @@ aligned_names_b <- match_taxa(
 #' @param fuzzy_abs_dist The number of characters allowed to be different
 #'  for a fuzzy match.
 #' @param fuzzy_rel_dist The proportion of characters allowed to be different
-#'  for a fuzzy match. 
+#'  for a fuzzy match.
 #' @param fuzzy_matches Fuzzy matches are turned on as a default. The relative
 #'  and absolute distances allowed for fuzzy matches to species and
-#'  infraspecific taxon names are defined by the parameters 
+#'  infraspecific taxon names are defined by the parameters
 #' `fuzzy_abs_dist` and `fuzzy_rel_dist`
 #' @param imprecise_fuzzy_matches Imprecise fuzzy matches uses the fuzzy
 #'  matching function with lenient levels set (absolute distance of
-#'  5 characters; relative distance = 0.25). 
+#'  5 characters; relative distance = 0.25).
 #'  It offers a way to get a wider range of possible names, possibly
 #'  corresponding to very distant spelling mistakes. This is FALSE as default
 #'  and all outputs should be checked as it often makes erroneous matches.
@@ -232,36 +232,36 @@ aligned_names_b <- match_taxa(
 #'
 #' @noRd
 match_taxa <- function(
-    taxa, 
+    taxa,
     resources,
-    fuzzy_abs_dist = 3, 
-    fuzzy_rel_dist = 0.2, 
-    fuzzy_matches = TRUE, 
-    imprecise_fuzzy_matches = FALSE, 
+    fuzzy_abs_dist = 3,
+    fuzzy_rel_dist = 0.2,
+    fuzzy_matches = TRUE,
+    imprecise_fuzzy_matches = FALSE,
     identifier = NA_character_
 ) {
-  
+
   update_na_with <- function(current, new) {
     ifelse(is.na(current), new, current)
   }
-  
+
   ## A function that specifies particular fuzzy matching conditions (for the
   ## function fuzzy_match) when matching is being done at the genus level.
   if (fuzzy_matches == TRUE) {
     fuzzy_match_genera <- function(x, y) {
       purrr::map_chr(x, ~ fuzzy_match(.x, y, max_distance_abs = 2, max_distance_rel = 0.35, n_allowed = 1))
     }
-  } else {  
+  } else {
     fuzzy_match_genera <- function(x, y) {
       purrr::map_chr(x, ~ fuzzy_match(.x, y, max_distance_abs = 0, max_distance_rel = 0.0, n_allowed = 1))
-    }    
+    }
   }
-  
+
   ## set default imprecise fuzzy matching parameters
   imprecise_fuzzy_abs_dist <- 5
   imprecise_fuzzy_rel_dist <- 0.25
-  
-  ## override all fuzzy matching parameters with absolute and 
+
+  ## override all fuzzy matching parameters with absolute and
   ## relative distances of 0 if fuzzy matching is turned off
   if (fuzzy_matches == FALSE) {
     fuzzy_abs_dist <- 0
@@ -269,8 +269,8 @@ match_taxa <- function(
     imprecise_fuzzy_abs_dist <- 0
     imprecise_fuzzy_rel_dist <- 0
   }
-  
-  ## Repeatedly used identifier strings are created. 
+
+  ## Repeatedly used identifier strings are created.
   ## These identifier strings are added to the aligned names of taxa that do
   ## not match to a species or infra-specific level name.
   taxa$tocheck <- taxa$tocheck %>%
@@ -279,7 +279,7 @@ match_taxa <- function(
       identifier_string2 = ifelse(is.na(identifier), NA_character_, paste0("; ", identifier)),
       aligned_name_tmp = NA_character_
     )
-  
+
   ## In the tocheck dataframe, add columns with manipulated versions of the string to match
   ## Various stripped versions of the string to match, versions with 1, 2 and 3 words (genus, binomial, trinomial), and fuzzy-matched genera are propagated.
   taxa$tocheck <- taxa$tocheck %>%
@@ -296,28 +296,28 @@ match_taxa <- function(
       word_one_stripped = extract_genus(stripped_name),
       ignore_bracketed_words = stringr::str_remove(original_name, " \\(.*\\)")
     )
-  
+
   ## Taxa that have been checked are moved from `taxa$tocheck` to `taxa$checked`
   ## These lines of code are repeated after each matching cycle to
   ## progressively move taxa from `tocheck` to `checked`
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # START MATCHES
   # match_01a: Scientific name matches
   # Taxon names that are an accepted scientific name, with authorship.
-  
+
   i <-
     taxa$tocheck$original_name %in% resources$species$accepted$scientific_name
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$original_name,
       resources$species$accepted$scientific_name
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$accepted$taxonomic_dataset[ii],
@@ -333,24 +333,24 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_01a_accepted_scientific_name_with_authorship"
     )
-  
+
   taxa <- redistribute(taxa)
-  
+
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_01b: Scientific name matches
   # Taxon names that are exact matches to a synonymmous scientific name, with authorship.
-  
+
   i <-
     taxa$tocheck$original_name %in% resources$species$synonym$scientific_name
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$original_name,
       resources$species$synonym$scientific_name
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$synonym$taxonomic_dataset[ii],
@@ -366,22 +366,22 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_01b_synonym_scientific_name_with_authorship"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_01c: Accepted/valid canonical name
   # Taxon names that are exact matches to canonical names, once filler words and punctuation are removed.
   i <-
     taxa$tocheck$cleaned_name %in% resources$species$accepted$canonical_name
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$cleaned_name,
       resources$species$accepted$canonical_name
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$accepted$taxonomic_dataset[ii],
@@ -397,22 +397,22 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_01c_accepted_canonical_name"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_01d: canonical name, synonyms
   # Taxon names that are exact matches to a synonymous canonical name once filler words and punctuation are removed.
   i <-
     taxa$tocheck$cleaned_name %in% resources$species$synonym$canonical_name
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$cleaned_name,
       resources$species$synonym$canonical_name
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$synonym$taxonomic_dataset[ii],
@@ -428,30 +428,30 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_01d_synonym_canonical_name"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
-  
+
+
   # match_02a: Higher level exact matches, retaining subgenus in brackets
   # Exact matches to higher level taxa for names where the final "word" is `sp` or `spp` and there is a subgenus term to retain
   # Exact matches to higher level taxa for names where the final "word" is `sp` or `spp`
   # Aligned name includes identifier to indicate `genus sp.`, `family sp.`, etc refers to a specific species (or infra-specific taxon), associated with a specific dataset/location.
-  
+
     i <-
       stringr::str_detect(taxa$tocheck$cleaned_name, "[:space:]sp\\.$") &
       stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(") &
       stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "\\)$") &
       stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2 &
-      stringr::word(taxa$tocheck$cleaned_name, start = 1, end = 2) %in% resources$subgenus_v2$genus_and_subgenus 
-    
+      stringr::word(taxa$tocheck$cleaned_name, start = 1, end = 2) %in% resources$subgenus_v2$genus_and_subgenus
+
     ii <-
       match(
         stringr::word(taxa$tocheck[i,]$cleaned_name, start = 1, end = 2),
         resources$subgenus_v2$genus_and_subgenus
       )
-    
+
     taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
       dplyr::mutate(
         taxonomic_dataset = resources$subgenus_v2$taxonomic_dataset[ii],
@@ -473,31 +473,31 @@ match_taxa <- function(
         known = TRUE,
         alignment_code = "match_02a_exact_higher_level_accepted_or_synonym"
       )
-    
+
     taxa <- redistribute(taxa)
-    
+
     if (nrow(taxa$tocheck) == 0)
     return(taxa)
-    
-  
+
+
   # match_02b: Higher level exact matches
   # Exact matches to higher level taxa for names where the final "word" is `sp` or `spp`
   # Aligned name includes identifier to indicate `genus sp.`, `family sp.`, etc refers to a specific species (or infra-specific taxon), associated with a specific dataset/location.
-  
+
   for (ranks in taxon_ranks_to_check) {
-    
+
     i <-
       stringr::str_detect(taxa$tocheck$cleaned_name, "[:space:]sp\\.$") &
       taxa$tocheck$word_one_stripped %in% resources[[ranks]]$canonical_name &
       stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2 #&
       #word(taxa$tocheck$cleaned_name, 2) %in% c("sp.") ##TO DO - this needs to be tweaked to accommodate hybrids. Should actually be full string minus genus as declared by "extract_genus"
-    
+
     ii <-
       match(
         taxa$tocheck[i,]$word_one_stripped,
         resources[[ranks]]$canonical_name
       )
-    
+
     taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
       dplyr::mutate(
         taxonomic_dataset = resources[[ranks]]$taxonomic_dataset[ii],
@@ -519,44 +519,44 @@ match_taxa <- function(
         known = TRUE,
         alignment_code = "match_02a_exact_higher_level_accepted_or_synonym"
       )
-    
+
     taxa <- redistribute(taxa)
-    
+
     if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   }
-  
+
 
   # match_02c: Higher-level resolution
-  # Fuzzy matches of accepted higher-level names where the final "word" is `sp` or `spp` and 
+  # Fuzzy matches of accepted higher-level names where the final "word" is `sp` or `spp` and
   # there isn't an exact match to an accepted higher-level name
   # Aligned name includes identifier to indicate `genus sp.` refers to a specific species (or infra-specific taxon), associated with a specific dataset/location.
-  
-  for (ranks in taxon_ranks_to_check) {  
+
+  for (ranks in taxon_ranks_to_check) {
     taxa$tocheck <- taxa$tocheck %>%
       dplyr::mutate(
         fuzzy_match_genus =
           fuzzy_match_genera(word_one_stripped, resources[[ranks]]$canonical_name)
       )
-  
+
     i <-
       stringr::str_detect(taxa$tocheck$cleaned_name, "[:space:]sp\\.$") &
       taxa$tocheck$fuzzy_match_genus %in% resources[[ranks]]$canonical_name #&
       #word(taxa$tocheck$cleaned_name, 2) %in% c("sp.")
-    
+
     ii <-
       match(
         taxa$tocheck[i,]$fuzzy_match_genus,
         resources[[ranks]]$canonical_name
       )
-    
+
     taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
       dplyr::mutate(
         taxonomic_dataset = resources[[ranks]]$taxonomic_dataset[ii],
-        taxon_rank = ranks,     
-        taxonomic_status = resources[[ranks]]$taxonomic_status[ii],      
-        aligned_name_tmp = 
+        taxon_rank = ranks,
+        taxonomic_status = resources[[ranks]]$taxonomic_status[ii],
+        aligned_name_tmp =
           paste0(resources[[ranks]]$canonical_name[ii], " sp."),
         aligned_name = ifelse(is.na(identifier_string),
                               aligned_name_tmp,
@@ -573,18 +573,18 @@ match_taxa <- function(
         checked = TRUE,
         alignment_code = "match_02b_fuzzy_genus_accepted"
       )
-    
+
     taxa <- redistribute(taxa)
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
-    
+
   }
-  
+
   ## removed matches 3, 4 for simplicity, since I don't think they would be triggered by any names (for specific weird informal names)
-  
+
   # match_05a: fuzzy match to accepted/valid canonical name
   # Fuzzy match of taxon name to an accepted canonical name, once filler words and punctuation are removed.
-  for (i in seq_len(nrow(taxa$tocheck))) {    
+  for (i in seq_len(nrow(taxa$tocheck))) {
     taxa$tocheck$fuzzy_match_cleaned[i] <-
       fuzzy_match(
         txt = taxa$tocheck$stripped_name[i],
@@ -594,16 +594,16 @@ match_taxa <- function(
         n_allowed = 1
       )
   }
-  
+
   i <-
     taxa$tocheck$fuzzy_match_cleaned %in% resources$species$accepted$stripped_canonical
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$fuzzy_match_cleaned,
       resources$species$accepted$stripped_canonical
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$accepted$taxonomic_dataset[ii],
@@ -619,14 +619,14 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_05a_fuzzy_accepted_canonical_name"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_05b: fuzzy match to synonymous canonical name
   # Fuzzy match of taxon name to an synonymous canonical name, once filler words and punctuation are removed.
-  for (i in seq_len(nrow(taxa$tocheck))) {    
+  for (i in seq_len(nrow(taxa$tocheck))) {
     taxa$tocheck$fuzzy_match_cleaned_synonym[i] <-
       fuzzy_match(
         txt = taxa$tocheck$stripped_name[i],
@@ -636,16 +636,16 @@ match_taxa <- function(
         n_allowed = 1
       )
   }
-  
+
   i <-
     taxa$tocheck$fuzzy_match_cleaned_synonym %in% resources$species$synonym$stripped_canonical
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$fuzzy_match_cleaned_synonym,
       resources$species$synonym$stripped_canonical
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$synonym$taxonomic_dataset[ii],
@@ -661,31 +661,31 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_05b_fuzzy_synonym_canonical_name"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   ## XXX-TODO reinstate matches 7 (imprecise fuzzy matches) & 8 (hybrid names) from APCalign match_taxa function
   ## The code here is way simpler than in APCalign, because there is only a single list (sorted by priority of taxonomic reference)
   ## so you don't constantly cycle through `APC_accepted`, `APC_synonyms`, `APNI`
   ## So for 7 there will just be one chunk and for 8 there will be two (exact, then fuzzy)
-  
+
   # match_09a: exact trinomial matches, accepted
   # Exact match of first three words of taxon name ("trinomial") to an accepted canonical name.
   # The purpose of matching only the first three words only to an accepted names is that
-  # sometimes the submitted taxon name is a valid trinomial + notes and 
+  # sometimes the submitted taxon name is a valid trinomial + notes and
   # such names will only be aligned by matches considering only the first three words of the stripped name.
   # This match also does a good job aligning and correcting syntax of phrase names (for plants).
   i <-
     taxa$tocheck$trinomial %in% resources$species$accepted$trinomial
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$trinomial,
       resources$species$accepted$trinomial
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$accepted$taxonomic_dataset[ii],
@@ -701,26 +701,26 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_09a_trinomial_exact_accepted"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_09b: exact trinomial matches, synonyms
   # Exact match of first three words of taxon name ("trinomial") to a synonymous canonical name.
   # The purpose of matching only the first three words only to a synonymous canonical names is that
-  # sometimes the submitted taxon name is a valid trinomial + notes and 
+  # sometimes the submitted taxon name is a valid trinomial + notes and
   # such names will only be aligned by matches considering only the first three words of the stripped name.
   # This match also does a good job aligning and correcting syntax of phrase names (for plants).
   i <-
     taxa$tocheck$trinomial %in% resources$species$synonym$trinomial
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$trinomial,
       resources$species$synonym$trinomial
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$synonym$taxonomic_dataset[ii],
@@ -736,7 +736,7 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_09b_trinomial_exact_synonym"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
@@ -744,23 +744,23 @@ match_taxa <- function(
   # match_10a: exact binomial matches, accepted
   # Exact match of first two words of taxon name ("binomial") to an accepted canonical name.
   # The purpose of matching only the first two words only to an accepted names is that
-  # sometimes the submitted taxon name is a valid binomial + notes 
+  # sometimes the submitted taxon name is a valid binomial + notes
   # or a valid binomial + invalid infraspecific epithet.
   # Such names will only be aligned by matches considering only the first two words of the stripped name.
   # This match also does a good job aligning and correcting syntax of phrase names (for plants).
-  
+
   i <-
     taxa$tocheck$binomial %in% resources$species$accepted$binomial &
     # needed to avoid names with subgenus in brackets - in that case a binomial means nothing
     !stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(") &
     !stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "\\)$")
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$binomial,
       resources$species$accepted$binomial
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$accepted$taxonomic_dataset[ii],
@@ -776,31 +776,31 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_10a_binomial_exact_accepted"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_10b: exact binomial matches, synonyms
   # Exact match of first two words of taxon name ("binomial") to a synonymous canonical name.
   # The purpose of matching only the first two words only to synonymous canonical names is that
-  # sometimes the submitted taxon name is a valid binomial + notes 
+  # sometimes the submitted taxon name is a valid binomial + notes
   # or a valid binomial + invalid infraspecific epithet.
   # Such names will only be aligned by matches considering only the first two words of the stripped name.
   # This match also does a good job aligning and correcting syntax of phrase names (for plants).
-  
+
   i <-
     taxa$tocheck$binomial %in% resources$species$synonym$binomial &
     # needed to avoid names with subgenus in brackets - in that case a binomial means nothing
     !stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(") &
     !stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "\\)$")
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$binomial,
       resources$species$synonym$binomial
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$synonym$taxonomic_dataset[ii],
@@ -816,18 +816,18 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_10b_binomial_exact_synonym"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
-  
+
   ## XXX-TODO - reinstate commented out code, simplfying if needed
-  
+
   # match_10c: fuzzy binomial matches, APC
   # Fuzzy match of first two words of taxon name ("binomial") to APC-accepted canonical name.
   # The purpose of matching only the first two words only to APC-accepted names is that
-  # sometimes the submitted taxon name is a valid binomial + notes 
+  # sometimes the submitted taxon name is a valid binomial + notes
   # or a valid binomial + invalid infraspecific epithet.
   # Such names will only be aligned by matches considering only the first two words of the stripped name.
   # This match also does a good job aligning and correcting syntax of phrase names.
@@ -845,16 +845,16 @@ match_taxa <- function(
   #       )
   #   }
   # }
-  # 
+  #
   # i <-
   #   taxa$tocheck$fuzzy_match_binomial %in% resources$species$accepted$binomial
-  # 
+  #
   # ii <-
   #   match(
   #     taxa$tocheck[i,]$fuzzy_match_binomial,
   #     resources$species$accepted$binomial
   #   )
-  # 
+  #
   # taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
   #   dplyr::mutate(
   #     taxonomic_dataset = resources$species$accepted$taxonomic_dataset[ii],
@@ -869,15 +869,15 @@ match_taxa <- function(
   #     checked = TRUE,
   #     alignment_code = "match_10c_binomial_fuzzy_accepted"
   #   )
-  # 
+  #
   # taxa <- redistribute(taxa)
   # if (nrow(taxa$tocheck) == 0)
   #   return(taxa)
-  # 
+  #
   # # match_10d: fuzzy binomial matches, APC
   # # Fuzzy match of first two words of taxon name ("binomial") to APC-known canonical name.
   # # The purpose of matching only the first two words only to APC-known names is that
-  # # sometimes the submitted taxon name is a valid binomial + notes 
+  # # sometimes the submitted taxon name is a valid binomial + notes
   # # or a valid binomial + invalid infraspecific epithet.
   # # Such names will only be aligned by matches considering only the first two words of the stripped name.
   # # This match also does a good job aligning and correcting syntax of phrase names.
@@ -895,16 +895,16 @@ match_taxa <- function(
   #       )
   #   }
   # }
-  # 
+  #
   # i <-
   #   taxa$tocheck$fuzzy_match_binomial_synonym %in% resources$species$synonym$binomial
-  # 
+  #
   # ii <-
   #   match(
   #     taxa$tocheck[i,]$fuzzy_match_binomial_synonym,
   #     resources$species$synonym$binomial
   #   )
-  # 
+  #
   # taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
   #   dplyr::mutate(
   #     taxonomic_dataset = resources$species$synonym$taxonomic_dataset[ii],
@@ -919,22 +919,22 @@ match_taxa <- function(
   #     checked = TRUE,
   #     alignment_code = "match_10d_binomial_fuzzy_synonym"
   #   )
-  # 
+  #
   # taxa <- redistribute(taxa)
   # if (nrow(taxa$tocheck) == 0)
   #   return(taxa)
-  
+
   # match_11a: exact matches ignoring bracketed words (accepted/valid)
-  
+
   i <-
     taxa$tocheck$ignore_bracketed_words %in% resources$species$accepted$canonical_name
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$ignore_bracketed_words,
       resources$species$accepted$canonical_name
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$accepted$taxonomic_dataset[ii],
@@ -950,22 +950,22 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_11a_no_brackets_accepted"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_11b: exact matches ignoring bracketed words (synonyms)
-  
+
   i <-
     taxa$tocheck$ignore_bracketed_words %in% resources$species$synonym$canonical_name
-  
+
   ii <-
     match(
       taxa$tocheck[i,]$ignore_bracketed_words,
       resources$species$synonym$canonical_name
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$species$synonym$taxonomic_dataset[ii],
@@ -973,7 +973,7 @@ match_taxa <- function(
       taxonomic_status = resources$species$synonym$taxonomic_status[ii],
       aligned_name = resources$species$synonym$canonical_name[ii],
       aligned_reason = paste0(
-        "Exact match of to a synonymous canonical name recorded in ", taxonomic_dataset, 
+        "Exact match of to a synonymous canonical name recorded in ", taxonomic_dataset,
         "when any bracketed words are removed (",
         Sys.Date(),
         ")"
@@ -982,27 +982,27 @@ match_taxa <- function(
       checked = TRUE,
       alignment_code = "match_11b_no_brackets_synonym"
     )
-  
+
   taxa <- redistribute(taxa)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_12a: subgenus alignment with bracketed subgenera
-  # Toward the end of the alignment function, see if first word of unmatched taxa is a 
+  # Toward the end of the alignment function, see if first word of unmatched taxa is a
   # higher order taxon name in one of the taxonomic references.
   # The 'taxon name' is then reformatted  as `genus sp.` with the original name in square brackets.
-  
+
   i <-
     stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(") &
     stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "\\)$") &
-    stringr::word(taxa$tocheck$cleaned_name, start = 1, end = 2) %in% resources$subgenus_v2$genus_and_subgenus 
-  
+    stringr::word(taxa$tocheck$cleaned_name, start = 1, end = 2) %in% resources$subgenus_v2$genus_and_subgenus
+
   ii <-
     match(
       stringr::word(taxa$tocheck[i,]$cleaned_name, start = 1, end = 2),
       resources$subgenus_v2$genus_and_subgenus
     )
-  
+
   taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
     dplyr::mutate(
       taxonomic_dataset = resources$subgenus_v2$taxonomic_dataset[ii],
@@ -1022,27 +1022,27 @@ match_taxa <- function(
       known = TRUE,
       alignment_code = "match_12a_exact_subgenus_accepted_or_synonym"
     )
-  
+
   taxa <- redistribute(taxa)
-  
+
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
-  
+
   # match_12b: higher-level alignment
-  # Toward the end of the alignment function, see if first word of unmatched taxa is a 
+  # Toward the end of the alignment function, see if first word of unmatched taxa is a
   # higher order taxon name in one of the taxonomic references.
   # The 'taxon name' is then reformatted  as `genus sp.` with the original name in square brackets.
-  for (ranks in taxon_ranks_to_check) {  
-    
+  for (ranks in taxon_ranks_to_check) {
+
    i <-
     taxa$tocheck$word_one_stripped %in% resources[[ranks]]$word_one_stripped
-  
+
     ii <-
       match(
         taxa$tocheck[i,]$word_one_stripped,
         resources[[ranks]]$word_one_stripped
       )
-    
+
     taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
       dplyr::mutate(
         taxonomic_dataset = resources[[ranks]]$taxonomic_dataset[ii],
@@ -1062,26 +1062,26 @@ match_taxa <- function(
         checked = TRUE,
         alignment_code = "match_12b_higher_rank_exact_accepted"
       )
-    
+
     taxa <- redistribute(taxa)
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
   }
-  
+
   # match_12c: higher-level fuzzy alignment
-  # The final alignment step is to see if a fuzzy match can be made for the first word of unmatched taxa to an  
+  # The final alignment step is to see if a fuzzy match can be made for the first word of unmatched taxa to an
   # higher order taxon name in one of the taxonomic references.
   # The 'taxon name' is then reformatted  as `genus sp.` with the original name in square brackets.
-  for (ranks in taxon_ranks_to_check) {  
+  for (ranks in taxon_ranks_to_check) {
     i <-
       taxa$tocheck$fuzzy_match_genus %in% resources[[ranks]]$word_one_stripped
-    
+
     ii <-
       match(
         taxa$tocheck[i,]$word_one_stripped,
         resources[[ranks]]$word_one_stripped
       )
-    
+
     taxa$tocheck[i,] <- taxa$tocheck[i,] %>%
       dplyr::mutate(
         taxonomic_dataset = resources[[ranks]]$taxonomic_dataset[ii],
@@ -1101,15 +1101,15 @@ match_taxa <- function(
         checked = TRUE,
         alignment_code = "match_12c_higher_rank_fuzzy_accepted"
       )
-    
+
     taxa <- redistribute(taxa)
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
   }
-  
+
   taxa$tocheck <- taxa$tocheck %>% dplyr::select(-identifier_string, -identifier_string2, -aligned_name_tmp)
   taxa$checked <- taxa$checked %>% dplyr::select(-identifier_string, -identifier_string2, -aligned_name_tmp)
-  
+
   return(taxa)
 }
 

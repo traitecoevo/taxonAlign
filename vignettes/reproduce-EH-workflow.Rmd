@@ -1,0 +1,207 @@
+---
+title: "reproduce-EH-workflow"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{reproduce-EH-workflow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(APCalign)
+library(tidyverse)
+library(here)
+
+source(here("R/AusInvertAlign_required_functions.R"))
+```
+
+## User to load taxonomic resources
+
+```{r}
+taxon_resources <- read_csv("../ausinvertraits.addons/data_extra/taxon_list_for_AusInvertAlign.csv")
+
+# Preview
+taxon_resources
+names(taxon_resources)
+```
+
+## Initial set up
+
+```{r}
+taxon_ranks_to_check <- c("subgenus", "genus", "family", "superfamily", "subclass", "class", "subfamily", "order", "infraorder", "suborder", "superorder", "tribe")
+
+# dummy column for blank cells, because fuzzy matching doesn't cope with blank cells
+zzz <- "zzzz zzzz"
+```
+
+### Add useful columns
+
+```{r}
+# Prepare taxonomic resources, add useful coloums for later
+taxon_resources_cleaned <- taxon_resources |>
+  dplyr::mutate(
+    canonical_name = ifelse(is.na(canonical_name), taxon_name, canonical_name),
+    word_one = extract_genus(canonical_name), # From required functions
+    taxon_rank = standardise_taxon_rank(taxon_rank),
+    taxon_rank2 = ifelse(taxon_rank %in% c("subspecies", "species", "form", "variety"), "species", taxon_rank),
+    ## strip_names removes punctuation and filler words associated with
+    ## infraspecific taxa (subsp, var, f, ser)
+    stripped_canonical = strip_names(canonical_name),
+    ## strip_names_extra removes extra filler words associated with
+    ## species name cases (x, sp)
+    ## strip_names_extra is essential for the matches involving 2 or 3 words,
+    ## since you want those words to not count filler words
+    stripped_canonical2 = strip_names_extra(stripped_canonical),
+    stripped_scientific = strip_names(scientific_name),
+    binomial = ifelse(
+      taxon_rank == "species",
+      word(stripped_canonical2, start = 1, end = 2),
+      zzz
+    ),
+    binomial = ifelse(is.na(binomial), zzz, binomial),
+    binomial = base::replace(binomial, duplicated(binomial), zzz),
+    word_one_stripped = extract_genus(stripped_canonical),
+    trinomial = word(stripped_canonical2, start = 1, end = 3),
+    trinomial = ifelse(is.na(trinomial), zzz, trinomial),
+    trinomial = base::replace(trinomial, duplicated(trinomial), zzz)
+  )
+
+taxon_resources_cleaned
+nrow(taxon_resources)
+nrow(taxon_resources_cleaned)
+
+ncol(taxon_resources)
+ncol(taxon_resources_cleaned)
+```
+
+### Split taxonomic resources into sublists
+
+```{r}
+# split by taxon rank
+# different to APCalign, because for inverts, lots of instances where you're aligning to higher ranks
+resources <- taxon_resources_cleaned |> split(taxon_resources_cleaned$taxon_rank2)
+
+# for species, split by taxonomic status
+resources$species <- resources$species |> split(resources$species$taxonomic_status)
+
+# add extra subgenus table, because of different rules
+resources$subgenus_v2 <- resources$subgenus |> mutate(genus_and_subgenus = paste0(genus, " (", canonical_name,")"))
+
+length(resources)
+names(resources)
+length(resources$species)
+names(resources$species)
+
+length(resources$subgenus)
+length(resources$subgenus_v2)
+names(resources$subgenus_v2)
+```
+
+### Use AusInvertTraits Database a user reference list to check with the taxonomic resource
+
+```{r}
+# I can't seem to be able to remake ausinverttraits so I am reverse engineering the user's name list with the actual "answer" output
+ausinvertraits_aligned_names <- read_csv(here("../ausinvertraits.addons/data_extra/aligned_names.csv"))
+
+ausinvertraits_aligned_names$original_name |> unique() |> length()
+
+ausinvertraits_names 
+```
+
+```{r}
+# setting up taxa list using variant of code from APCalign function align_taxa
+taxa_raw <-
+  dplyr::tibble(
+    original_name = character(0L),
+    cleaned_name = character(0L),
+    aligned_name = character(0L),
+    taxonomic_dataset = character(0L),
+    identifier = character(0L),
+    known = logical(0L),
+    checked = logical(0L)
+  ) |> 
+  bind_rows(
+    ausinvertraits_aligned_names |> distinct(original_name, identifier)
+    )
+
+taxa <- list()
+
+# second item in taxa list that are the taxa not yet checked - this starts out as all taxa
+taxa[["tocheck"]] <-
+    dplyr::tibble(
+      original_name = NA_character_,
+      cleaned_name = NA_character_,
+      stripped_name = NA_character_,
+      stripped_name2 = NA_character_,
+      trinomial = NA_character_,
+      binomial = NA_character_,
+      word_one = NA_character_,
+      word_one_stripped = NA_character_,
+      genus = NA_character_,
+      ignore_bracketed_words = NA_character_,
+      aligned_name = NA_character_,
+      aligned_reason = NA_character_,
+      fuzzy_match_genus = NA_character_,
+      fuzzy_match_genus_synonym = NA_character_,
+      fuzzy_match_family = NA_character_,
+      fuzzy_match_family_synonym = NA_character_,
+      fuzzy_match_binomial = NA_character_,
+      fuzzy_match_binomial_synonym = NA_character_,
+      fuzzy_match_trinomial = NA_character_,
+      fuzzy_match_trinomial_synonym = NA_character_,
+      fuzzy_match_cleaned = NA_character_,
+      fuzzy_match_cleaned_synonym = NA_character_,
+      fuzzy_match_cleaned_imprecise = NA_character_,
+      fuzzy_match_cleaned_synonym_imprecise = NA_character_,
+      taxonomic_dataset = NA_character_,
+      taxonomic_status = NA_character_,
+      taxon_rank = NA_character_,
+      alignment_code = NA_character_
+    ) |>
+dplyr::bind_rows(taxa_raw) |>
+  dplyr::mutate(
+    checked = FALSE,
+    known = FALSE,
+    identifier = identifier
+  ) |>
+  # take unique values of original name by identifier combinations
+  # so each name only processed once (or multiple times if unique identifiers)
+  dplyr::filter(!duplicated(paste0(original_name, identifier))) |>
+  dplyr::filter(original_name |> standardise_names() != "")
+```
+
+## Align taxa
+
+```{r}
+# Takes a few minutes this one
+aligned_names_b <- match_taxa(
+    taxa = taxa,
+    resources = resources,
+    fuzzy_abs_dist = 3,
+    fuzzy_rel_dist = 0.2,
+    fuzzy_matches = TRUE,
+    imprecise_fuzzy_matches = FALSE,
+    identifier = taxa$dataset_id
+)
+
+saveRDS(aligned_names_b, "data/aligned_names_b.rds")
+
+# Not matching here
+nrow(aligned_names_b$checked)
+nrow(ausinvertraits_aligned_names)
+
+# So what's different?
+dim(aligned_names_b$checked)
+dim(ausinvertraits_aligned_names)
+
+# Okay just in number of rows
+setdiff(ausinvertraits_aligned_names$original_name, aligned_names_b$checked$original_name)
+```
+
