@@ -201,7 +201,12 @@ nrow(ausinvertraits_aligned_names)
 dim(aligned_names_b$checked)
 dim(ausinvertraits_aligned_names)
 
-# Okay just in number of rows
-setdiff(ausinvertraits_aligned_names$original_name, aligned_names_b$checked$original_name)
+# Okay just in number of rows - these must be in the ausinverttraits database prior to the creation of ausinvertraits_aligned_names
+rows_diff <- setdiff(ausinvertraits_aligned_names$original_name, aligned_names_b$checked$original_name)
+
+ausinvertraits_aligned_names |> 
+  filter(original_name %in% rows_diff) |> 
+  select(original_name, aligned_name) |> 
+  count(aligned_name)
 ```
 
