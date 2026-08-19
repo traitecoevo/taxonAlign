@@ -232,7 +232,25 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
   }
 
   # for species, split further by taxonomic status
-  resources$species <- split(resources$species, resources$species$taxonomic_status)
+  species_table <- resources$species
+  resources$species <- split(species_table, species_table$taxonomic_status)
+
+  # A status entirely absent from the input (e.g. a reference built from accepted names only, with no
+  # synonyms at all -- a real, valid shape, not just a fixture gap) would otherwise leave
+  # resources$species$synonym (or $accepted) missing (NULL) rather than an empty tibble.
+  # match_taxa()'s match_01a/01b/01c/01d/05a/05b/09a/09b/10a/10b/11a/11b blocks reference
+  # resources$species$accepted/synonym$<column> unconditionally (unlike higher ranks, which are only
+  # ever looped over if actually present in `names(resources)`); `NULL$<column>` is NULL, and
+  # `dplyr::mutate(x = NULL)` *drops* that column rather than leaving it NA. Since every input name
+  # then legitimately selects zero rows for that block, the mutated result ends up with fewer columns
+  # than the slice it's replacing, and `taxa$tocheck[i, ] <- ...` errors ("Can't recycle input of size N
+  # to size M") even though `i` selects nothing. Backfilling with a 0-row tibble (same columns) instead
+  # keeps every match block's `resources$species$<status>$<column>` reference a real, if empty, vector.
+  for (status in c("accepted", "synonym")) {
+    if (is.null(resources$species[[status]])) {
+      resources$species[[status]] <- species_table[0, ]
+    }
+  }
 
   # keep both subgenus conventions available: the plain split-by-rank table (`subgenus`, for input
   # names that write the subgenus alone) and a `genus_and_subgenus` variant (`subgenus_v2`, for input

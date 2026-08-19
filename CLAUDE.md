@@ -69,19 +69,20 @@ and its internal helpers (`resolve_gbif_taxon()`, `fetch_gbif_taxon_tree()`, `fe
 `tests/testthat/helper-gbif-fixtures.R`.
 
 `tests/testthat/test-prepare_taxonomic_resources.R`, `test-prepare_taxonomic_resources_interactive.R`,
-`test-align_taxa.R`, `test-update_taxa.R`, `test-create_taxonomic_update_lookup.R` and
-`test-match_taxa_helpers.R` cover the matching/alignment engine end to end against a small hand-built
-combined reference table (`sample_taxon_resources()` in `tests/testthat/helper-align-taxa-fixtures.R`)
-spanning species (accepted/synonym), genus (accepted/synonym), family, order (accepted/synonym — a
-*second* higher rank with an outdated name, proving `update_taxa()`'s lookup isn't secretly
-species/genus-specific), an extra non-hardcoded rank ("tribe"), and a subgenus — no network, no
-`APCalign`-package-data download (only its pure string helpers,
-`standardise_names()`/`strip_names()`/`strip_names_extra()`/`standardise_taxon_rank()`, are called,
-which are safe to call directly offline). `test-prepare_taxonomic_resources_interactive.R` covers
-`prepare_taxonomic_resources(interactive = TRUE)` by supplying `user_responses` throughout, exactly
-the way `traits.build` tests its own `metadata_add_traits()`/etc. — never a real interactive session
-(see Architecture #2 below). 178 expectations across all test files, all passing as of the last run.
-(See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
+`test-align_taxa.R`, `test-match_taxa.R`, `test-update_taxa.R`, `test-create_taxonomic_update_lookup.R`
+and `test-match_taxa_helpers.R` cover the matching/alignment engine end to end against a small
+hand-built combined reference table (`sample_taxon_resources()` in
+`tests/testthat/helper-align-taxa-fixtures.R`) spanning species (accepted/synonym), genus
+(accepted/synonym), family, order (accepted/synonym — a *second* higher rank with an outdated name,
+proving `update_taxa()`'s lookup isn't secretly species/genus-specific), an extra non-hardcoded rank
+("tribe"), and a subgenus — no network, no `APCalign`-package-data download (only its pure string
+helpers, `standardise_names()`/`strip_names()`/`strip_names_extra()`/`standardise_taxon_rank()`, are
+called, which are safe to call directly offline). `test-prepare_taxonomic_resources_interactive.R`
+covers `prepare_taxonomic_resources(interactive = TRUE)` by supplying `user_responses` throughout,
+exactly the way `traits.build` tests its own `metadata_add_traits()`/etc. — never a real interactive
+session (see Architecture #2 below). `test-match_taxa.R` covers the opt-in `hybrids`/
+`intergrades_affinis` matching (issue #9). 205 expectations across all test files, all passing as of
+the last run. (See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -228,7 +229,7 @@ Architecture of the matching engine itself:
   carry over APCalign's `taxonomic_splits` disambiguation (APC-specific split history an arbitrary
   reference can't be expected to document) or its genus-substring-splicing trick for reconstructing a
   suggested name when only the genus changed (doesn't obviously generalize across ranks).
-- **Two real bugs found by testing against real, messy data** (not just the hand-built fixture) that
+- **Three real bugs found by testing against real, messy data** (not just the hand-built fixture) that
   are worth knowing about if you touch this code again:
   - `fuzzy_match()` (`match_taxa_helpers.R`) used to crash with "missing value where TRUE/FALSE
     needed" whenever a reference list's `accepted_list` argument contained an `NA` (real GBIF data with
@@ -244,6 +245,22 @@ Architecture of the matching engine itself:
     any row whose `canonical_name` is `NA` -- such a row could never be usefully matched against
     anyway, and leaving it in is a landmine for this exact `%in%` gotcha in every match block, not just
     the fuzzy ones.
+  - Discovered via real APC data (`APCalign::load_taxonomic_resources()$APC_accepted`, which is
+    accepted-names-only -- no synonyms at all): `prepare_taxonomic_resources()`'s
+    `split(species_table, species_table$taxonomic_status)` only creates a list element for statuses
+    actually present, so an accepted-only (or synonym-only) input left `resources$species$synonym` (or
+    `$accepted`) missing (`NULL`) entirely rather than an empty tibble. `match_taxa()`'s
+    `match_01a`/`01b`/`01c`/`01d`/`05a`/`05b`/`09a`/`09b`/`10a`/`10b`/`11a`/`11b` blocks reference
+    `resources$species$accepted`/`synonym$<column>` unconditionally (unlike higher ranks, which are
+    only ever looped over if actually present in `names(resources)`) -- `NULL$<column>` is `NULL`, and
+    `dplyr::mutate(x = NULL)` *drops* that column rather than leaving it `NA`. Since every input name
+    then legitimately matches nothing in that block (there's nothing to match against), the mutated
+    result ends up with fewer columns than the slice it's replacing, and `taxa$tocheck[i, ] <- ...`
+    errored ("Can't recycle input of size N to size M") on *every* alignment, not just a specific name --
+    regardless of whether `resources` was prepared explicitly or auto-prepared via
+    `ensure_prepared_resources()`. Fixed by backfilling any status entirely absent after the split with
+    a 0-row tibble sharing the same columns, so `resources$species$accepted`/`synonym` are always
+    structurally complete.
 - `resources` has no default on `align_taxa()`/`update_taxa()`/`create_taxonomic_update_lookup()`,
   and a common real mistake is passing the *raw* output of `generate_GBIF_taxonomic_reference_list()`
   (a flat tibble) straight in, instead of first running it through `prepare_taxonomic_resources()`

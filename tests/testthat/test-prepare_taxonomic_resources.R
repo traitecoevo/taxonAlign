@@ -79,3 +79,24 @@ test_that("taxon_ranks_to_check warns about ranks not present in the data", {
     "not present"
   )
 })
+
+test_that("a reference table with only one taxonomic_status still gets a 0-row sublist for the other", {
+  # regression test: a real, valid input shape (e.g. an accepted-names-only download) used to leave
+  # resources$species$synonym missing (NULL) entirely rather than an empty tibble, since
+  # split(species_table, species_table$taxonomic_status) only ever creates elements for statuses
+  # actually present. match_taxa()'s match_01b/01d/05b/09b/10b/11b blocks reference
+  # resources$species$synonym$<column> unconditionally regardless of whether any input name matches --
+  # NULL$<column> is NULL, and dplyr::mutate(x = NULL) *drops* the column rather than leaving it NA, so
+  # every alignment (matching nothing in that block, as always happens when there's nothing to match
+  # against) hit a "Can't recycle input of size N to size M" error rather than aligning normally.
+  accepted_only <- sample_taxon_resources() |> dplyr::filter(taxonomic_status == "accepted")
+  resources <- prepare_taxonomic_resources(accepted_only)
+
+  expect_setequal(names(resources$species), c("accepted", "synonym"))
+  expect_equal(nrow(resources$species$synonym), 0)
+  expect_true(all(c("scientific_name", "canonical_name", "taxon_ID") %in% names(resources$species$synonym)))
+
+  # the real symptom: align_taxa() used to error outright on *any* name, not just unmatched ones
+  out <- align_taxa("Boronia serrulata Sm.", resources)
+  expect_equal(out$aligned_name, "Boronia serrulata")
+})
