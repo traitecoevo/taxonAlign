@@ -2,7 +2,7 @@
 # by testthat before the test files run.
 
 # one row of a GBIF backbone usage, with sane defaults for the columns
-# `generate_taxonomic_reference_list()` reads out of `name_lookup()`/`name_usage()`
+# `generate_GBIF_taxonomic_reference_list()` reads out of `name_lookup()`/`name_usage()`
 gbif_taxon_row <- function(key,
                             parentKey = NA_integer_,
                             acceptedKey = NA_integer_,

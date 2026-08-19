@@ -6,7 +6,7 @@
 \usage{
 create_taxonomic_update_lookup(
   original_name,
-  resources,
+  resources = NULL,
   identifier = NA_character_,
   fuzzy_abs_dist = 3,
   fuzzy_rel_dist = 0.2,
@@ -20,7 +20,8 @@ create_taxonomic_update_lookup(
 \item{original_name}{Character vector of raw taxon names to align and update.}
 
 \item{resources}{The nested list of reference tibbles produced by
-\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}.}
+\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}. A plain (already fully-formatted) taxonomic reference tibble is
+also accepted directly -- see \code{align_taxa()}'s \code{resources} documentation.}
 
 \item{identifier, fuzzy_abs_dist, fuzzy_rel_dist, fuzzy_matches, imprecise_fuzzy_matches, taxon_ranks_to_check}{Forwarded to \code{\link[=align_taxa]{align_taxa()}}; see its documentation.}
 

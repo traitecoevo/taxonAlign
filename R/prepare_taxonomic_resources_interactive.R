@@ -28,7 +28,7 @@ prompt_yes_no <- function(title, user_response = NULL) {
 # The special "is this table already fully aligned?" gate asked once per table, before the per-field
 # prompt sequence, when the automatic column_rename step didn't resolve everything on its own --
 # e.g. the table may already be in taxonAlign's target shape (from an earlier
-# prepare_taxonomic_resources()/generate_taxonomic_reference_list() call) just under column names
+# prepare_taxonomic_resources()/generate_GBIF_taxonomic_reference_list() call) just under column names
 # column_rename doesn't recognise. `user_response`, if supplied, is a plain logical.
 prompt_already_aligned <- function(table_label, user_response = NULL) {
   prompt_yes_no(
@@ -36,7 +36,7 @@ prompt_already_aligned <- function(table_label, user_response = NULL) {
       paste0(
         "\n`%s` is missing some of the columns `prepare_taxonomic_resources()` expects by name. Is ",
         "it already fully aligned regardless (e.g. produced by an earlier `prepare_taxonomic_resources()`",
-        " or `generate_taxonomic_reference_list()` call, just under different column names)?"
+        " or `generate_GBIF_taxonomic_reference_list()` call, just under different column names)?"
       ),
       table_label
     ),

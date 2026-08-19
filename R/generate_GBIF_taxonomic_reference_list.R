@@ -85,18 +85,18 @@ gbif_rank_order <- c(
 #' @examples
 #' \dontrun{
 #' # every taxon below the genus Boronia
-#' generate_taxonomic_reference_list("Boronia")
+#' generate_GBIF_taxonomic_reference_list("Boronia")
 #'
 #' # species (and infraspecific taxa) of Boronia recorded in Australia
-#' generate_taxonomic_reference_list("Boronia", country = "AU", rank = "species")
+#' generate_GBIF_taxonomic_reference_list("Boronia", country = "AU", rank = "species")
 #'
 #' # combine several families in one call
-#' generate_taxonomic_reference_list(c("Rutaceae", "Sapindaceae"), country = "AU")
+#' generate_GBIF_taxonomic_reference_list(c("Rutaceae", "Sapindaceae"), country = "AU")
 #' }
 #'
 #' @importFrom rlang .data
 #' @export
-generate_taxonomic_reference_list <- function(taxon_name,
+generate_GBIF_taxonomic_reference_list <- function(taxon_name,
                                                name_rank = NULL,
                                                name_kingdom = NULL,
                                                country = NULL,
@@ -119,6 +119,14 @@ generate_taxonomic_reference_list <- function(taxon_name,
     if (!rank %in% gbif_rank_order) {
       stop("`rank` must be one of: ", paste(gbif_rank_order, collapse = ", "))
     }
+  }
+
+  if (!is.null(country) && !grepl("^[A-Za-z]{2}$", country)) {
+    stop(
+      "`country` must be a 2-letter ISO 3166-1 alpha-2 country code (e.g. \"AU\" for Australia), not ",
+      "a country name -- got \"", country, "\". See ",
+      "https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2 for the full list of codes."
+    )
   }
 
   name_rank <- recycle_against_taxon_name(name_rank, taxon_name, "name_rank")
@@ -341,7 +349,7 @@ fetch_gbif_country_keys <- function(roots, country, cache_dir,
       facetLimit = facet_limit
     )
 
-    keys <- if (!is.null(occ$facets$taxonKey)) as.integer(occ$facets$taxonKey$name) else integer(0)
+    keys <- if ("name" %in% names(occ$facets$taxonKey)) as.integer(occ$facets$taxonKey$name) else integer(0)
 
     if (length(keys) == facet_limit) {
       warning(

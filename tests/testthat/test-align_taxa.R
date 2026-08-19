@@ -120,3 +120,28 @@ test_that("align_taxa requires a non-empty original_name", {
   resources <- prepare_taxonomic_resources(sample_taxon_resources())
   expect_error(align_taxa(character(0), resources), "must have length > 0")
 })
+
+test_that("align_taxa gives a clear, actionable error when resources is missing", {
+  expect_error(align_taxa("Boronia serrulata"), "prepare_taxonomic_resources")
+})
+
+test_that("align_taxa accepts a flat, already-formatted resources tibble directly", {
+  # a common real mistake was passing a flat data frame (e.g.
+  # generate_GBIF_taxonomic_reference_list()'s own output) directly, instead of running it through
+  # prepare_taxonomic_resources() first -- rather than erroring, this is now auto-detected and
+  # prepared automatically, since the table itself needs no interactive column mapping
+  out_direct <- align_taxa("Boronia serrulata", resources = sample_taxon_resources())
+  out_prepared <- align_taxa("Boronia serrulata", resources = prepare_taxonomic_resources(sample_taxon_resources()))
+
+  expect_equal(out_direct, out_prepared)
+  expect_equal(out_direct$aligned_name, "Boronia serrulata")
+})
+
+test_that("align_taxa gives a clear, actionable error when resources is a malformed list", {
+  # genuinely the wrong shape (not a data frame, and not a prepare_taxonomic_resources()-style nested
+  # list either) -- unlike a flat data frame, this can't be auto-prepared, so it should still error
+  expect_error(
+    align_taxa("Boronia serrulata", resources = list(foo = "bar")),
+    "prepare_taxonomic_resources"
+  )
+})

@@ -1,16 +1,27 @@
 # ---- input validation -------------------------------------------------
 
 test_that("taxon_name is required and cannot be missing/NA", {
-  expect_error(generate_taxonomic_reference_list(), "`taxon_name` is required")
-  expect_error(generate_taxonomic_reference_list(character(0)), "`taxon_name` is required")
-  expect_error(generate_taxonomic_reference_list(NA_character_), "`taxon_name` is required")
-  expect_error(generate_taxonomic_reference_list(c("Boronia", NA)), "`taxon_name` is required")
+  expect_error(generate_GBIF_taxonomic_reference_list(), "`taxon_name` is required")
+  expect_error(generate_GBIF_taxonomic_reference_list(character(0)), "`taxon_name` is required")
+  expect_error(generate_GBIF_taxonomic_reference_list(NA_character_), "`taxon_name` is required")
+  expect_error(generate_GBIF_taxonomic_reference_list(c("Boronia", NA)), "`taxon_name` is required")
 })
 
 test_that("rank must be one of the known GBIF ranks", {
   expect_error(
-    generate_taxonomic_reference_list("Boronia", rank = "not_a_rank"),
+    generate_GBIF_taxonomic_reference_list("Boronia", rank = "not_a_rank"),
     "`rank` must be one of"
+  )
+})
+
+test_that("country must be a 2-letter ISO code, not a country name", {
+  # regression test: a country *name* (e.g. "Australia") silently passes through to
+  # rgbif::occ_search(), which doesn't recognise it and returns an empty facet result -- rather than
+  # erroring, this used to warn "Unknown or uninitialised column: `name`" and silently produce an
+  # empty reference list.
+  expect_error(
+    generate_GBIF_taxonomic_reference_list("Boronia", country = "Australia"),
+    "2-letter ISO 3166-1 alpha-2"
   )
 })
 
@@ -25,13 +36,13 @@ test_that("rank matching is case-insensitive", {
     .package = "rgbif"
   )
 
-  out <- generate_taxonomic_reference_list("Boronia", rank = "SPECIES", cache_dir = withr::local_tempdir(), quiet = TRUE)
+  out <- generate_GBIF_taxonomic_reference_list("Boronia", rank = "SPECIES", cache_dir = withr::local_tempdir(), quiet = TRUE)
   expect_true(all(out$taxon_rank == "species"))
 })
 
 test_that("name_rank/name_kingdom must be length 1 or match taxon_name", {
   expect_error(
-    generate_taxonomic_reference_list(c("Boronia", "Zieria"), name_rank = c("genus", "genus", "genus")),
+    generate_GBIF_taxonomic_reference_list(c("Boronia", "Zieria"), name_rank = c("genus", "genus", "genus")),
     "`name_rank` must have length 1"
   )
 })
@@ -259,7 +270,7 @@ test_that("fetch_gbif_country_keys serves a fresh cache without calling the API 
   expect_equal(first, second)
 })
 
-# ---- generate_taxonomic_reference_list (end to end, GBIF calls mocked) ----
+# ---- generate_GBIF_taxonomic_reference_list (end to end, GBIF calls mocked) ----
 
 local_mock_gbif_end_to_end <- function(.env = parent.frame()) {
   # tree for root key 1 ("Boronia"): itself (genus), an accepted species (2),
@@ -305,9 +316,9 @@ local_mock_gbif_end_to_end <- function(.env = parent.frame()) {
   )
 }
 
-test_that("generate_taxonomic_reference_list returns the documented columns", {
+test_that("generate_GBIF_taxonomic_reference_list returns the documented columns", {
   local_mock_gbif_end_to_end()
-  out <- generate_taxonomic_reference_list("Boronia", cache_dir = withr::local_tempdir(), quiet = TRUE)
+  out <- generate_GBIF_taxonomic_reference_list("Boronia", cache_dir = withr::local_tempdir(), quiet = TRUE)
 
   expect_s3_class(out, "tbl_df")
   expect_setequal(
@@ -322,7 +333,7 @@ test_that("generate_taxonomic_reference_list returns the documented columns", {
 
 test_that("accepted_name_usage_ID is filled in for accepted names (self-referential, as in APC downloads)", {
   local_mock_gbif_end_to_end()
-  out <- generate_taxonomic_reference_list("Boronia", cache_dir = withr::local_tempdir(), quiet = TRUE)
+  out <- generate_GBIF_taxonomic_reference_list("Boronia", cache_dir = withr::local_tempdir(), quiet = TRUE)
 
   accepted <- out[out$taxonomic_status == "accepted", ]
   expect_false(anyNA(accepted$accepted_name_usage_ID))
@@ -335,7 +346,7 @@ test_that("accepted_name_usage_ID is filled in for accepted names (self-referent
 
 test_that("include_synonyms = FALSE drops synonym rows", {
   local_mock_gbif_end_to_end()
-  out <- generate_taxonomic_reference_list(
+  out <- generate_GBIF_taxonomic_reference_list(
     "Boronia", include_synonyms = FALSE, cache_dir = withr::local_tempdir(), quiet = TRUE
   )
   expect_false("synonym" %in% out$taxonomic_status)
@@ -344,7 +355,7 @@ test_that("include_synonyms = FALSE drops synonym rows", {
 
 test_that("rank filters to that rank and narrower", {
   local_mock_gbif_end_to_end()
-  out <- generate_taxonomic_reference_list(
+  out <- generate_GBIF_taxonomic_reference_list(
     "Boronia", rank = "species", cache_dir = withr::local_tempdir(), quiet = TRUE
   )
   expect_true(all(out$taxon_rank %in% c("species", "variety")))
@@ -353,7 +364,7 @@ test_that("rank filters to that rank and narrower", {
 
 test_that("country restricts to taxa with an occurrence record there (including via accepted_name_usage_ID)", {
   local_mock_gbif_end_to_end()
-  out <- generate_taxonomic_reference_list(
+  out <- generate_GBIF_taxonomic_reference_list(
     "Boronia", country = "au", cache_dir = withr::local_tempdir(), quiet = TRUE
   )
   # key 2 has the occurrence; key 3 (its synonym) is kept via accepted_name_usage_ID
@@ -362,7 +373,7 @@ test_that("country restricts to taxa with an occurrence record there (including 
 
 test_that("multiple taxon_name values are resolved and merged with no duplicate keys", {
   local_mock_gbif_end_to_end()
-  out <- generate_taxonomic_reference_list(
+  out <- generate_GBIF_taxonomic_reference_list(
     c("Boronia", "Zieria"), cache_dir = withr::local_tempdir(), quiet = TRUE
   )
   expect_setequal(out$taxon_ID, c(1L, 2L, 3L, 10L, 20L))
@@ -371,7 +382,7 @@ test_that("multiple taxon_name values are resolved and merged with no duplicate 
 
 test_that("output is deduplicated even if the same taxon is requested twice", {
   local_mock_gbif_end_to_end()
-  out <- generate_taxonomic_reference_list(
+  out <- generate_GBIF_taxonomic_reference_list(
     c("Boronia", "Boronia"), cache_dir = withr::local_tempdir(), quiet = TRUE
   )
   expect_equal(anyDuplicated(out$taxon_ID), 0)

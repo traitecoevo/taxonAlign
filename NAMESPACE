@@ -2,7 +2,7 @@
 
 export(align_taxa)
 export(create_taxonomic_update_lookup)
-export(generate_taxonomic_reference_list)
+export(generate_GBIF_taxonomic_reference_list)
 export(prepare_taxonomic_resources)
 export(update_taxa)
 importFrom(rlang,.data)

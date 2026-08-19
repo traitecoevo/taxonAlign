@@ -2,6 +2,5 @@
 ^\.Rproj\.user$
 ^README\.qmd$
 ^LICENSE\.md$
-# top-level executable script (not function definitions) -- breaks lazy-loading
-# if built as package code; see CLAUDE.md for the ported-prototype context
-^R/match_taxa_for_inverts_202500304-use this\.R$
+# scratch/holding area for retired ported-prototype files -- see CLAUDE.md; not package content
+^ignore$

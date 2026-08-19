@@ -5,7 +5,8 @@
 #'
 #' @param original_name Character vector of raw taxon names to align and update.
 #' @param resources The nested list of reference tibbles produced by
-#'  [prepare_taxonomic_resources()].
+#'  [prepare_taxonomic_resources()]. A plain (already fully-formatted) taxonomic reference tibble is
+#'  also accepted directly -- see `align_taxa()`'s `resources` documentation.
 #' @param identifier,fuzzy_abs_dist,fuzzy_rel_dist,fuzzy_matches,imprecise_fuzzy_matches,taxon_ranks_to_check
 #'  Forwarded to [align_taxa()]; see its documentation.
 #' @param full Logical; if `TRUE`, return every intermediate column [align_taxa()]/[update_taxa()]
@@ -19,7 +20,7 @@
 #'
 #' @export
 create_taxonomic_update_lookup <- function(original_name,
-                                            resources,
+                                            resources = NULL,
                                             identifier = NA_character_,
                                             fuzzy_abs_dist = 3,
                                             fuzzy_rel_dist = 0.2,
@@ -27,6 +28,18 @@ create_taxonomic_update_lookup <- function(original_name,
                                             imprecise_fuzzy_matches = FALSE,
                                             taxon_ranks_to_check = NULL,
                                             full = FALSE) {
+
+  if (is.null(resources)) {
+    stop(
+      "`resources` is required. Build one with `prepare_taxonomic_resources()`, using your own ",
+      "combined taxonomic reference table or one produced by `generate_GBIF_taxonomic_reference_list()`. ",
+      "See `?prepare_taxonomic_resources`.",
+      call. = FALSE
+    )
+  }
+  # prepared once here (rather than separately inside align_taxa()/update_taxa() below) so a flat
+  # `resources` table is only ever run through prepare_taxonomic_resources() a single time
+  resources <- ensure_prepared_resources(resources)
 
   aligned_data <- align_taxa(
     original_name = original_name,

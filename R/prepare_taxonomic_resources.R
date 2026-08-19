@@ -34,7 +34,7 @@ taxonAlign_required_cols <- c(
 #' Prepare a combined taxonomic reference table for name matching
 #'
 #' Takes one or more taxonomic reference tables (the user's own, one produced by
-#' [generate_taxonomic_reference_list()], or any mix of these) and turns them into the single nested
+#' [generate_GBIF_taxonomic_reference_list()], or any mix of these) and turns them into the single nested
 #' `resources` list that [align_taxa()]/`match_taxa()` expect: columns are normalised and any missing
 #' ones resolved (see `interactive`, below), tables are combined if more than one was supplied, and the
 #' result is split by rank (and, for species-level rows, by taxonomic status).
@@ -48,7 +48,7 @@ taxonAlign_required_cols <- c(
 #'  one element per taxonomic reference table to combine. Each table needs (at least) the columns
 #'  `canonical_name`, `scientific_name`, `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`,
 #'  `genus`, `taxon_ID` and `accepted_name_usage_ID` -- the column names produced by
-#'  [generate_taxonomic_reference_list()], and matching
+#'  [generate_GBIF_taxonomic_reference_list()], and matching
 #'  [APCalign](https://traitecoevo.github.io/APCalign/)'s own naming convention exactly (see Details)
 #'  so there's one canonical name field, not two. A row whose `canonical_name` is `NA` has no usable
 #'  name and is dropped, with a warning (real data occasionally has this -- e.g. some GBIF records
@@ -65,7 +65,7 @@ taxonAlign_required_cols <- c(
 #'  missing -- letting a column be picked from that table, or (for some fields) a fixed value typed in
 #'  or auto-generated -- rather than erroring. A table that's already complete is never interrupted;
 #'  one that isn't is first asked, once, whether it's already fully aligned regardless (e.g. it came
-#'  from an earlier `prepare_taxonomic_resources()`/`generate_taxonomic_reference_list()` call, just
+#'  from an earlier `prepare_taxonomic_resources()`/`generate_GBIF_taxonomic_reference_list()` call, just
 #'  under column names `interactive` didn't recognise) before being walked through the per-field
 #'  prompts. Once every initially-supplied table is resolved, also asks whether there are any
 #'  additional taxonomic reference(s) to include -- repeating for as many as the user has -- so a
@@ -110,10 +110,18 @@ taxonAlign_required_cols <- c(
 #' the second).
 #'
 #' @export
-prepare_taxonomic_resources <- function(taxon_resources,
+prepare_taxonomic_resources <- function(taxon_resources = NULL,
                                          taxon_ranks_to_check = NULL,
                                          interactive = FALSE,
                                          user_responses = NULL) {
+
+  if (is.null(taxon_resources)) {
+    stop(
+      "`taxon_resources` is required. Supply your own combined taxonomic reference table (or a path ",
+      "to one), or build one with `generate_GBIF_taxonomic_reference_list()`.",
+      call. = FALSE
+    )
+  }
 
   tables <- normalise_taxon_resources_input(taxon_resources)
 
@@ -171,7 +179,7 @@ prepare_taxonomic_resources <- function(taxon_resources,
   taxon_resources <- taxon_resources |>
     dplyr::mutate(
       # normalise to character regardless of the source column's type (our own
-      # generate_taxonomic_reference_list() gives integer taxon_IDs; real APC/AFD data gives URI/UUID
+      # generate_GBIF_taxonomic_reference_list() gives integer taxon_IDs; real APC/AFD data gives URI/UUID
       # strings) so downstream code never has to worry about integer-vs-character mismatches
       taxon_ID = as.character(taxon_ID),
       accepted_name_usage_ID = as.character(accepted_name_usage_ID)
@@ -315,10 +323,10 @@ resolve_taxon_resources_table <- function(data, table_label, interactive, user_r
 
   # Give the user a chance to assert the table is already fully aligned before launching into the
   # full per-field prompt sequence below -- e.g. it may already be in taxonAlign's target shape (from
-  # an earlier prepare_taxonomic_resources()/generate_taxonomic_reference_list() call) just under
+  # an earlier prepare_taxonomic_resources()/generate_GBIF_taxonomic_reference_list() call) just under
   # column names the automatic column_rename step above doesn't recognise. Only asked here, once
   # column_rename has already run and something is still missing -- a table that's already fully
-  # resolved (the common case for generate_taxonomic_reference_list()'s own output) is never
+  # resolved (the common case for generate_GBIF_taxonomic_reference_list()'s own output) is never
   # interrupted with this question at all.
   if (prompt_already_aligned(table_label, user_responses$already_aligned)) {
     stop(

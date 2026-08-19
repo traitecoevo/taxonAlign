@@ -4,7 +4,7 @@
 \alias{update_taxa}
 \title{Resolve aligned names forward to their current accepted name}
 \usage{
-update_taxa(aligned_data, resources)
+update_taxa(aligned_data, resources = NULL)
 }
 \arguments{
 \item{aligned_data}{A tibble in the shape \code{\link[=align_taxa]{align_taxa()}} returns -- in particular, it must have
@@ -13,7 +13,9 @@ update_taxa(aligned_data, resources)
 \code{full = TRUE} output include these).}
 
 \item{resources}{The nested list of reference tibbles produced by
-\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} (the same one passed to \code{align_taxa()}).}
+\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} (the same one passed to \code{align_taxa()}). A plain (already
+fully-formatted) taxonomic reference tibble is also accepted directly -- see \code{align_taxa()}'s
+\code{resources} documentation.}
 }
 \value{
 \code{aligned_data} with \code{taxon_rank}/\code{genus}/\code{family}/\code{taxonomic_dataset} refreshed to whatever

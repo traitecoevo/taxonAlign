@@ -9,7 +9,9 @@
 #'  `accepted_name_usage_ID` columns (both `align_taxa()`'s default, `full = FALSE`, output and its
 #'  `full = TRUE` output include these).
 #' @param resources The nested list of reference tibbles produced by
-#'  [prepare_taxonomic_resources()] (the same one passed to `align_taxa()`).
+#'  [prepare_taxonomic_resources()] (the same one passed to `align_taxa()`). A plain (already
+#'  fully-formatted) taxonomic reference tibble is also accepted directly -- see `align_taxa()`'s
+#'  `resources` documentation.
 #'
 #' @return `aligned_data` with `taxon_rank`/`genus`/`family`/`taxonomic_dataset` refreshed to whatever
 #'  the current record has (a synonym's may be outdated), the pre-update `taxonomic_status` renamed to
@@ -41,7 +43,17 @@
 #'   across arbitrary ranks the way the rest of this does, so it's omitted here.
 #'
 #' @export
-update_taxa <- function(aligned_data, resources) {
+update_taxa <- function(aligned_data, resources = NULL) {
+
+  if (is.null(resources)) {
+    stop(
+      "`resources` is required. Build one with `prepare_taxonomic_resources()`, using your own ",
+      "combined taxonomic reference table or one produced by `generate_GBIF_taxonomic_reference_list()`. ",
+      "See `?prepare_taxonomic_resources`.",
+      call. = FALSE
+    )
+  }
+  resources <- ensure_prepared_resources(resources)
 
   required_cols <- c(
     "aligned_name", "taxonomic_status", "taxon_rank", "taxonomic_dataset",

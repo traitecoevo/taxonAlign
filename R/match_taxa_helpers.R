@@ -230,3 +230,36 @@ extract_genus <- function(taxon_name) {
 
   genus
 }
+
+# Shared shape-check for `align_taxa()`/`update_taxa()`'s `resources` argument, used once it's
+# already known *not* to be a plain data frame (see `ensure_prepared_resources()` below, which handles
+# that case by preparing it automatically instead of erroring).
+validate_resources_shape <- function(resources) {
+  if (is.data.frame(resources) || !is.list(resources) ||
+      is.null(resources$species) || is.null(resources$species$accepted)) {
+    stop(
+      "`resources` doesn't look like the output of `prepare_taxonomic_resources()` (expected a ",
+      "nested list with a `resources$species$accepted` element; got ", class(resources)[1], "). Did ",
+      "you pass a raw taxonomic reference table (e.g. from `generate_GBIF_taxonomic_reference_list()`) ",
+      "directly, instead of running it through `prepare_taxonomic_resources()` first?",
+      call. = FALSE
+    )
+  }
+}
+
+# `align_taxa()`/`update_taxa()`/`create_taxonomic_update_lookup()` all need `resources` in the
+# nested-by-rank shape `prepare_taxonomic_resources()` builds -- but a user with a single reference
+# table that's *already* fully formatted (e.g. generate_GBIF_taxonomic_reference_list()'s own output)
+# shouldn't have to remember to call that function themselves first just to get past a shape check.
+# If `resources` is a plain data frame, prepare it automatically (non-interactively -- if it turns out
+# to need column mapping, that surfaces the same clear "missing required column(s)... pass
+# `interactive = TRUE`" error `prepare_taxonomic_resources()` always gives, just one call deep); if
+# it's already a list, only validate its shape, since re-preparing an already-prepared `resources`
+# would be wrong (splitting an already-split structure).
+ensure_prepared_resources <- function(resources) {
+  if (is.data.frame(resources)) {
+    return(prepare_taxonomic_resources(resources))
+  }
+  validate_resources_shape(resources)
+  resources
+}

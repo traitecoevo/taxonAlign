@@ -13,7 +13,7 @@ The long-term shape mirrors [APCalign](https://traitecoevo.github.io/APCalign/)'
 functions: `match_taxa` (internal matching engine) → `align_taxa` (exported orchestrator) →
 `update_taxa` → `create_taxonomic_update_lookup` (exported, full pipeline) — with three deliberate
 differences: (1) taxonomic resources are supplied by the user (their own table, or one built with
-`generate_taxonomic_reference_list()`), not a fixed APC/APNI download; (2) the APC-specific "splits"
+`generate_GBIF_taxonomic_reference_list()`), not a fixed APC/APNI download; (2) the APC-specific "splits"
 disambiguation logic in APCalign's `update_taxonomy` won't carry over to taxonAlign's `update_taxa`;
 (3) matching/aligning supports *all* taxonomic ranks present in the user's resources, not just
 genus/species/family. All four core functions now exist and are tested (see Architecture #2):
@@ -27,7 +27,7 @@ Hybrid/graded-name matching is not yet started (tracked as issue #9).
 
 This is a standard R package (DESCRIPTION/NAMESPACE, `Roxygen: list(markdown = TRUE)`). A `tests/`
 directory now exists (testthat 3rd edition, see Testing below), covering
-`generate_taxonomic_reference_list.R` and the whole matching/alignment engine (`prepare_taxonomic_resources()`,
+`generate_GBIF_taxonomic_reference_list.R` and the whole matching/alignment engine (`prepare_taxonomic_resources()`,
 `align_taxa()`, `match_taxa()`, `update_taxa()`, `create_taxonomic_update_lookup()`, and the vendored
 helpers in `match_taxa_helpers.R`).
 
@@ -38,32 +38,29 @@ devtools::test()           # run the testthat suite
 devtools::check()          # full R CMD check
 ```
 
-Important gotcha: `NAMESPACE` currently contains no exports at all (just the roxygen2 header comment),
-even though `generate_taxonomic_reference_list()` is tagged `@export`. Run `devtools::document()`
-after editing any roxygen tags to bring `NAMESPACE`/`man/` back in sync before relying on exports.
-
-**Bigger gotcha — `devtools::load_all()`/`devtools::test()`/`devtools::check()` currently fail outright**,
-because `R/match_taxa_for_inverts_202500304-use this.R` has top-level executable script code (it reads
+Gotcha (resolved): `devtools::load_all()`/`devtools::test()`/`devtools::check()` used to fail outright
+because `R/match_taxa_for_inverts_202500304-use this.R` had top-level executable script code (it read
 `taxon_resources` from a path outside this repo) rather than only function definitions, so sourcing the
-`R/` directory errors with `object 'taxon_resources' not found` before anything — including the test
-suite below — gets a chance to run. Its logic has since been ported into real functions (see
-Architecture #2 below: `align_taxa()`, `match_taxa()`, `prepare_taxonomic_resources()`), but the
-original file itself is *deliberately left in place* for now (its owner will move/retire it) rather
-than deleted or `.Rbuildignore`'d — so the workaround still applies: temporarily move the file out of
-`R/`, run the command, then move it back. Don't leave it moved without asking.
+`R/` directory errored with `object 'taxon_resources' not found` before anything got a chance to run.
+Its logic has since been ported into real functions (see Architecture #2 below: `align_taxa()`,
+`match_taxa()`, `prepare_taxonomic_resources()`), and the original file has now been moved to
+`ignore/match_taxa_for_inverts_202500304-use this.R` (excluded from the build via `.Rbuildignore`,
+since its non-portable filename otherwise trips a `checking for portable file names` `R CMD check`
+WARNING) — the "temporarily move the file out and back" workaround this used to require is no longer
+needed.
 
-`DESCRIPTION` Imports now cover `APCalign`, `dplyr`, `purrr`, `rgbif`, `rlang`, `stringdist`, `stringr`,
-`tools`, `utils` (with `Remotes: traitecoevo/APCalign` since APCalign isn't on CRAN). The vignette
-(only) additionally needs packages that are **not** declared as dependencies anywhere (`tidyverse`,
-`here`, `readr`, `arrow`) — install these manually if you need to run it:
+`DESCRIPTION` Imports now cover `APCalign`, `dplyr`, `purrr`, `readr`, `rgbif`, `rlang`, `stringdist`,
+`stringr`, `tools`, `utils` (with `Remotes: traitecoevo/APCalign` since APCalign isn't on CRAN). The
+vignette (only) additionally needs packages that are **not** declared as dependencies anywhere
+(`tidyverse`, `here`, `arrow`) — install these manually if you need to run it:
 
 ```r
-install.packages(c("here", "readr", "arrow", "tidyverse"))
+install.packages(c("here", "arrow", "tidyverse"))
 ```
 
 ### Testing
 
-`tests/testthat/test-generate_taxonomic_reference_list.R` covers `generate_taxonomic_reference_list()`
+`tests/testthat/test-generate_GBIF_taxonomic_reference_list.R` covers `generate_GBIF_taxonomic_reference_list()`
 and its internal helpers (`resolve_gbif_taxon()`, `fetch_gbif_taxon_tree()`, `fetch_gbif_country_keys()`,
 `recycle_against_taxon_name()`, `cache_is_fresh()`) end to end, entirely offline: every `rgbif::` call
 (`name_backbone`, `name_lookup`, `name_usage`, `occ_search`) is replaced with
@@ -82,7 +79,7 @@ species/genus-specific), an extra non-hardcoded rank ("tribe"), and a subgenus �
 which are safe to call directly offline). `test-prepare_taxonomic_resources_interactive.R` covers
 `prepare_taxonomic_resources(interactive = TRUE)` by supplying `user_responses` throughout, exactly
 the way `traits.build` tests its own `metadata_add_traits()`/etc. — never a real interactive session
-(see Architecture #2 below). 165 expectations across all test files, all passing as of the last run.
+(see Architecture #2 below). 178 expectations across all test files, all passing as of the last run.
 (See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
@@ -99,10 +96,10 @@ quarto render README.qmd
 
 ## Architecture
 
-### 1. GBIF-backed reference list builder — `R/generate_taxonomic_reference_list.R` (active, exported)
+### 1. GBIF-backed reference list builder — `R/generate_GBIF_taxonomic_reference_list.R` (active, exported)
 
 This is the one fully-built, documented, exported piece of the package.
-`generate_taxonomic_reference_list(taxon_name, ...)` builds a tibble of taxa sourced from the GBIF
+`generate_GBIF_taxonomic_reference_list(taxon_name, ...)` builds a tibble of taxa sourced from the GBIF
 backbone taxonomy (`gbif_backbone_dataset_key`), optionally filtered to a country's occurrence records
 and/or a minimum taxonomic rank (`gbif_rank_order` defines the "this rank and below" ordering).
 
@@ -119,7 +116,14 @@ Key design points worth knowing before touching this file:
   independent size guard (`max_taxa`, default 50000; override with `force_large_fetch = TRUE`) protects
   against a homonym resolving broader than intended and triggering a very large/slow first fetch.
 - **Country filtering**: `fetch_gbif_country_keys()` does one `rgbif::occ_search()` facet query per
-  requested root taxon (not per descendant) to keep this cheap, and is cached the same way.
+  requested root taxon (not per descendant) to keep this cheap, and is cached the same way. `country`
+  is validated as a 2-letter ISO 3166-1 alpha-2 code (regex `^[A-Za-z]{2}$`) up front -- a country
+  *name* like `"Australia"` used to pass straight through to `rgbif::occ_search()`, which doesn't
+  recognise it, silently returning a 0×0 facet result rather than erroring; accessing that result's
+  `$name` then triggered an "Unknown or uninitialised column" warning and a silently-empty reference
+  list rather than a clear error. `occ$facets$taxonKey$name` is also now guarded with
+  `"name" %in% names(...)` rather than just `!is.null(...)`, since an empty facet result is *not*
+  `NULL` (it's a valid 0-row/0-column tibble).
 - Final output columns are a fixed, renamed subset of the raw GBIF fields (see the function's
   `@return` doc), named to match [APCalign](https://traitecoevo.github.io/APCalign/)'s taxonomic
   resource tables wherever an equivalent concept exists there (`taxon_ID`, `accepted_name_usage_ID`,
@@ -141,11 +145,10 @@ Key design points worth knowing before touching this file:
 This is a cleaned-up port of an existing workflow (`AusInvertAlign`, from the sibling
 `ausinvertraits.addons` project) for aligning raw taxon-name lists to an accepted taxonomic resource,
 structured the way `traitecoevo/APCalign`'s exported `align_taxa()` wraps its own internal
-`match_taxa()`. The original, still-unwrapped ported script this was extracted from,
-`R/match_taxa_for_inverts_202500304-use this.R`, is deliberately left in place alongside it (see the
-"Bigger gotcha" above) — don't treat the two as redundant duplicates to reconcile; the old file is
-pending manual retirement by its owner. Note its literal filename contains a space and `-use this`
-suffix (multiple draft versions existed); quote it in shell commands.
+`match_taxa()`. The original, still-unwrapped ported script this was extracted from now lives at
+`ignore/match_taxa_for_inverts_202500304-use this.R` (see the "Gotcha (resolved)" note above) — kept
+for reference, not a redundant duplicate to reconcile. Note its literal filename contains a space and
+`-use this` suffix (multiple draft versions existed); quote it in shell commands.
 
 Call graph, mirroring APCalign's `align_taxa()` → `update_taxonomy()` → `create_taxonomic_update_lookup()`:
 
@@ -207,7 +210,7 @@ Architecture of the matching engine itself:
   `update_taxa()` needs to look a match back up in `resources`, and is threaded all the way from
   `match_taxa()` through `align_taxa()`'s default output (not just its `full = TRUE` one).
   `prepare_taxonomic_resources()` normalises both to character regardless of the source column's type
-  (`generate_taxonomic_reference_list()` gives integer IDs; real APC/AFD data gives URI/UUID strings).
+  (`generate_GBIF_taxonomic_reference_list()` gives integer IDs; real APC/AFD data gives URI/UUID strings).
 - `update_taxa(aligned_data, resources)` (`R/update_taxa.R`) is a **single, rank-agnostic lookup** --
   not five rank/dataset-specific functions like APCalign's `update_taxonomy_APC_genus()` /
   `update_taxonomy_APC_family()` / `update_taxonomy_APC_species_and_infraspecific_taxa()` / etc. It
@@ -233,6 +236,24 @@ Architecture of the matching engine itself:
     any row whose `canonical_name` is `NA` -- such a row could never be usefully matched against
     anyway, and leaving it in is a landmine for this exact `%in%` gotcha in every match block, not just
     the fuzzy ones.
+- `resources` has no default on `align_taxa()`/`update_taxa()`/`create_taxonomic_update_lookup()`,
+  and a common real mistake is passing the *raw* output of `generate_GBIF_taxonomic_reference_list()`
+  (a flat tibble) straight in, instead of first running it through `prepare_taxonomic_resources()`
+  (which builds the nested-by-rank list these functions actually expect). Left unchecked, that surfaced
+  as confusing internal errors deep inside `match_taxa()` (`Can't recycle input of size N to size M`,
+  "unknown or uninitialised column" warnings) rather than a clear message. All three now default
+  `resources = NULL` and error with a pointer to `prepare_taxonomic_resources()` if it's missing
+  entirely, then call `ensure_prepared_resources()` (`match_taxa_helpers.R`): if `resources` is a plain
+  data frame, it's run through `prepare_taxonomic_resources()` automatically (non-interactively) rather
+  than erroring -- a single reference table that's already fully formatted (e.g.
+  `generate_GBIF_taxonomic_reference_list()`'s own output) shouldn't require the extra call; a table
+  that still needs interactive column mapping surfaces the same `prepare_taxonomic_resources()`
+  "missing required column(s)... pass `interactive = TRUE`" error, just one call deep. If `resources`
+  is already a list, `ensure_prepared_resources()` only validates its shape (`validate_resources_shape()`,
+  checking for a `resources$species$accepted` element) rather than re-preparing it -- re-splitting an
+  already-split structure would be wrong. `create_taxonomic_update_lookup()` calls
+  `ensure_prepared_resources()` itself, once, before calling `align_taxa()`/`update_taxa()` in turn, so
+  a flat `resources` table it's given isn't prepared twice.
 - `prepare_taxonomic_resources()` renames raw column names on the way in using APCalign's own
   `column_rename` vector verbatim (`APCalign::load_taxonomic_resources()`'s, copied as-is) --
   `canonicalName`/`taxonRank`/`taxonomicStatus`/`scientificName`/etc. get renamed to
@@ -258,10 +279,10 @@ Architecture of the matching engine itself:
   for that order (or consults `user_responses$priority_order`), `interactive = FALSE` just uses
   supply-order with no prompt. A table missing no required columns is never interrupted, even in
   `interactive = TRUE` mode — only genuinely-missing fields get prompted for, so
-  `generate_taxonomic_reference_list()`'s output (already complete) sails through untouched. When a
+  `generate_GBIF_taxonomic_reference_list()`'s output (already complete) sails through untouched. When a
   table *is* missing something, it's first asked (once, `prompt_already_aligned()`) whether it's
   already fully aligned regardless (e.g. from an earlier `prepare_taxonomic_resources()`/
-  `generate_taxonomic_reference_list()` call, just under column names `column_rename` didn't
+  `generate_GBIF_taxonomic_reference_list()` call, just under column names `column_rename` didn't
   recognise) — note this can only ever end in either a clear, specific error naming what's still
   missing (since reaching this prompt at all means something genuinely is absent by name) or "No",
   proceeding into the normal per-field prompts; there's no silent-success branch, by construction, and

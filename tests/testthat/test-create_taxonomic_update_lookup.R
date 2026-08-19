@@ -46,3 +46,17 @@ test_that("create_taxonomic_update_lookup forwards fuzzy-matching arguments to a
   out_fuzzy <- create_taxonomic_update_lookup("Boronia serulata", resources, fuzzy_matches = TRUE)
   expect_equal(out_fuzzy$accepted_name, "Boronia serrulata")
 })
+
+test_that("create_taxonomic_update_lookup gives a clear, actionable error when resources is missing", {
+  expect_error(create_taxonomic_update_lookup("Boronia serrulata"), "prepare_taxonomic_resources")
+})
+
+test_that("create_taxonomic_update_lookup accepts a flat, already-formatted resources tibble directly", {
+  out_direct <- create_taxonomic_update_lookup("Boronia oldname Sm.", resources = sample_taxon_resources())
+  out_prepared <- create_taxonomic_update_lookup(
+    "Boronia oldname Sm.", resources = prepare_taxonomic_resources(sample_taxon_resources())
+  )
+
+  expect_equal(out_direct, out_prepared)
+  expect_equal(out_direct$accepted_name, "Boronia serrulata")
+})

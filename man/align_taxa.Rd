@@ -6,7 +6,7 @@
 \usage{
 align_taxa(
   original_name,
-  resources,
+  resources = NULL,
   identifier = NA_character_,
   fuzzy_abs_dist = 3,
   fuzzy_rel_dist = 0.2,
@@ -20,7 +20,11 @@ align_taxa(
 \item{original_name}{Character vector of raw taxon names to align.}
 
 \item{resources}{The nested list of reference tibbles produced by
-\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}.}
+\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}. A plain (already fully-formatted) taxonomic reference tibble is
+also accepted directly -- it's run through \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} automatically -- which
+saves the extra call for a single reference table that doesn't need any interactive column
+mapping; call \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} yourself first if it does (e.g. \code{interactive = TRUE})
+or if you're combining more than one reference table.}
 
 \item{identifier}{A dataset, location or other identifier associated with each name in
 \code{original_name} -- used only to disambiguate \verb{genus sp.}-style aligned names (see

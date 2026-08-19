@@ -5,7 +5,7 @@
 \title{Prepare a combined taxonomic reference table for name matching}
 \usage{
 prepare_taxonomic_resources(
-  taxon_resources,
+  taxon_resources = NULL,
   taxon_ranks_to_check = NULL,
   interactive = FALSE,
   user_responses = NULL
@@ -16,7 +16,7 @@ prepare_taxonomic_resources(
 one element per taxonomic reference table to combine. Each table needs (at least) the columns
 \code{canonical_name}, \code{scientific_name}, \code{taxon_rank}, \code{taxonomic_status}, \code{taxonomic_dataset},
 \code{genus}, \code{taxon_ID} and \code{accepted_name_usage_ID} -- the column names produced by
-\code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}}, and matching
+\code{\link[=generate_GBIF_taxonomic_reference_list]{generate_GBIF_taxonomic_reference_list()}}, and matching
 \href{https://traitecoevo.github.io/APCalign/}{APCalign}'s own naming convention exactly (see Details)
 so there's one canonical name field, not two. A row whose \code{canonical_name} is \code{NA} has no usable
 name and is dropped, with a warning (real data occasionally has this -- e.g. some GBIF records
@@ -35,7 +35,7 @@ species/infraspecific ranks) are retained in the returned \code{resources} for h
 missing -- letting a column be picked from that table, or (for some fields) a fixed value typed in
 or auto-generated -- rather than erroring. A table that's already complete is never interrupted;
 one that isn't is first asked, once, whether it's already fully aligned regardless (e.g. it came
-from an earlier \code{prepare_taxonomic_resources()}/\code{generate_taxonomic_reference_list()} call, just
+from an earlier \code{prepare_taxonomic_resources()}/\code{generate_GBIF_taxonomic_reference_list()} call, just
 under column names \code{interactive} didn't recognise) before being walked through the per-field
 prompts. Once every initially-supplied table is resolved, also asks whether there are any
 additional taxonomic reference(s) to include -- repeating for as many as the user has -- so a
@@ -63,7 +63,7 @@ Details).
 }
 \description{
 Takes one or more taxonomic reference tables (the user's own, one produced by
-\code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}}, or any mix of these) and turns them into the single nested
+\code{\link[=generate_GBIF_taxonomic_reference_list]{generate_GBIF_taxonomic_reference_list()}}, or any mix of these) and turns them into the single nested
 \code{resources} list that \code{\link[=align_taxa]{align_taxa()}}/\code{match_taxa()} expect: columns are normalised and any missing
 ones resolved (see \code{interactive}, below), tables are combined if more than one was supplied, and the
 result is split by rank (and, for species-level rows, by taxonomic status).

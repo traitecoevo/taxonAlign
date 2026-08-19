@@ -5,6 +5,10 @@ test_that("prepare_taxonomic_resources errors clearly when required columns are 
   )
 })
 
+test_that("prepare_taxonomic_resources gives a clear, actionable error when taxon_resources is missing", {
+  expect_error(prepare_taxonomic_resources(), "generate_GBIF_taxonomic_reference_list")
+})
+
 test_that("prepare_taxonomic_resources renames raw Darwin Core columns, exactly like APCalign::load_taxonomic_resources()", {
   raw <- dplyr::tibble(
     canonicalName = "Boronia serrulata", scientificName = "Boronia serrulata Sm.",

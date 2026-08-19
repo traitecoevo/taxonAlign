@@ -82,8 +82,31 @@ test_that("update_taxa reports 'unknown' status and NA names for a completely un
 })
 
 test_that("update_taxa errors clearly when aligned_data is missing required columns", {
+  minimal_valid_resources <- list(species = list(accepted = dplyr::tibble()))
   expect_error(
-    update_taxa(dplyr::tibble(aligned_name = "x"), resources = list()),
+    update_taxa(dplyr::tibble(aligned_name = "x"), resources = minimal_valid_resources),
     "missing required column"
+  )
+})
+
+test_that("update_taxa gives a clear, actionable error when resources is missing", {
+  expect_error(update_taxa(dplyr::tibble(aligned_name = "x")), "prepare_taxonomic_resources")
+})
+
+test_that("update_taxa accepts a flat, already-formatted resources tibble directly", {
+  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  aligned <- align_taxa("Boronia oldname Sm.", resources)
+
+  out_direct <- update_taxa(aligned, resources = sample_taxon_resources())
+  out_prepared <- update_taxa(aligned, resources = resources)
+
+  expect_equal(out_direct, out_prepared)
+  expect_equal(out_direct$accepted_name, "Boronia serrulata")
+})
+
+test_that("update_taxa gives a clear, actionable error when resources is a malformed list", {
+  expect_error(
+    update_taxa(dplyr::tibble(aligned_name = "x"), resources = list(foo = "bar")),
+    "prepare_taxonomic_resources"
   )
 })

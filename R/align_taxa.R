@@ -8,7 +8,11 @@
 #'
 #' @param original_name Character vector of raw taxon names to align.
 #' @param resources The nested list of reference tibbles produced by
-#'  [prepare_taxonomic_resources()].
+#'  [prepare_taxonomic_resources()]. A plain (already fully-formatted) taxonomic reference tibble is
+#'  also accepted directly -- it's run through [prepare_taxonomic_resources()] automatically -- which
+#'  saves the extra call for a single reference table that doesn't need any interactive column
+#'  mapping; call [prepare_taxonomic_resources()] yourself first if it does (e.g. `interactive = TRUE`)
+#'  or if you're combining more than one reference table.
 #' @param identifier A dataset, location or other identifier associated with each name in
 #'  `original_name` -- used only to disambiguate `genus sp.`-style aligned names (see
 #'  [prepare_taxonomic_resources()]/`match_taxa()`) as belonging to a specific dataset/location.
@@ -35,7 +39,7 @@
 #'
 #' @export
 align_taxa <- function(original_name,
-                        resources,
+                        resources = NULL,
                         identifier = NA_character_,
                         fuzzy_abs_dist = 3,
                         fuzzy_rel_dist = 0.2,
@@ -47,6 +51,16 @@ align_taxa <- function(original_name,
   if (missing(original_name) || length(original_name) == 0) {
     stop("`original_name` is required and must have length > 0.")
   }
+
+  if (is.null(resources)) {
+    stop(
+      "`resources` is required. Build one with `prepare_taxonomic_resources()`, using your own ",
+      "combined taxonomic reference table or one produced by `generate_GBIF_taxonomic_reference_list()`. ",
+      "See `?prepare_taxonomic_resources`.",
+      call. = FALSE
+    )
+  }
+  resources <- ensure_prepared_resources(resources)
 
   if (length(identifier) == 1) {
     identifier <- rep(identifier, length(original_name))
