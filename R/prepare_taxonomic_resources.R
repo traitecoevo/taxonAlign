@@ -231,9 +231,20 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
     stop("`taxon_resources` contains no rows at species/infraspecific rank -- nothing to align names against.")
   }
 
-  # for species, split further by taxonomic status
+  # for species, split further into "accepted" vs everything else -- not a literal split() by the raw
+  # taxonomic_status string. Real-world data uses many distinct non-accepted status labels (real APC
+  # data alone has ~18: "basionym", "nomenclatural synonym", "taxonomic synonym", "orthographic
+  # variant", "misapplied", "excluded", ...), so a literal split() only ever created a
+  # resources$species$synonym bucket for rows whose status was the exact string "synonym" -- every
+  # other non-accepted row (the vast majority of real APC synonym-like rows) ended up in its own
+  # orphaned resources$species$<status> list element that match_taxa() never references, silently
+  # invisible to every synonym-matching block. Each row's *own* taxonomic_status is preserved in the
+  # `synonym` bucket regardless (match_taxa() pulls it from the row, not from the bucket name), so
+  # output still correctly reports e.g. "basionym" rather than a lossy relabel to generic "synonym" --
+  # this only changes which bucket a row is a match *candidate* in.
   species_table <- resources$species
-  resources$species <- split(species_table, species_table$taxonomic_status)
+  species_status <- ifelse(species_table$taxonomic_status == "accepted", "accepted", "synonym")
+  resources$species <- split(species_table, species_status)
 
   # A status entirely absent from the input (e.g. a reference built from accepted names only, with no
   # synonyms at all -- a real, valid shape, not just a fixture gap) would otherwise leave

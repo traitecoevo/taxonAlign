@@ -81,8 +81,13 @@ called, which are safe to call directly offline). `test-prepare_taxonomic_resour
 covers `prepare_taxonomic_resources(interactive = TRUE)` by supplying `user_responses` throughout,
 exactly the way `traits.build` tests its own `metadata_add_traits()`/etc. — never a real interactive
 session (see Architecture #2 below). `test-match_taxa.R` covers the opt-in `hybrids`/
-`intergrades_affinis` matching (issue #9). 205 expectations across all test files, all passing as of
+`intergrades_affinis` matching (issue #9). 209 expectations across all test files, all passing as of
 the last run. (See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
+
+`test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
+download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
+against, so it's skipped (not counted in the 209) unless `APCalign` is installed, network access is
+available, and it isn't running under `R CMD check --as-cran` (see Architecture #2 below).
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -229,7 +234,7 @@ Architecture of the matching engine itself:
   carry over APCalign's `taxonomic_splits` disambiguation (APC-specific split history an arbitrary
   reference can't be expected to document) or its genus-substring-splicing trick for reconstructing a
   suggested name when only the genus changed (doesn't obviously generalize across ranks).
-- **Three real bugs found by testing against real, messy data** (not just the hand-built fixture) that
+- **Four real bugs found by testing against real, messy data** (not just the hand-built fixture) that
   are worth knowing about if you touch this code again:
   - `fuzzy_match()` (`match_taxa_helpers.R`) used to crash with "missing value where TRUE/FALSE
     needed" whenever a reference list's `accepted_list` argument contained an `NA` (real GBIF data with
@@ -261,6 +266,20 @@ Architecture of the matching engine itself:
     `ensure_prepared_resources()`. Fixed by backfilling any status entirely absent after the split with
     a 0-row tibble sharing the same columns, so `resources$species$accepted`/`synonym` are always
     structurally complete.
+  - Discovered writing the issue #10 APCalign-equivalence test, against the *full* real APC data (not
+    just the accepted-only slice above): `split(species_table, species_table$taxonomic_status)` splits
+    into a separate list element for every *literal* status string, but real APC synonym-like rows use
+    ~18 distinct non-"accepted" labels ("basionym", "nomenclatural synonym", "taxonomic synonym",
+    "orthographic variant", "misapplied", "excluded", ...) -- essentially never the literal word
+    "synonym". So `resources$species$synonym` (the only non-accepted bucket `match_taxa()` ever
+    references) ended up either empty or covering only a tiny sliver of real synonym rows, and the vast
+    majority of real APC synonyms were silently invisible to every synonym-matching block -- not an
+    error, just silently wrong output (e.g. `align_taxa("Genoplesium insigne", ...)` fuzzy-matched a
+    coincidentally-similar but wrong genus instead of finding the exact, if non-"accepted"-labelled,
+    synonym match APCalign itself found). Fixed by bucketing species into exactly `"accepted"` vs
+    everything else (not a literal `split()` by the status string), while still preserving each row's
+    real `taxonomic_status` value inside the `synonym` bucket (`match_taxa()` already pulls
+    `taxonomic_status` from the row itself, not the bucket name, so output fidelity is unaffected).
 - `resources` has no default on `align_taxa()`/`update_taxa()`/`create_taxonomic_update_lookup()`,
   and a common real mistake is passing the *raw* output of `generate_GBIF_taxonomic_reference_list()`
   (a flat tibble) straight in, instead of first running it through `prepare_taxonomic_resources()`
@@ -359,9 +378,17 @@ Architecture of the matching engine itself:
   same order names are actually matched in, letting a user sort output by `alignment_code` to see
   matches in execution order and spot mismatches by rank/pattern.
 
-Not yet implemented (deliberately deferred, tracked as GitHub issues):
-- A test suite asserting that, given the *same* APC data source, taxonAlign's `align_taxa()` produces
-  the same output as APCalign's (issue #10) -- meaningful now that issue #9's edge cases are implemented.
+- **Equivalence with APCalign, given the same real APC data source, is now covered** (issue #10) by
+  `tests/testthat/test-apc_equivalence.R` -- skipped unless `APCalign` is installed and network access
+  is available (`testthat::skip_if_not_installed()`/`skip_if_offline()`/`skip_on_cran()`), since it
+  loads a real, live `APCalign::load_taxonomic_resources()` snapshot rather than a fixture. Compares
+  `align_taxa()`'s `aligned_name`/`taxon_rank` directly against `APCalign::align_taxa()`'s (these agree
+  on every name regardless of rank, since both share the same matching-engine design lineage), and
+  `create_taxonomic_update_lookup()`'s `accepted_name` against `APCalign`'s own (agreeing everywhere
+  except genus/family rank, where taxonAlign's rank-agnostic `update_taxa()` legitimately resolves
+  further than APCalign's rank-specific update functions do -- a documented design difference, not a
+  discrepancy). Uses the same curated name list APCalign's own test suite checks
+  "consistency with previous runs" against.
 
 ### Vignette and data tying the two together
 
