@@ -11,10 +11,17 @@
 #' reference table the user supplies -- at whatever set of taxonomic ranks it happens to contain, not
 #' just genus/species/family.
 #'
-#' @param taxon_resources A tibble with (at least) the columns `taxon_name`, `scientific_name`,
-#'  `canonical_name`, `taxon_rank`, `taxonomic_status`, `taxonomic_dataset` and `genus` -- the column
-#'  names produced by [generate_taxonomic_reference_list()]. `canonical_name` may be `NA` (it falls
-#'  back to `taxon_name`).
+#' @param taxon_resources A tibble with (at least) the columns `scientific_name`, `taxon_rank`,
+#'  `taxonomic_status`, `taxonomic_dataset`, `genus`, `taxon_ID` and `accepted_name_usage_ID` -- the
+#'  column names produced by [generate_taxonomic_reference_list()]. `canonical_name` (if present) may
+#'  be `NA`, in which case it falls back to `taxon_name` (if present); both are optional and may be
+#'  entirely absent (as with [generate_taxonomic_reference_list()]'s output, which has no `taxon_name`
+#'  column and a `canonical_name` that's always complete). A row where both are `NA` has no usable
+#'  name and is dropped, with a warning (real data occasionally has this -- e.g. some GBIF records
+#'  genuinely lack a canonical name). `accepted_name_usage_ID` must be
+#'  self-referential (equal to `taxon_ID`) for already-accepted rows, not `NA` -- this is what lets
+#'  `update_taxa()` resolve a matched name forward to its current accepted name regardless of whether
+#'  it matched an accepted name or a synonym.
 #' @param taxon_ranks_to_check Optional character vector restricting which taxonomic ranks (besides
 #'  species/infraspecific ranks) are retained in the returned `resources` for higher-rank matching
 #'  (e.g. `c("genus", "family")`). Defaults to `NULL`, which keeps every rank present in
@@ -36,7 +43,10 @@
 #' @export
 prepare_taxonomic_resources <- function(taxon_resources, taxon_ranks_to_check = NULL) {
 
-  required_cols <- c("taxon_name", "scientific_name", "taxon_rank", "taxonomic_status", "taxonomic_dataset", "genus")
+  required_cols <- c(
+    "scientific_name", "taxon_rank", "taxonomic_status", "taxonomic_dataset", "genus",
+    "taxon_ID", "accepted_name_usage_ID"
+  )
   missing_cols <- setdiff(required_cols, names(taxon_resources))
   if (length(missing_cols) > 0) {
     stop(
@@ -46,8 +56,15 @@ prepare_taxonomic_resources <- function(taxon_resources, taxon_ranks_to_check = 
     )
   }
 
+  # `canonical_name`/`taxon_name` are both optional: `canonical_name` falls back to `taxon_name` when
+  # NA, and `taxon_name` itself is optional too (generate_taxonomic_reference_list() doesn't produce
+  # one -- its `canonical_name` is always complete, so there's nothing to fall back to). Either or both
+  # may be entirely absent from `taxon_resources`.
   if (!"canonical_name" %in% names(taxon_resources)) {
     taxon_resources$canonical_name <- NA_character_
+  }
+  if (!"taxon_name" %in% names(taxon_resources)) {
+    taxon_resources$taxon_name <- NA_character_
   }
 
   # dummy placeholder for blank cells -- fuzzy matching doesn't cope with blank/duplicate cells
@@ -55,7 +72,35 @@ prepare_taxonomic_resources <- function(taxon_resources, taxon_ranks_to_check = 
 
   taxon_resources <- taxon_resources |>
     dplyr::mutate(
-      canonical_name = ifelse(is.na(canonical_name), taxon_name, canonical_name),
+      # normalise to character regardless of the source column's type (our own
+      # generate_taxonomic_reference_list() gives integer taxon_IDs; real APC/AFD data gives URI/UUID
+      # strings) so downstream code never has to worry about integer-vs-character mismatches
+      taxon_ID = as.character(taxon_ID),
+      accepted_name_usage_ID = as.character(accepted_name_usage_ID),
+      canonical_name = ifelse(is.na(canonical_name), taxon_name, canonical_name)
+    )
+
+  # A row with no usable name at all (both canonical_name and its taxon_name fallback are NA -- real
+  # data can have this, e.g. some GBIF records genuinely lack a canonicalName) can never be matched
+  # *against* anyway, so it's dropped here rather than kept around as a resource-table row. This isn't
+  # just tidying: leaving it in is an active hazard downstream, because `NA %in% x` is TRUE whenever
+  # `x` itself contains an NA -- so a fuzzy_match() call that legitimately finds no match (returning NA)
+  # would otherwise spuriously "match" this row's NA canonical_name instead of correctly matching
+  # nothing, in every match block that does `i <- some_value %in% resources$...$canonical_name`-style
+  # lookups.
+  n_before <- nrow(taxon_resources)
+  taxon_resources <- taxon_resources |> dplyr::filter(!is.na(canonical_name))
+  n_dropped <- n_before - nrow(taxon_resources)
+  if (n_dropped > 0) {
+    warning(
+      n_dropped, " row(s) in `taxon_resources` have no usable name (canonical_name and taxon_name are ",
+      "both NA) and were dropped -- they could never be matched against anyway.",
+      call. = FALSE
+    )
+  }
+
+  taxon_resources <- taxon_resources |>
+    dplyr::mutate(
       word_one = extract_genus(canonical_name),
       taxon_rank = APCalign::standardise_taxon_rank(taxon_rank),
       taxon_rank2 = ifelse(taxon_rank %in% c("subspecies", "species", "form", "variety"), "species", taxon_rank),

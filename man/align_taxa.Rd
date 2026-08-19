@@ -47,8 +47,11 @@ key output columns.}
 \value{
 A tibble with one row per element of \code{original_name} (preserving its length, order and any
 duplicates/\code{NA}s), with columns \code{original_name}, \code{cleaned_name}, \code{aligned_name},
-\code{taxonomic_dataset}, \code{taxon_rank}, \code{taxonomic_status}, \code{aligned_reason}, \code{alignment_code} and
-\code{identifier} (or, if \code{full = TRUE}, every column \code{match_taxa()} computes along the way).
+\code{taxonomic_dataset}, \code{taxon_rank}, \code{taxonomic_status}, \code{taxon_ID}, \code{accepted_name_usage_ID},
+\code{aligned_reason}, \code{alignment_code} and \code{identifier} (or, if \code{full = TRUE}, every column
+\code{match_taxa()} computes along the way). \code{taxon_ID}/\code{accepted_name_usage_ID} identify which row of
+\code{resources} a name matched to, and are what \code{update_taxa()} uses to resolve a matched synonym
+forward to its current accepted name.
 }
 \description{
 Attempts to match each name in \code{original_name} to a name in \code{resources} (produced by

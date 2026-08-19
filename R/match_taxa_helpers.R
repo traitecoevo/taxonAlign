@@ -45,6 +45,14 @@ fuzzy_match <- function(txt, accepted_list,
   if (!epithet_letters %in% c(1,2)) {
     stop("Epithet must be 1 or 2.")
     }
+
+  ## a query string that's itself NA can't usefully match anything; and real-world reference
+  ## lists occasionally contain NA canonical names (e.g. doubtful/unranked GBIF records) -- left
+  ## in, these silently turn `min(distance_c)` into NA further down, which then blows up the
+  ## `if (!(min_dist_abs_c <= ...))` check below with "missing value where TRUE/FALSE needed"
+  if (is.na(txt)) return(NA)
+  accepted_list <- accepted_list[!is.na(accepted_list)]
+
   ## identify number of words in the text to match
   words_in_text <- 1 + stringr::str_count(txt," ")
   

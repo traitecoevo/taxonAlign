@@ -7,10 +7,17 @@
 prepare_taxonomic_resources(taxon_resources, taxon_ranks_to_check = NULL)
 }
 \arguments{
-\item{taxon_resources}{A tibble with (at least) the columns \code{taxon_name}, \code{scientific_name},
-\code{canonical_name}, \code{taxon_rank}, \code{taxonomic_status}, \code{taxonomic_dataset} and \code{genus} -- the column
-names produced by \code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}}. \code{canonical_name} may be \code{NA} (it falls
-back to \code{taxon_name}).}
+\item{taxon_resources}{A tibble with (at least) the columns \code{scientific_name}, \code{taxon_rank},
+\code{taxonomic_status}, \code{taxonomic_dataset}, \code{genus}, \code{taxon_ID} and \code{accepted_name_usage_ID} -- the
+column names produced by \code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}}. \code{canonical_name} (if present) may
+be \code{NA}, in which case it falls back to \code{taxon_name} (if present); both are optional and may be
+entirely absent (as with \code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}}'s output, which has no \code{taxon_name}
+column and a \code{canonical_name} that's always complete). A row where both are \code{NA} has no usable
+name and is dropped, with a warning (real data occasionally has this -- e.g. some GBIF records
+genuinely lack a canonical name). \code{accepted_name_usage_ID} must be
+self-referential (equal to \code{taxon_ID}) for already-accepted rows, not \code{NA} -- this is what lets
+\code{update_taxa()} resolve a matched name forward to its current accepted name regardless of whether
+it matched an accepted name or a synonym.}
 
 \item{taxon_ranks_to_check}{Optional character vector restricting which taxonomic ranks (besides
 species/infraspecific ranks) are retained in the returned \code{resources} for higher-rank matching

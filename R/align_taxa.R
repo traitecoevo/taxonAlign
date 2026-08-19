@@ -27,8 +27,11 @@
 #'
 #' @return A tibble with one row per element of `original_name` (preserving its length, order and any
 #'  duplicates/`NA`s), with columns `original_name`, `cleaned_name`, `aligned_name`,
-#'  `taxonomic_dataset`, `taxon_rank`, `taxonomic_status`, `aligned_reason`, `alignment_code` and
-#'  `identifier` (or, if `full = TRUE`, every column `match_taxa()` computes along the way).
+#'  `taxonomic_dataset`, `taxon_rank`, `taxonomic_status`, `taxon_ID`, `accepted_name_usage_ID`,
+#'  `aligned_reason`, `alignment_code` and `identifier` (or, if `full = TRUE`, every column
+#'  `match_taxa()` computes along the way). `taxon_ID`/`accepted_name_usage_ID` identify which row of
+#'  `resources` a name matched to, and are what `update_taxa()` uses to resolve a matched synonym
+#'  forward to its current accepted name.
 #'
 #' @export
 align_taxa <- function(original_name,
@@ -82,6 +85,8 @@ align_taxa <- function(original_name,
       taxonomic_dataset = NA_character_,
       taxonomic_status = NA_character_,
       taxon_rank = NA_character_,
+      taxon_ID = NA_character_,
+      accepted_name_usage_ID = NA_character_,
       alignment_code = NA_character_,
       checked = FALSE,
       known = FALSE
@@ -113,7 +118,7 @@ align_taxa <- function(original_name,
     out <- out |>
       dplyr::select(
         original_name, cleaned_name, aligned_name, taxonomic_dataset, taxon_rank,
-        taxonomic_status, aligned_reason, alignment_code, identifier
+        taxonomic_status, taxon_ID, accepted_name_usage_ID, aligned_reason, alignment_code, identifier
       )
   }
 

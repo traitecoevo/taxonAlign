@@ -16,15 +16,19 @@ differences: (1) taxonomic resources are supplied by the user (their own table, 
 `generate_taxonomic_reference_list()`), not a fixed APC/APNI download; (2) the APC-specific "splits"
 disambiguation logic in APCalign's `update_taxonomy` won't carry over to taxonAlign's `update_taxa`;
 (3) matching/aligning supports *all* taxonomic ranks present in the user's resources, not just
-genus/species/family. `align_taxa()`/`prepare_taxonomic_resources()`/`match_taxa()` are now real,
-tested, callable functions (see Architecture #2); `update_taxa()`/`create_taxonomic_update_lookup()`
-and hybrid/graded-name matching are not yet started.
+genus/species/family. All four core functions now exist and are tested (see Architecture #2):
+`prepare_taxonomic_resources()`, `align_taxa()`, `update_taxa()` and `create_taxonomic_update_lookup()`
+are exported; `match_taxa()` stays `@noRd`, matching how APCalign itself keeps its own internal
+`match_taxa()` unexported. Hybrid/graded-name matching, and an interactive column-mapping wrapper for
+a user's own reference list, are not yet started (tracked as issues #9 and #8).
 
 ## Commands
 
 This is a standard R package (DESCRIPTION/NAMESPACE, `Roxygen: list(markdown = TRUE)`). A `tests/`
 directory now exists (testthat 3rd edition, see Testing below), covering
-`generate_taxonomic_reference_list.R`, `align_taxa()`/`match_taxa()` and `prepare_taxonomic_resources()`.
+`generate_taxonomic_reference_list.R` and the whole matching/alignment engine (`prepare_taxonomic_resources()`,
+`align_taxa()`, `match_taxa()`, `update_taxa()`, `create_taxonomic_update_lookup()`, and the vendored
+helpers in `match_taxa_helpers.R`).
 
 ```r
 devtools::load_all()       # load the package for interactive development
@@ -65,13 +69,17 @@ and its internal helpers (`resolve_gbif_taxon()`, `fetch_gbif_taxon_tree()`, `fe
 `testthat::local_mocked_bindings(..., .package = "rgbif")`, with fixture builders in
 `tests/testthat/helper-gbif-fixtures.R`.
 
-`tests/testthat/test-prepare_taxonomic_resources.R` and `test-align_taxa.R` cover the matching engine
-end to end against a small hand-built combined reference table (`sample_taxon_resources()` in
-`tests/testthat/helper-align-taxa-fixtures.R`) spanning species/genus/family/an extra non-hardcoded
-rank ("tribe")/subgenus — no network, no `APCalign`-package-data download (only its pure string
+`tests/testthat/test-prepare_taxonomic_resources.R`, `test-align_taxa.R`, `test-update_taxa.R`,
+`test-create_taxonomic_update_lookup.R` and `test-match_taxa_helpers.R` cover the matching/alignment
+engine end to end against a small hand-built combined reference table (`sample_taxon_resources()` in
+`tests/testthat/helper-align-taxa-fixtures.R`) spanning species (accepted/synonym), genus
+(accepted/synonym), family, order (accepted/synonym — a *second* higher rank with an outdated name,
+proving `update_taxa()`'s lookup isn't secretly species/genus-specific), an extra non-hardcoded rank
+("tribe"), and a subgenus — no network, no `APCalign`-package-data download (only its pure string
 helpers, `standardise_names()`/`strip_names()`/`strip_names_extra()`/`standardise_taxon_rank()`, are
-called, which are safe to call directly offline). 90 expectations across all three test files, all
-passing as of the last run.
+called, which are safe to call directly offline). 149 expectations across all test files, all passing
+as of the last run. (See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to
+dodge.)
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -124,7 +132,7 @@ Key design points worth knowing before touching this file:
   output rather than being included. Flagged but not fixed (deliberately) — pin down GBIF's exact
   ordinal placement for the missing ranks before adding them, rather than guessing.
 
-### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/match_taxa_helpers.R` (active; `align_taxa()`/`prepare_taxonomic_resources()` exported, `match_taxa()` and helpers `@noRd`)
+### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/update_taxa.R`, `R/create_taxonomic_update_lookup.R`, `R/match_taxa_helpers.R` (active; everything but `match_taxa()` and the helpers is exported)
 
 This is a cleaned-up port of an existing workflow (`AusInvertAlign`, from the sibling
 `ausinvertraits.addons` project) for aligning raw taxon-name lists to an accepted taxonomic resource,
@@ -135,18 +143,22 @@ structured the way `traitecoevo/APCalign`'s exported `align_taxa()` wraps its ow
 pending manual retirement by its owner. Note its literal filename contains a space and `-use this`
 suffix (multiple draft versions existed); quote it in shell commands.
 
-Call graph for this phase (`update_taxa()`/`create_taxonomic_update_lookup()` don't exist yet — see
-Not yet implemented, below):
+Call graph, mirroring APCalign's `align_taxa()` → `update_taxonomy()` → `create_taxonomic_update_lookup()`:
 
 ```
-align_taxa(original_name, resources, ...)          # exported
-  -> match_taxa(taxa, resources, ...)                # @noRd, the 20+-block engine
-  -> flattens taxa$checked + taxa$tocheck into one tibble, left-joined back onto the input vector
+create_taxonomic_update_lookup(original_name, resources, ...)   # exported, one-call convenience
+  -> align_taxa(original_name, resources, ..., full = TRUE)        # exported
+       -> match_taxa(taxa, resources, ...)                          # @noRd, the 20+-block engine
+       -> flattens taxa$checked + taxa$tocheck into one tibble, left-joined back onto the input vector
+  -> update_taxa(aligned_data, resources)                          # exported
+       -> resolves a matched (possibly synonym) name forward to its current accepted name
 ```
 
-with `resources` built ahead of time by `prepare_taxonomic_resources(taxon_resources, ...)` (exported)
-— either by the user directly, or by whatever higher-level wrapper eventually prompts users for their
-own reference list (see Not yet implemented).
+`align_taxa()`/`update_taxa()` are also both usable standalone (you don't have to go through
+`create_taxonomic_update_lookup()`). `resources` is built ahead of time by
+`prepare_taxonomic_resources(taxon_resources, ...)` (exported) — either by the user directly, or by
+whatever higher-level wrapper eventually prompts users for their own reference list (see Not yet
+implemented).
 
 Architecture of the matching engine itself:
 - `match_taxa(taxa, resources, ...)` (`R/match_taxa.R`) is the core function. `taxa` is a list with two
@@ -187,17 +199,43 @@ Architecture of the matching engine itself:
   can still collide (e.g. `"Boronieae"` fuzzy-matches `"Boronia"` at distance 2) — pick fixture ranks
   whose names don't share a first letter with anything else in the same fixture, or the fuzzy pass can
   resolve a row before the intended, more specific block gets a chance to.
+- Every match block also captures the matched resource row's `taxon_ID`/`accepted_name_usage_ID` (not
+  just `aligned_name`/`taxon_rank`/`taxonomic_status`/`taxonomic_dataset`) -- this is what
+  `update_taxa()` needs to look a match back up in `resources`, and is threaded all the way from
+  `match_taxa()` through `align_taxa()`'s default output (not just its `full = TRUE` one).
+  `prepare_taxonomic_resources()` normalises both to character regardless of the source column's type
+  (`generate_taxonomic_reference_list()` gives integer IDs; real APC/AFD data gives URI/UUID strings).
+- `update_taxa(aligned_data, resources)` (`R/update_taxa.R`) is a **single, rank-agnostic lookup** --
+  not five rank/dataset-specific functions like APCalign's `update_taxonomy_APC_genus()` /
+  `update_taxonomy_APC_family()` / `update_taxonomy_APC_species_and_infraspecific_taxa()` / etc. It
+  flattens every rank/status sublist in `resources` into one combined table keyed by `taxon_ID`, then
+  resolves each row by looking up its `accepted_name_usage_ID` against that table -- the exact same
+  code path for a species-rank synonym, a genus-rank synonym, or any other rank. Deliberately doesn't
+  carry over APCalign's `taxonomic_splits` disambiguation (APC-specific split history an arbitrary
+  reference can't be expected to document) or its genus-substring-splicing trick for reconstructing a
+  suggested name when only the genus changed (doesn't obviously generalize across ranks).
+- **Two real bugs found by testing against real, messy data** (not just the hand-built fixture) that
+  are worth knowing about if you touch this code again:
+  - `fuzzy_match()` (`match_taxa_helpers.R`) used to crash with "missing value where TRUE/FALSE
+    needed" whenever a reference list's `accepted_list` argument contained an `NA` (real GBIF data with
+    doubtful/unranked records can have this) -- `min()` over a distance vector containing `NA` returns
+    `NA`, which then blew up the tolerance check. Fixed by stripping `NA`s from `accepted_list` (and
+    short-circuiting on an `NA` query string) at the top of the function.
+  - A subtler one, in `match_taxa.R`'s `i <- some_value %in% resources$...$column` pattern (used
+    throughout, especially the fuzzy blocks): **`NA %in% x` is `TRUE` in R whenever `x` itself contains
+    an `NA`** -- so a `fuzzy_match()` call that correctly found no match (returning `NA`) would
+    spuriously "match" whichever resource row happened to have an `NA` `canonical_name`, rather than
+    correctly matching nothing. Real GBIF data occasionally has an `NA` `canonicalName`. Fixed at the
+    source rather than at each call site: `prepare_taxonomic_resources()` now drops (with a warning)
+    any row where `canonical_name` and its `taxon_name` fallback are *both* `NA` -- such a row could
+    never be usefully matched against anyway, and leaving it in is a landmine for this exact `%in%`
+    gotcha in every match block, not just the fuzzy ones.
 
 Not yet implemented (deliberately deferred, tracked as GitHub issues):
-- `update_taxa()`/`create_taxonomic_update_lookup()` — the post-alignment "resolve a matched synonym
-  forward to its current accepted name" step and the top-level one-call pipeline wrapping
-  `align_taxa()` + `update_taxa()`, mirroring APCalign's `update_taxonomy()`/
-  `create_taxonomic_update_lookup()`. taxonAlign's version will **not** carry over the
-  `taxonomic_splits` disambiguation branching APCalign's `update_taxonomy_APC_species_and_infraspecific_taxa()`
-  uses (a synonym → multiple-current-species disambiguation unique to APC's documented split history).
 - A higher-level wrapper that prompts a user to read in their own taxon list and interactively map its
-  columns onto the names `prepare_taxonomic_resources()` expects (`taxon_name`, `scientific_name`,
-  `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`, `genus`) — sketched in comments in
+  columns onto the names `prepare_taxonomic_resources()` expects (`scientific_name`, `taxon_rank`,
+  `taxonomic_status`, `taxonomic_dataset`, `genus`, `taxon_ID`, `accepted_name_usage_ID`, with
+  `canonical_name`/`taxon_name` optional) — sketched in comments in
   `R/match_taxa_for_inverts_202500304-use this.R` but not built; `prepare_taxonomic_resources()` today
   just errors if a required column is missing.
 - Hybrid names, graded/"affinis" names (`aff.`/`cf.`), and indecision/intergrade names — real
