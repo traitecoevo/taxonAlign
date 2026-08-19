@@ -14,25 +14,37 @@
 # (every one of those rows sat in its own orphaned resources$species$<status> list element that
 # match_taxa() never references). Fixed by bucketing on "accepted" vs "not accepted" rather than the
 # literal status string -- see the fix and its comment in prepare_taxonomic_resources.R.
+#
+# Also confirmed, while adding hybrids/intergrades_affinis matching (issue #9), that real APC data can
+# still have the same lookup key repeat under different taxonomic_status labels ("Genoplesium insigne"
+# above is one such case) -- match_taxa()'s first-hit match() semantics need the row order within each
+# resources$<rank>$<status> table to prefer the most reliable status when that happens, which is what
+# taxonAlign_taxonomic_status_priority (prepare_taxonomic_resources.R) now sorts by, ported and
+# extended from APCalign's own relevel_taxonomic_status_preferred_order().
 
-test_that("taxonAlign aligns/updates a curated set of real names the same way APCalign does", {
-  testthat::skip_if_not_installed("APCalign")
-  testthat::skip_if_offline()
-  testthat::skip_on_cran()
-
+# Loads a real, live APC snapshot and combines it into the flat table prepare_taxonomic_resources()
+# expects -- shared by both tests below so each only has to build it once. family_accepted is missing
+# a taxonomic_dataset column (unlike every other APC table here), so it's backfilled with "APC" (the
+# value every other APC table already uses) to match, rather than being left NA by dplyr::bind_rows().
+load_apc_resources_for_test <- function() {
   suppressMessages(APC <- APCalign::load_taxonomic_resources())
-
-  # Combine APC's accepted + synonym tables at species, genus and family rank into one flat table --
-  # family_accepted is missing a taxonomic_dataset column (unlike every other APC table here), so it's
-  # backfilled with "APC" (the value every other APC table already uses) to match, rather than being
-  # left NA by dplyr::bind_rows().
   combined <- dplyr::bind_rows(
     APC$APC_accepted, APC$APC_synonyms,
     APC$genera_accepted, APC$genera_synonym,
     APC$family_accepted |> dplyr::mutate(taxonomic_dataset = "APC"),
     APC$family_synonym
   )
-  resources <- prepare_taxonomic_resources(combined)
+  list(APC = APC, resources = prepare_taxonomic_resources(combined))
+}
+
+test_that("taxonAlign aligns/updates a curated set of real names the same way APCalign does", {
+  testthat::skip_if_not_installed("APCalign")
+  testthat::skip_if_offline()
+  testthat::skip_on_cran()
+
+  loaded <- load_apc_resources_for_test()
+  APC <- loaded$APC
+  resources <- loaded$resources
 
   # The same names APCalign's own test suite uses to check "consistency with previous runs"
   # (traitecoevo/APCalign tests/testthat/test-operation_outputs.R) -- deliberately spans exact
@@ -78,4 +90,41 @@ test_that("taxonAlign aligns/updates a curated set of real names the same way AP
   expect_equal(
     updated_taxonAlign$accepted_name[comparable_rank], updated_APCalign$accepted_name[comparable_rank]
   )
+})
+
+test_that("taxonAlign matches oddball/edge-case real names the same way APCalign does", {
+  testthat::skip_if_not_installed("APCalign")
+  testthat::skip_if_offline()
+  testthat::skip_on_cran()
+
+  loaded <- load_apc_resources_for_test()
+  APC <- loaded$APC
+  resources <- loaded$resources
+
+  # A deliberately awkward set, exercising every opt-in match family issue #9 added plus a few
+  # messy-real-world-data shapes -- APCalign's align_taxa() has no hybrids/intergrades_affinis toggle
+  # (it always attempts these match families), so taxonAlign is called with both turned on to compare
+  # fairly. Fabricated genus/epithet combinations (rather than real misapplied/uncertain APC names) are
+  # used for the hybrid/intergrade/indecision/affinis cases specifically so neither package can
+  # coincidentally species-level-fuzzy-match them to an unrelated real species -- that would make the
+  # comparison a coin flip on both packages' fuzzy tie-breaking, not a real test of whether the same
+  # *pattern* (hybrid marker, "--", "/", "aff."/"cf.") is detected the same way.
+  taxa <- c(
+    "Eucalyptus camaldulensus",              # genuine misspelling -> species-level fuzzy match
+    "Eucalyptus sp.",                         # genus-only fallback
+    "Acacia x fakehybridus",                  # fabricated hybrid name
+    "Banksia cf. serrata",                    # graded/"cf." id of a real, unambiguous species
+    "Acacia aff. completelyfakeepithet",      # fabricated graded/"affinis" id
+    "Acacia -- Acacia aneura",                # intergrade between two named taxa
+    "Acacia aneura/paraneura",                # collector's indecision between two taxa
+    "  Eucalyptus   camaldulensis  ",         # messy extra whitespace
+    "Acacia aneura var. aneura (widespread)"  # valid trinomial plus trailing free-text notes
+  )
+
+  out_taxonAlign <- align_taxa(taxa, resources, hybrids = TRUE, intergrades_affinis = TRUE)
+  out_APCalign <- suppressMessages(APCalign::align_taxa(taxa, resources = APC, quiet = TRUE))
+
+  expect_equal(out_taxonAlign$original_name, out_APCalign$original_name)
+  expect_equal(out_taxonAlign$aligned_name, out_APCalign$aligned_name)
+  expect_equal(out_taxonAlign$taxon_rank, out_APCalign$taxon_rank)
 })

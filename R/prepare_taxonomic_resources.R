@@ -31,6 +31,47 @@ taxonAlign_required_cols <- c(
   "genus", "taxon_ID", "accepted_name_usage_ID"
 )
 
+# Priority order used to disambiguate when the same lookup key (canonical_name, scientific_name,
+# binomial, trinomial, ...) appears more than once with a different taxonomic_status -- match_taxa()'s
+# exact-match blocks use `match()` (first-hit semantics), so taxon_resources is sorted by this priority
+# before any rank/status splitting happens (see prepare_taxonomic_resources() below), ensuring the
+# highest-priority (most reliable) row wins regardless of the order the data happened to arrive in.
+#
+# Ported and extended from APCalign's own `relevel_taxonomic_status_preferred_order()`
+# (`R/update_taxonomy.R`) -- the same disambiguation APCalign applies internally when resolving a
+# genus/family-level match, generalised here to every rank/status lookup taxonAlign performs (not just
+# genus/family). Extended with two terms GBIF's vocabulary uses that APC/APNI's doesn't: "homotypic
+# synonym" (shares the accepted name's type specimen -- as reliable as a nomenclatural/basionym
+# relationship, so placed right after the generic "taxonomic synonym") and "heterotypic synonym" (a
+# different type judged to represent the same taxon -- placed right after "basionym", before the
+# narrower "nomenclatural synonym"/"isonym" terms). A status not in this vector sorts after every known
+# term (via `factor()`'s NA-for-unmatched-level behaviour, which `dplyr::arrange()` places last by
+# default) rather than being dropped or erroring -- extend this vector as further status vocabularies
+# turn up, rather than guessing at their rank.
+taxonAlign_taxonomic_status_priority <- c(
+  "accepted",
+  "taxonomic synonym",
+  "homotypic synonym",
+  "basionym",
+  "heterotypic synonym",
+  "nomenclatural synonym",
+  "isonym",
+  "orthographic variant",
+  "common name",
+  "doubtful taxonomic synonym",
+  "replaced synonym",
+  "doubtful pro parte taxonomic synonym",
+  "pro parte nomenclatural synonym",
+  "pro parte taxonomic synonym",
+  "pro parte misapplied",
+  "misapplied",
+  "unplaced",
+  "excluded",
+  "doubtful misapplied",
+  "doubtful pro parte misapplied",
+  "included"
+)
+
 #' Prepare a combined taxonomic reference table for name matching
 #'
 #' Takes one or more taxonomic reference tables (the user's own, one produced by
@@ -202,6 +243,16 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
       call. = FALSE
     )
   }
+
+  # Sort by taxonomic_status priority (see taxonAlign_taxonomic_status_priority above) so that, wherever
+  # the same lookup key repeats under different statuses, the most reliable row is the one every
+  # first-hit `match()`-based exact-match block finds, and the one the binomial/trinomial dedup below
+  # keeps (it discards later duplicates, so ordering matters there too). This is a stable sort, so it
+  # composes correctly with priority *between* multiple combined taxon_resources tables (row-bind
+  # order, established above): rows tie on taxonomic_status keep the relative order they already had,
+  # so a higher-priority *dataset*'s "accepted" row still comes before a lower-priority dataset's.
+  taxon_resources <- taxon_resources |>
+    dplyr::arrange(factor(taxonomic_status, levels = taxonAlign_taxonomic_status_priority))
 
   taxon_resources <- taxon_resources |>
     dplyr::mutate(
