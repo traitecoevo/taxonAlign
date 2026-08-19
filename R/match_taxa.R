@@ -1,3 +1,119 @@
+# Shared implementation for the hybrid/intergrade/indecision/affinis match blocks in match_taxa()
+# below. Real APCalign's internal match_taxa() implements these as ~20 separate, near-identical
+# blocks (5 sub-blocks each for 4 pattern families: try an exact match against accepted genera, a
+# fuzzy match against accepted genera, a fuzzy match against synonym genera, an APNI-only variant,
+# and an "unknown genus" fallback) because APC/APNI's resources keep accepted/synonym/APNI genera in
+# three separate tables. taxonAlign's `resources$genus` is already one combined table (both statuses
+# together -- only `species` gets split by taxonomic_status in prepare_taxonomic_resources()), so
+# that split doesn't apply here -- one generic function suffices for both callers.
+#
+# `detect_fn` is a function of a `cleaned_name` character vector returning a logical vector (not a
+# pre-computed logical vector) because `taxa$tocheck` shrinks after each `redistribute()` call below
+# -- recomputing detect_fn(taxa$tocheck$cleaned_name) fresh each time keeps it aligned with whatever
+# rows are still actually in `tocheck`, rather than relying on stale positions/length from before
+# rows were removed.
+#
+# `alignment_code_*` are the four fully-formed codes for this match family's sub-cases (exact/fuzzy/
+# unresolved/no-genus-resource) rather than a single prefix the helper appends suffixes to -- this
+# keeps each match family's codes numbered sequentially (`match_03a`..`match_03d`, `match_04a`..
+# `match_04d`, ...) in execution order, the same convention the numbered match_NNx blocks elsewhere in
+# `match_taxa()` use, so sorting a result by `alignment_code` reproduces the order taxa were matched in.
+match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep, reason_text,
+                                         alignment_code_exact, alignment_code_fuzzy,
+                                         alignment_code_unresolved, alignment_code_no_resource,
+                                         fuzzy_match_genera) {
+
+  if (is.null(resources$genus)) {
+    # no genus-rank reference at all to check against -- still flag matching rows as checked (so they
+    # don't fall through to later, inappropriate blocks) rather than silently leaving them untouched
+    i <- detect_fn(taxa$tocheck$cleaned_name)
+    taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+      dplyr::mutate(
+        taxonomic_dataset = NA_character_,
+        taxon_rank = NA_character_,
+        taxonomic_status = NA_character_,
+        taxon_ID = NA_character_,
+        accepted_name_usage_ID = NA_character_,
+        aligned_name = NA_character_,
+        aligned_reason = paste0(
+          reason_text, " No genus-rank reference is available to check it against (", Sys.Date(), ")."
+        ),
+        known = TRUE,
+        checked = TRUE,
+        alignment_code = alignment_code_no_resource
+      )
+    return(redistribute(taxa))
+  }
+
+  # exact genus match
+  i <- detect_fn(taxa$tocheck$cleaned_name) & taxa$tocheck$word_one_stripped %in% resources$genus$canonical_name
+  ii <- match(taxa$tocheck[i, ]$word_one_stripped, resources$genus$canonical_name)
+  taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+    dplyr::mutate(
+      taxonomic_dataset = resources$genus$taxonomic_dataset[ii],
+      taxon_rank = "genus",
+      taxonomic_status = resources$genus$taxonomic_status[ii],
+      taxon_ID = resources$genus$taxon_ID[ii],
+      accepted_name_usage_ID = resources$genus$accepted_name_usage_ID[ii],
+      aligned_name_tmp = paste0(resources$genus$canonical_name[ii], bracket_sep, cleaned_name),
+      aligned_name = ifelse(is.na(identifier_string2),
+                            paste0(aligned_name_tmp, "]"),
+                            paste0(aligned_name_tmp, identifier_string2, "]")),
+      aligned_reason = paste0(reason_text, " Exact match to a genus in ", taxonomic_dataset, " (", Sys.Date(), ")."),
+      known = TRUE,
+      checked = TRUE,
+      alignment_code = alignment_code_exact
+    )
+  taxa <- redistribute(taxa)
+  if (nrow(taxa$tocheck) == 0)
+    return(taxa)
+
+  # fuzzy genus match
+  taxa$tocheck <- taxa$tocheck |>
+    dplyr::mutate(fuzzy_match_genus = fuzzy_match_genera(word_one_stripped, resources$genus$canonical_name))
+  i <- detect_fn(taxa$tocheck$cleaned_name) & taxa$tocheck$fuzzy_match_genus %in% resources$genus$canonical_name
+  ii <- match(taxa$tocheck[i, ]$fuzzy_match_genus, resources$genus$canonical_name)
+  taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+    dplyr::mutate(
+      taxonomic_dataset = resources$genus$taxonomic_dataset[ii],
+      taxon_rank = "genus",
+      taxonomic_status = resources$genus$taxonomic_status[ii],
+      taxon_ID = resources$genus$taxon_ID[ii],
+      accepted_name_usage_ID = resources$genus$accepted_name_usage_ID[ii],
+      aligned_name_tmp = paste0(resources$genus$canonical_name[ii], bracket_sep, cleaned_name),
+      aligned_name = ifelse(is.na(identifier_string2),
+                            paste0(aligned_name_tmp, "]"),
+                            paste0(aligned_name_tmp, identifier_string2, "]")),
+      aligned_reason = paste0(reason_text, " Fuzzy match to a genus in ", taxonomic_dataset, " (", Sys.Date(), ")."),
+      known = TRUE,
+      checked = TRUE,
+      alignment_code = alignment_code_fuzzy
+    )
+  taxa <- redistribute(taxa)
+  if (nrow(taxa$tocheck) == 0)
+    return(taxa)
+
+  # unresolved fallback: still flag as checked (so it doesn't fall through to later, inappropriate
+  # matches, e.g. an unrelated trinomial/binomial exact-match) but leave the alignment itself NA
+  i <- detect_fn(taxa$tocheck$cleaned_name)
+  taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+    dplyr::mutate(
+      taxonomic_dataset = NA_character_,
+      taxon_rank = NA_character_,
+      taxonomic_status = NA_character_,
+      taxon_ID = NA_character_,
+      accepted_name_usage_ID = NA_character_,
+      aligned_name = NA_character_,
+      aligned_reason = paste0(
+        reason_text, " Exact and fuzzy matches failed to resolve a genus (", Sys.Date(), ")."
+      ),
+      known = TRUE,
+      checked = TRUE,
+      alignment_code = alignment_code_unresolved
+    )
+  redistribute(taxa)
+}
+
 #' Match taxonomic names to names in a taxonomic reference
 #'
 #' @description
@@ -19,9 +135,11 @@
 #' - Taxonomic datasets are sorted, so names align to the top priority taxonomic dataset if a name is
 #'  present in multiple lists.
 #'
-#' Not yet implemented (see CLAUDE.md for the current status): hybrid names, graded/"affinis" names,
-#' and indecision/intergrade names -- real-world equivalents of these all have dedicated match blocks
-#' in [APCalign](https://traitecoevo.github.io/APCalign/)'s internal `match_taxa()`.
+#' Hybrid names (`Genus x species`) and the various "uncertain/composite identification" naming
+#' conventions (an intergrade between two taxa, a collector's indecision between two taxa, or a
+#' graded/"affinis"/"cf." identification) are opt-in via `hybrids`/`intergrades_affinis` -- both
+#' resolve only to genus rank (never a specific species), since none of these naming conventions can
+#' specify a genuine species. See `match_special_case_to_genus()` for the shared implementation.
 #'
 #' @param taxa The list of taxa requiring checking -- a list with (at least) elements `tocheck` (rows
 #'  still needing a match) and `checked` (rows already resolved), in the shape [align_taxa()] builds.
@@ -44,6 +162,13 @@
 #' @param taxon_ranks_to_check Character vector of taxonomic ranks (besides species) to attempt
 #'  higher-rank matches against. Defaults to `NULL`, which uses every rank present in `resources`
 #'  other than `"species"`/`"subgenus_v2"` (i.e. every higher-rank sublist `resources` contains).
+#' @param hybrids Logical; if `TRUE`, a name containing `" x "`/`" X "` (indicating a hybrid taxon) is
+#'  resolved to genus rank (`Genus x [original name]`) rather than left for later, inappropriate match
+#'  blocks to potentially mishandle. Defaults to `FALSE`.
+#' @param intergrades_affinis Logical; if `TRUE`, a name suggesting an intergrade between two taxa
+#'  (a double dash, `--`), a collector's indecision between two taxa (a slash, `/`), or a graded/
+#'  "affinis"/"cf." identification (`"aff."`, `"affinis"`, `"cf."`) is resolved to genus rank the same
+#'  way. Defaults to `FALSE`.
 #' @param identifier A dataset, location or other identifier,
 #'  which defaults to NA.
 #'
@@ -56,6 +181,8 @@ match_taxa <- function(
     fuzzy_matches = TRUE,
     imprecise_fuzzy_matches = FALSE,
     taxon_ranks_to_check = NULL,
+    hybrids = FALSE,
+    intergrades_affinis = FALSE,
     identifier = NA_character_
 ) {
 
@@ -351,7 +478,7 @@ match_taxa <- function(
         ),
         checked = TRUE,
         known = TRUE,
-        alignment_code = "match_02a_exact_higher_level_accepted_or_synonym"
+        alignment_code = "match_02b_exact_higher_level_accepted_or_synonym"
       )
 
     taxa <- redistribute(taxa)
@@ -406,7 +533,7 @@ match_taxa <- function(
         ),
         known = TRUE,
         checked = TRUE,
-        alignment_code = "match_02b_fuzzy_genus_accepted"
+        alignment_code = "match_02c_fuzzy_genus_accepted"
       )
 
     taxa <- redistribute(taxa)
@@ -415,9 +542,71 @@ match_taxa <- function(
 
   }
 
-  ## removed matches 3, 4 for simplicity, since I don't think they would be triggered by any names (for specific weird informal names)
-  ## XXX-TODO reinstate matches for hybrid names, graded/"affinis" names and indecision/intergrade
-  ## names from APCalign's internal match_taxa function -- see CLAUDE.md
+  # match_03: hybrid names (`Genus x species`) can only be aligned to genus rank -- placed here,
+  # before general species-level fuzzy matching gets a chance to, since a name containing ' x ' is
+  # definitively not an ordinary binomial regardless of whether it would coincidentally fuzzy-match
+  # something. Opt-in (off by default) -- see `?match_taxa`.
+  if (hybrids) {
+    is_hybrid <- function(cleaned_name) stringr::str_detect(cleaned_name, " [xX] ")
+
+    taxa <- match_special_case_to_genus(
+      taxa, resources,
+      detect_fn = is_hybrid,
+      bracket_sep = " x [",
+      reason_text = "Taxon name includes ' x ', indicating a hybrid taxon; can only be aligned to genus rank.",
+      alignment_code_exact = "match_03a_hybrid_exact_genus",
+      alignment_code_fuzzy = "match_03b_hybrid_fuzzy_genus",
+      alignment_code_unresolved = "match_03c_hybrid_unresolved",
+      alignment_code_no_resource = "match_03d_hybrid_no_genus_resource",
+      fuzzy_match_genera = fuzzy_match_genera
+    )
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+  }
+
+  # match_04: consolidates what APCalign implements as three separate pattern families (intergrade,
+  # indecision, graded/"affinis"/"cf." identification) -- all share the same "resolve to genus, or flag
+  # as unresolved" shape, and are rarer than hybrids, so are grouped under one opt-in toggle (off by
+  # default) rather than one each. See `?match_taxa`.
+  if (intergrades_affinis) {
+    # "affinis" is genuinely ambiguous: it's both an affinity qualifier ("Acacia affinis dealbata" =
+    # "resembles A. dealbata, not confidently identified") *and* a legitimate specific epithet in its
+    # own right ("Gomphrena affinis subsp. pilbarensis" is a real, accepted name). The lookahead below
+    # (matching a fix applied upstream in APCalign) only treats "affinis" as an affinity qualifier
+    # when it's *not* immediately followed by an infraspecific rank marker.
+    not_before_rank_marker <- "(?!\\s+(?:subsp|ssp|subvar|var|forma|form|ser|series|cv|f)\\.?(?:\\s|$))"
+    affinis_qualifier <- paste0(" affinis", not_before_rank_marker, "\\s")
+
+    is_intergrade_affinis <- function(cleaned_name) {
+      is_intergrade <- stringr::str_detect(cleaned_name, "\\ -- |\\--")
+      is_indecision <- (stringr::str_detect(cleaned_name, "[:alpha:]\\/") |
+                           stringr::str_detect(cleaned_name, "\\s\\/")) &
+        !stringr::str_detect(cleaned_name, "[:digit:]") &
+        !stringr::str_detect(cleaned_name, "\\(") &
+        !stringr::str_detect(cleaned_name, "\\'")
+      is_affinis <- stringr::str_detect(cleaned_name, "[Aa]ff[\\.\\s]") |
+        stringr::str_detect(cleaned_name, affinis_qualifier) |
+        stringr::str_detect(cleaned_name, " cf[\\.\\s]")
+      is_intergrade | is_indecision | is_affinis
+    }
+
+    taxa <- match_special_case_to_genus(
+      taxa, resources,
+      detect_fn = is_intergrade_affinis,
+      bracket_sep = " sp. [",
+      reason_text = paste(
+        "Taxon name suggests an intergrade, an indecision between taxa, or a graded/\"affinis\"/\"cf.\"",
+        "identification; can only be aligned to genus rank."
+      ),
+      alignment_code_exact = "match_04a_intergrade_affinis_exact_genus",
+      alignment_code_fuzzy = "match_04b_intergrade_affinis_fuzzy_genus",
+      alignment_code_unresolved = "match_04c_intergrade_affinis_unresolved",
+      alignment_code_no_resource = "match_04d_intergrade_affinis_no_genus_resource",
+      fuzzy_match_genera = fuzzy_match_genera
+    )
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+  }
 
   # match_05a: fuzzy match to accepted/valid canonical name
   # Fuzzy match of taxon name to an accepted canonical name, once filler words and punctuation are removed.

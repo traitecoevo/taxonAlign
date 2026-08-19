@@ -21,7 +21,8 @@ genus/species/family. All four core functions now exist and are tested (see Arch
 are exported; `match_taxa()` stays `@noRd`, matching how APCalign itself keeps its own internal
 `match_taxa()` unexported. `prepare_taxonomic_resources()` also has an interactive on-ramp
 (`interactive = TRUE`) for a user's own, differently-shaped reference table(s) — see Architecture #2.
-Hybrid/graded-name matching is not yet started (tracked as issue #9).
+Hybrid/graded-name matching is now implemented, opt-in via `hybrids`/`intergrades_affinis` (issue #9,
+see Architecture #2).
 
 ## Commands
 
@@ -297,14 +298,46 @@ Architecture of the matching engine itself:
   `user_responses$additional_tables` (an optionally-named list of further tables/paths) bypasses the
   real loop for tests/scripting — each entry still goes through the exact same `resolve_taxon_resources_table()`
   path as any other table, consulting `user_responses[[its own label]]` for its own missing fields.
+- **Hybrid/graded/indecision/intergrade names** (issue #9) are handled by one shared, generic helper,
+  `match_special_case_to_genus()` (top of `R/match_taxa.R`), rather than APCalign's ~20 separate,
+  near-duplicate blocks (5 sub-blocks each for 4 pattern families, because APC/APNI's `resources` keeps
+  accepted/synonym/APNI genera in three separate tables). taxonAlign's `resources$genus` is already one
+  combined table (only `species` gets split by `taxonomic_status`), so that split doesn't apply here --
+  one function suffices for both callers. Both are opt-in (`hybrids = FALSE`, `intergrades_affinis =
+  FALSE` on `match_taxa()`/`align_taxa()`/`create_taxonomic_update_lookup()`), and both only ever
+  resolve to genus rank (never a specific species), since none of these naming conventions can specify
+  a genuine species:
+  - `hybrids = TRUE` detects `" x "`/`" X "` (a literal, space-delimited hybrid marker) -- `match_03a`
+    (exact genus)/`match_03b` (fuzzy genus)/`match_03c` (unresolved)/`match_03d` (no genus-rank
+    reference available at all).
+  - `intergrades_affinis = TRUE` consolidates what APCalign implements as three separate pattern
+    families -- an intergrade (`--`), a collector's indecision between two taxa (`/`, excluding names
+    with digits/parens/apostrophes to avoid false positives), and a graded/"affinis"/"cf." identification
+    (`aff.`/`affinis`/`cf.`) -- since they're rarer than hybrids and share the same shape: `match_04a`
+    (exact genus)/`match_04b` (fuzzy genus)/`match_04c` (unresolved)/`match_04d` (no genus-rank
+    reference). The `affinis` detection specifically needs `APCalign::standardise_names()` from a
+    version including [upstream commit a2c43d1](https://github.com/traitecoevo/APCalign/commit/a2c43d1fbec29c68aec7bfd4fd46b831effccec3)
+    or later (`remotes::install_github("traitecoevo/APCalign")` to pull latest `main`) -- older versions
+    unconditionally abbreviate `" affinis "` to `" aff. "` regardless of what follows, which defeats the
+    rank-marker-aware check needed to tell a genuine specific epithet (`"Gomphrena affinis subsp.
+    pilbarensis"`) apart from an affinity qualifier (`"Acacia affinis dealbata"`) -- the same
+    negative-lookahead regex (`not_before_rank_marker`) is also ported into `match_taxa()`'s own
+    detection, but it's only reachable if `standardise_names()` hasn't already collapsed the distinction
+    upstream.
+  - `detect_fn` (the pattern-detection argument `match_special_case_to_genus()` takes) is a *function* of
+    `cleaned_name`, not a pre-computed logical vector -- `taxa$tocheck` shrinks after each internal
+    `redistribute()` call, so recomputing detection fresh each time keeps it aligned with whatever rows
+    are still actually in `tocheck` rather than relying on stale positions from before rows were removed.
+- **Also fixed two pre-existing `alignment_code` numbering bugs while adding the above**: the per-rank
+  `sp.`-suffix exact-match loop (comment `match_02b`) and its fuzzy-fallback loop (comment `match_02c`)
+  had been stamping `alignment_code` values of `"match_02a_..."`/`"match_02b_..."` respectively -- off
+  by one letter from their own comments. Fixed so every match block's `alignment_code` now sorts in the
+  same order names are actually matched in, letting a user sort output by `alignment_code` to see
+  matches in execution order and spot mismatches by rank/pattern.
 
 Not yet implemented (deliberately deferred, tracked as GitHub issues):
-- Hybrid names, graded/"affinis" names (`aff.`/`cf.`), and indecision/intergrade names — real
-  APCalign's internal `match_taxa()` has dedicated match blocks for all of these
-  (`match_03*`/`match_04*`/`match_06*`/`match_08*`); taxonAlign's `match_taxa()` has none of them yet.
 - A test suite asserting that, given the *same* APC data source, taxonAlign's `align_taxa()` produces
-  the same output as APCalign's — meaningful only once the edge cases directly above are implemented
-  (otherwise a mismatch would just restate "hybrids aren't handled yet", not surface a real bug).
+  the same output as APCalign's (issue #10) -- meaningful now that issue #9's edge cases are implemented.
 
 ### Vignette and data tying the two together
 

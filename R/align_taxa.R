@@ -25,6 +25,11 @@
 #' @param taxon_ranks_to_check Optional character vector of taxonomic ranks (besides species) to
 #'  attempt higher-rank matches against. Defaults to `NULL`, which uses every higher rank present in
 #'  `resources`.
+#' @param hybrids Logical; if `TRUE`, resolve hybrid names (`Genus x species`) to genus rank rather
+#'  than leaving them for later, inappropriate match attempts. Defaults to `FALSE`. See `?match_taxa`.
+#' @param intergrades_affinis Logical; if `TRUE`, resolve names suggesting an intergrade, an
+#'  indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
+#'  Defaults to `FALSE`. See `?match_taxa`.
 #' @param full Logical; if `TRUE`, return every intermediate column `match_taxa()` computes (useful
 #'  for inspecting *why* a name matched the way it did). If `FALSE` (the default), return just the
 #'  key output columns.
@@ -46,6 +51,8 @@ align_taxa <- function(original_name,
                         fuzzy_matches = TRUE,
                         imprecise_fuzzy_matches = FALSE,
                         taxon_ranks_to_check = NULL,
+                        hybrids = FALSE,
+                        intergrades_affinis = FALSE,
                         full = FALSE) {
 
   if (missing(original_name) || length(original_name) == 0) {
@@ -121,6 +128,8 @@ align_taxa <- function(original_name,
       fuzzy_matches = fuzzy_matches,
       imprecise_fuzzy_matches = imprecise_fuzzy_matches,
       taxon_ranks_to_check = taxon_ranks_to_check,
+      hybrids = hybrids,
+      intergrades_affinis = intergrades_affinis,
       identifier = identifier
     )
   }

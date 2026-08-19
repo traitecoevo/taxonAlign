@@ -13,6 +13,8 @@ align_taxa(
   fuzzy_matches = TRUE,
   imprecise_fuzzy_matches = FALSE,
   taxon_ranks_to_check = NULL,
+  hybrids = FALSE,
+  intergrades_affinis = FALSE,
   full = FALSE
 )
 }
@@ -43,6 +45,13 @@ implemented -- see \code{match_taxa()}). Defaults to \code{FALSE}.}
 \item{taxon_ranks_to_check}{Optional character vector of taxonomic ranks (besides species) to
 attempt higher-rank matches against. Defaults to \code{NULL}, which uses every higher rank present in
 \code{resources}.}
+
+\item{hybrids}{Logical; if \code{TRUE}, resolve hybrid names (\verb{Genus x species}) to genus rank rather
+than leaving them for later, inappropriate match attempts. Defaults to \code{FALSE}. See \code{?match_taxa}.}
+
+\item{intergrades_affinis}{Logical; if \code{TRUE}, resolve names suggesting an intergrade, an
+indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
+Defaults to \code{FALSE}. See \code{?match_taxa}.}
 
 \item{full}{Logical; if \code{TRUE}, return every intermediate column \code{match_taxa()} computes (useful
 for inspecting \emph{why} a name matched the way it did). If \code{FALSE} (the default), return just the
