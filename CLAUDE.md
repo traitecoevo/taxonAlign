@@ -190,11 +190,18 @@ Architecture of the matching engine itself:
   match_02a/match_12a blocks) — because different input name lists write subgenus either way. Don't
   collapse these into a single representation.
 - `fuzzy_match(txt, accepted_list, max_distance_abs, max_distance_rel, ...)` in
-  `match_taxa_helpers.R` does the actual fuzzy comparison, using
+  `match_taxa_helpers.R` does the actual fuzzy comparison for a single string, using
   `stringdist::stringdist(..., method = "dl")` (Damerau-Levenshtein), but only considers a candidate a
   match if the first letter (or, for genus/species epithets, first 1–2 letters) of each word already
   agrees — this is what keeps fuzzy matching from cross-matching unrelated taxa (see the "Boronieae"
-  vs. "Boronia" note below). `extract_genus()` handles the `x Genus` hybrid-naming convention.
+  vs. "Boronia" note below). `fuzzy_match_column(x, accepted_list, ...)` vectorizes it over a whole
+  column via `purrr::map_chr()` — every fuzzy-matching call site in `match_taxa()` (species-level
+  `match_05a`/`match_05b`, and the genus-level `fuzzy_match_genera()` closure) goes through this shared
+  helper now, rather than some looping `for (i in seq_len(nrow(taxa$tocheck)))` and calling
+  `fuzzy_match()` one row at a time, matching the equivalent efficiency fix upstream APCalign made in
+  [commit fc16cd3](https://github.com/traitecoevo/APCalign/commit/fc16cd3f12cd0bb6fec8b5c8b402e8a339bdc84c)
+  (a pure refactor there too, not a behaviour change — `fuzzy_match()` was already only ever called on
+  one string at a time either way). `extract_genus()` handles the `x Genus` hybrid-naming convention.
 - `match_taxa()`/`prepare_taxonomic_resources()` call `APCalign::standardise_names()`,
   `APCalign::strip_names()`, `APCalign::strip_names_extra()`, `APCalign::standardise_taxon_rank()` —
   all exported by APCalign, now a formal `Imports`/`Remotes` dependency (previously unresolved).

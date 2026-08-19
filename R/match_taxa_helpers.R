@@ -198,6 +198,28 @@ fuzzy_match <- function(txt, accepted_list,
 }
 
 
+# Vectorized wrapper around `fuzzy_match()`, applying it to every element of `x` at once (via
+# `purrr::map_chr()`) rather than the caller looping `for (i in seq_len(nrow(...)))` and calling
+# `fuzzy_match()` one row at a time, as match_taxa()'s species-level fuzzy blocks used to. Ported from
+# the equivalent efficiency fix in upstream APCalign's internal `match_taxa()`
+# (https://github.com/traitecoevo/APCalign/commit/fc16cd3f12cd0bb6fec8b5c8b402e8a339bdc84c) -- purely a
+# refactor, not a behaviour change, since `fuzzy_match()` was already only ever called on one string at
+# a time regardless.
+fuzzy_match_column <- function(x, accepted_list, max_distance_abs, max_distance_rel,
+                                n_allowed = 1, epithet_letters = 1) {
+  purrr::map_chr(
+    x,
+    ~ fuzzy_match(
+      txt = .x,
+      accepted_list = accepted_list,
+      max_distance_abs = max_distance_abs,
+      max_distance_rel = max_distance_rel,
+      n_allowed = n_allowed,
+      epithet_letters = epithet_letters
+    )
+  )
+}
+
 update_na_with <- function(current, new) {
   ifelse(is.na(current), new, current)
 }

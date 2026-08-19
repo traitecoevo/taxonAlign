@@ -191,14 +191,14 @@ match_taxa <- function(
   }
 
   ## A function that specifies particular fuzzy matching conditions (for the
-  ## function fuzzy_match) when matching is being done at the genus level.
+  ## function fuzzy_match_column) when matching is being done at the genus level.
   if (fuzzy_matches == TRUE) {
     fuzzy_match_genera <- function(x, y) {
-      purrr::map_chr(x, ~ fuzzy_match(.x, y, max_distance_abs = 2, max_distance_rel = 0.35, n_allowed = 1))
+      fuzzy_match_column(x, y, max_distance_abs = 2, max_distance_rel = 0.35)
     }
   } else {
     fuzzy_match_genera <- function(x, y) {
-      purrr::map_chr(x, ~ fuzzy_match(.x, y, max_distance_abs = 0, max_distance_rel = 0.0, n_allowed = 1))
+      fuzzy_match_column(x, y, max_distance_abs = 0, max_distance_rel = 0.0)
     }
   }
 
@@ -610,16 +610,12 @@ match_taxa <- function(
 
   # match_05a: fuzzy match to accepted/valid canonical name
   # Fuzzy match of taxon name to an accepted canonical name, once filler words and punctuation are removed.
-  for (i in seq_len(nrow(taxa$tocheck))) {
-    taxa$tocheck$fuzzy_match_cleaned[i] <-
-      fuzzy_match(
-        txt = taxa$tocheck$stripped_name[i],
-        accepted_list = resources$species$accepted$stripped_canonical,
-        max_distance_abs = fuzzy_abs_dist,
-        max_distance_rel = fuzzy_rel_dist,
-        n_allowed = 1
-      )
-  }
+  taxa$tocheck$fuzzy_match_cleaned <- fuzzy_match_column(
+    x = taxa$tocheck$stripped_name,
+    accepted_list = resources$species$accepted$stripped_canonical,
+    max_distance_abs = fuzzy_abs_dist,
+    max_distance_rel = fuzzy_rel_dist
+  )
 
   i <-
     taxa$tocheck$fuzzy_match_cleaned %in% resources$species$accepted$stripped_canonical
@@ -654,16 +650,12 @@ match_taxa <- function(
 
   # match_05b: fuzzy match to synonymous canonical name
   # Fuzzy match of taxon name to an synonymous canonical name, once filler words and punctuation are removed.
-  for (i in seq_len(nrow(taxa$tocheck))) {
-    taxa$tocheck$fuzzy_match_cleaned_synonym[i] <-
-      fuzzy_match(
-        txt = taxa$tocheck$stripped_name[i],
-        accepted_list = resources$species$synonym$stripped_canonical,
-        max_distance_abs = fuzzy_abs_dist,
-        max_distance_rel = fuzzy_rel_dist,
-        n_allowed = 1
-      )
-  }
+  taxa$tocheck$fuzzy_match_cleaned_synonym <- fuzzy_match_column(
+    x = taxa$tocheck$stripped_name,
+    accepted_list = resources$species$synonym$stripped_canonical,
+    max_distance_abs = fuzzy_abs_dist,
+    max_distance_rel = fuzzy_rel_dist
+  )
 
   i <-
     taxa$tocheck$fuzzy_match_cleaned_synonym %in% resources$species$synonym$stripped_canonical
