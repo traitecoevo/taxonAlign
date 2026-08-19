@@ -19,8 +19,9 @@ disambiguation logic in APCalign's `update_taxonomy` won't carry over to taxonAl
 genus/species/family. All four core functions now exist and are tested (see Architecture #2):
 `prepare_taxonomic_resources()`, `align_taxa()`, `update_taxa()` and `create_taxonomic_update_lookup()`
 are exported; `match_taxa()` stays `@noRd`, matching how APCalign itself keeps its own internal
-`match_taxa()` unexported. Hybrid/graded-name matching, and an interactive column-mapping wrapper for
-a user's own reference list, are not yet started (tracked as issues #9 and #8).
+`match_taxa()` unexported. `prepare_taxonomic_resources()` also has an interactive on-ramp
+(`interactive = TRUE`) for a user's own, differently-shaped reference table(s) — see Architecture #2.
+Hybrid/graded-name matching is not yet started (tracked as issue #9).
 
 ## Commands
 
@@ -69,17 +70,20 @@ and its internal helpers (`resolve_gbif_taxon()`, `fetch_gbif_taxon_tree()`, `fe
 `testthat::local_mocked_bindings(..., .package = "rgbif")`, with fixture builders in
 `tests/testthat/helper-gbif-fixtures.R`.
 
-`tests/testthat/test-prepare_taxonomic_resources.R`, `test-align_taxa.R`, `test-update_taxa.R`,
-`test-create_taxonomic_update_lookup.R` and `test-match_taxa_helpers.R` cover the matching/alignment
-engine end to end against a small hand-built combined reference table (`sample_taxon_resources()` in
-`tests/testthat/helper-align-taxa-fixtures.R`) spanning species (accepted/synonym), genus
-(accepted/synonym), family, order (accepted/synonym — a *second* higher rank with an outdated name,
-proving `update_taxa()`'s lookup isn't secretly species/genus-specific), an extra non-hardcoded rank
-("tribe"), and a subgenus — no network, no `APCalign`-package-data download (only its pure string
-helpers, `standardise_names()`/`strip_names()`/`strip_names_extra()`/`standardise_taxon_rank()`, are
-called, which are safe to call directly offline). 149 expectations across all test files, all passing
-as of the last run. (See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to
-dodge.)
+`tests/testthat/test-prepare_taxonomic_resources.R`, `test-prepare_taxonomic_resources_interactive.R`,
+`test-align_taxa.R`, `test-update_taxa.R`, `test-create_taxonomic_update_lookup.R` and
+`test-match_taxa_helpers.R` cover the matching/alignment engine end to end against a small hand-built
+combined reference table (`sample_taxon_resources()` in `tests/testthat/helper-align-taxa-fixtures.R`)
+spanning species (accepted/synonym), genus (accepted/synonym), family, order (accepted/synonym — a
+*second* higher rank with an outdated name, proving `update_taxa()`'s lookup isn't secretly
+species/genus-specific), an extra non-hardcoded rank ("tribe"), and a subgenus — no network, no
+`APCalign`-package-data download (only its pure string helpers,
+`standardise_names()`/`strip_names()`/`strip_names_extra()`/`standardise_taxon_rank()`, are called,
+which are safe to call directly offline). `test-prepare_taxonomic_resources_interactive.R` covers
+`prepare_taxonomic_resources(interactive = TRUE)` by supplying `user_responses` throughout, exactly
+the way `traits.build` tests its own `metadata_add_traits()`/etc. — never a real interactive session
+(see Architecture #2 below). 165 expectations across all test files, all passing as of the last run.
+(See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -132,7 +136,7 @@ Key design points worth knowing before touching this file:
   output rather than being included. Flagged but not fixed (deliberately) — pin down GBIF's exact
   ordinal placement for the missing ranks before adding them, rather than guessing.
 
-### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/update_taxa.R`, `R/create_taxonomic_update_lookup.R`, `R/match_taxa_helpers.R` (active; everything but `match_taxa()` and the helpers is exported)
+### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/prepare_taxonomic_resources_interactive.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/update_taxa.R`, `R/create_taxonomic_update_lookup.R`, `R/match_taxa_helpers.R` (active; everything but `match_taxa()` and the helpers is exported)
 
 This is a cleaned-up port of an existing workflow (`AusInvertAlign`, from the sibling
 `ausinvertraits.addons` project) for aligning raw taxon-name lists to an accepted taxonomic resource,
@@ -156,9 +160,8 @@ create_taxonomic_update_lookup(original_name, resources, ...)   # exported, one-
 
 `align_taxa()`/`update_taxa()` are also both usable standalone (you don't have to go through
 `create_taxonomic_update_lookup()`). `resources` is built ahead of time by
-`prepare_taxonomic_resources(taxon_resources, ...)` (exported) — either by the user directly, or by
-whatever higher-level wrapper eventually prompts users for their own reference list (see Not yet
-implemented).
+`prepare_taxonomic_resources(taxon_resources, ...)` (exported), which itself now has an interactive
+on-ramp for a user's own raw reference table(s) — see the `interactive`/`user_responses` bullet below.
 
 Architecture of the matching engine itself:
 - `match_taxa(taxa, resources, ...)` (`R/match_taxa.R`) is the core function. `taxa` is a list with two
@@ -240,14 +243,41 @@ Architecture of the matching engine itself:
   introduced exactly the column-naming ambiguity APCalign avoids by only ever using `canonical_name`.
   `canonical_name` is now a straightforwardly required column; a row where it's `NA` is dropped (see
   the bug note above), not silently patched from a second name field.
+- `prepare_taxonomic_resources()`'s `interactive`/`user_responses` arguments (`R/prepare_taxonomic_resources_interactive.R`)
+  are the "let a user bring their own reference table" on-ramp sketched in comments in
+  `R/match_taxa_for_inverts_202500304-use this.R` — modelled directly on `traits.build`'s
+  `metadata_add_traits()`/`metadata_add_locations()`/`metadata_add_contexts()`/`metadata_create_template()`
+  (`traits.build`'s `R/setup.R`): `utils::menu()` for single-choice picks, a `readline()`-driven
+  validated loop for ordered selections, and — critically for testing — every prompt has a
+  `user_response`/`user_responses` escape hatch that substitutes a supplied value, so tests never open
+  a real interactive session (see `test-prepare_taxonomic_resources_interactive.R`, all of which pass
+  `user_responses` rather than prompting). `taxon_resources` now also accepts a file path or a
+  (optionally named) list of tibbles/paths, one per source dataset to combine; when more than one is
+  supplied, priority is expressed purely by row order in the bind_rows()'d result (since
+  `match_taxa()`'s exact blocks use first-hit `match()` semantics) — `interactive = TRUE` prompts once
+  for that order (or consults `user_responses$priority_order`), `interactive = FALSE` just uses
+  supply-order with no prompt. A table missing no required columns is never interrupted, even in
+  `interactive = TRUE` mode — only genuinely-missing fields get prompted for, so
+  `generate_taxonomic_reference_list()`'s output (already complete) sails through untouched. When a
+  table *is* missing something, it's first asked (once, `prompt_already_aligned()`) whether it's
+  already fully aligned regardless (e.g. from an earlier `prepare_taxonomic_resources()`/
+  `generate_taxonomic_reference_list()` call, just under column names `column_rename` didn't
+  recognise) — note this can only ever end in either a clear, specific error naming what's still
+  missing (since reaching this prompt at all means something genuinely is absent by name) or "No",
+  proceeding into the normal per-field prompts; there's no silent-success branch, by construction, and
+  that's intentional — it exists to catch a wrong assumption early with a precise message, not as a
+  bypass.
+- Once every initially-supplied table is resolved, `interactive = TRUE` also loops asking "Do you have
+  any additional taxonomic reference(s) to include?" (`prompt_yes_no()`) — repeating for as many as the
+  user has — before the priority-order prompt. This is asked *unconditionally* (regardless of whether
+  the initial table(s) needed any column mapping at all), unlike `prompt_already_aligned()` above,
+  because its purpose is different: letting someone start with a single file (`taxon_resources`) and
+  grow it into a combined set interactively, rather than requiring the whole set assembled up front.
+  `user_responses$additional_tables` (an optionally-named list of further tables/paths) bypasses the
+  real loop for tests/scripting — each entry still goes through the exact same `resolve_taxon_resources_table()`
+  path as any other table, consulting `user_responses[[its own label]]` for its own missing fields.
 
 Not yet implemented (deliberately deferred, tracked as GitHub issues):
-- A higher-level wrapper that prompts a user to read in their own taxon list and interactively map its
-  columns onto the names `prepare_taxonomic_resources()` expects (`canonical_name`, `scientific_name`,
-  `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`, `genus`, `taxon_ID`,
-  `accepted_name_usage_ID`) — sketched in comments in `R/match_taxa_for_inverts_202500304-use this.R`
-  but not built; `prepare_taxonomic_resources()` today only renames a fixed set of known raw Darwin
-  Core column names (see above) and otherwise just errors if a required column is missing.
 - Hybrid names, graded/"affinis" names (`aff.`/`cf.`), and indecision/intergrade names — real
   APCalign's internal `match_taxa()` has dedicated match blocks for all of these
   (`match_03*`/`match_04*`/`match_06*`/`match_08*`); taxonAlign's `match_taxa()` has none of them yet.

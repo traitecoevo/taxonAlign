@@ -15,6 +15,7 @@ Imports:
     APCalign,
     dplyr,
     purrr,
+    readr,
     rgbif,
     rlang,
     stringdist,

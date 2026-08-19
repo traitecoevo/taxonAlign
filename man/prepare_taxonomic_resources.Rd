@@ -4,24 +4,56 @@
 \alias{prepare_taxonomic_resources}
 \title{Prepare a combined taxonomic reference table for name matching}
 \usage{
-prepare_taxonomic_resources(taxon_resources, taxon_ranks_to_check = NULL)
+prepare_taxonomic_resources(
+  taxon_resources,
+  taxon_ranks_to_check = NULL,
+  interactive = FALSE,
+  user_responses = NULL
+)
 }
 \arguments{
-\item{taxon_resources}{A tibble with (at least) the columns \code{canonical_name}, \code{scientific_name},
-\code{taxon_rank}, \code{taxonomic_status}, \code{taxonomic_dataset}, \code{genus}, \code{taxon_ID} and
-\code{accepted_name_usage_ID} -- the column names produced by \code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}},
-and matching \href{https://traitecoevo.github.io/APCalign/}{APCalign}'s own naming convention exactly
-(see Details) so there's one canonical name field, not two. A row whose \code{canonical_name} is \code{NA}
-has no usable name and is dropped, with a warning (real data occasionally has this -- e.g. some
-GBIF records genuinely lack a canonical name). \code{accepted_name_usage_ID} must be self-referential
-(equal to \code{taxon_ID}) for already-accepted rows, not \code{NA} -- this is what lets \code{update_taxa()}
-resolve a matched name forward to its current accepted name regardless of whether it matched an
-accepted name or a synonym.}
+\item{taxon_resources}{A tibble, a path to a CSV file, or a (optionally named) list of either --
+one element per taxonomic reference table to combine. Each table needs (at least) the columns
+\code{canonical_name}, \code{scientific_name}, \code{taxon_rank}, \code{taxonomic_status}, \code{taxonomic_dataset},
+\code{genus}, \code{taxon_ID} and \code{accepted_name_usage_ID} -- the column names produced by
+\code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}}, and matching
+\href{https://traitecoevo.github.io/APCalign/}{APCalign}'s own naming convention exactly (see Details)
+so there's one canonical name field, not two. A row whose \code{canonical_name} is \code{NA} has no usable
+name and is dropped, with a warning (real data occasionally has this -- e.g. some GBIF records
+genuinely lack a canonical name). \code{accepted_name_usage_ID} must be self-referential (equal to
+\code{taxon_ID}) for already-accepted rows, not \code{NA} -- this is what lets \code{update_taxa()} resolve a
+matched name forward to its current accepted name regardless of whether it matched an accepted
+name or a synonym.}
 
 \item{taxon_ranks_to_check}{Optional character vector restricting which taxonomic ranks (besides
 species/infraspecific ranks) are retained in the returned \code{resources} for higher-rank matching
 (e.g. \code{c("genus", "family")}). Defaults to \code{NULL}, which keeps every rank present in
 \code{taxon_resources}.}
+
+\item{interactive}{Logical; if \code{TRUE}, prompts (in the style of \code{traits.build}'s
+\code{metadata_add_traits()}/\code{metadata_add_locations()}) for any of the required columns a table is
+missing -- letting a column be picked from that table, or (for some fields) a fixed value typed in
+or auto-generated -- rather than erroring. A table that's already complete is never interrupted;
+one that isn't is first asked, once, whether it's already fully aligned regardless (e.g. it came
+from an earlier \code{prepare_taxonomic_resources()}/\code{generate_taxonomic_reference_list()} call, just
+under column names \code{interactive} didn't recognise) before being walked through the per-field
+prompts. Once every initially-supplied table is resolved, also asks whether there are any
+additional taxonomic reference(s) to include -- repeating for as many as the user has -- so a
+single file passed in via \code{taxon_resources} can grow into a combined set interactively, rather
+than requiring the whole set to be assembled up front. When more than one table ends up in the
+final set, also prompts once for a priority order across them. Defaults to \code{FALSE}, which errors
+immediately (as before) if any required column is missing, and skips both of the prompts above.}
+
+\item{user_responses}{Optional named list bypassing the real prompts \code{interactive = TRUE} would
+otherwise show -- for scripting or testing. Keyed by table name (matching \code{taxon_resources}'s
+names, or \code{"table 1"}/\code{"table 2"}/... if unnamed), each holding the responses for that table's
+missing fields (\code{already_aligned} (logical), \code{taxonomic_dataset}, \code{canonical_name},
+\code{scientific_name}, \code{taxon_rank}, \code{taxonomic_status}, \code{genus}, \code{taxon_ID},
+\code{accepted_name_usage_ID} -- see \code{?map_missing_taxon_resources_columns} for exact shapes), plus two
+top-level elements: \code{additional_tables} (an optionally-named list of further tables/paths to add,
+bypassing the "any additional reference(s)?" prompt loop -- each is still resolved via its own
+entry in \code{user_responses}, keyed the same way) and \code{priority_order}, when the final set has more
+than one table. Ignored unless \code{interactive = TRUE}.}
 }
 \value{
 A named list of tibbles (and, for \code{species}, a further named list split by
@@ -30,16 +62,16 @@ A named list of tibbles (and, for \code{species}, a further named list split by
 Details).
 }
 \description{
-Takes a single combined taxonomic reference table (the user's own, or one produced by
-\code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}}, or several such tables row-bound together) and turns it
-into the nested \code{resources} list that \code{\link[=align_taxa]{align_taxa()}}/\code{match_taxa()} expect: extra columns used by
-the matching engine are added, then the table is split by rank (and, for species-level rows, by
-taxonomic status).
+Takes one or more taxonomic reference tables (the user's own, one produced by
+\code{\link[=generate_taxonomic_reference_list]{generate_taxonomic_reference_list()}}, or any mix of these) and turns them into the single nested
+\code{resources} list that \code{\link[=align_taxa]{align_taxa()}}/\code{match_taxa()} expect: columns are normalised and any missing
+ones resolved (see \code{interactive}, below), tables are combined if more than one was supplied, and the
+result is split by rank (and, for species-level rows, by taxonomic status).
 }
 \details{
 Unlike \href{https://traitecoevo.github.io/APCalign/}{APCalign}'s \code{load_taxonomic_resources()}, which
 only ever assembles the fixed APC/APNI combination, this function works on whatever combined
-reference table the user supplies -- at whatever set of taxonomic ranks it happens to contain, not
+reference data the user supplies -- at whatever set of taxonomic ranks it happens to contain, not
 just genus/species/family.
 
 Column names are normalised on the way in, exactly the way
@@ -49,6 +81,10 @@ is renamed to \code{canonical_name}/\code{taxon_rank}/\code{taxonomic_status}/\c
 \code{canonical_name} the \emph{only} name field taxonAlign ever refers to -- unlike the ported
 \code{AusInvertAlign} prototype this package originated from, which had a separate \code{taxon_name} fallback
 column, there's no second, ambiguous name field to keep in sync.
+
+When multiple tables are supplied, priority is expressed purely through row order in the combined
+table: \code{match_taxa()}'s exact-match blocks use \code{match()} (first-hit semantics), so whichever table
+is row-bound first is preferred when a name exists in more than one.
 
 Two matching conventions for subgenus names are supported side by side: some input name lists
 write the subgenus alone (e.g. \code{"Podosemum"}), others write the \code{Genus (Subgenus)} bracketed
