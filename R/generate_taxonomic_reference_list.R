@@ -72,10 +72,15 @@ gbif_rank_order <- c(
 #'  otherwise be blocked by `max_taxa`. Defaults to `FALSE`.
 #' @param quiet Logical; suppress progress messages. Defaults to `FALSE`.
 #'
-#' @return A tibble with one row per taxon, with columns `gbif_key`, `parent_key`,
-#'  `accepted_key`, `taxon_name` (the scientific name, with authorship),
-#'  `canonical_name`, `taxon_rank`, `taxonomic_status`, `kingdom`, `phylum`, `class`,
-#'  `order`, `family`, `genus` and `taxonomic_reference` (always `"GBIF"`).
+#' @return A tibble with one row per taxon, with column names matching those used by
+#'  [APCalign](https://traitecoevo.github.io/APCalign/) (`traitecoevo/APCalign`) wherever an
+#'  equivalent concept exists there, so this reference list can be combined with an
+#'  APC/APNI-derived one: `taxon_ID` (the GBIF backbone usageKey), `parent_key` (GBIF-specific;
+#'  no APCalign equivalent), `accepted_name_usage_ID` (the `taxon_ID` of the accepted usage --
+#'  equal to `taxon_ID` itself for a row that is already accepted, matching how APC downloads
+#'  fill this in), `scientific_name` (the full name, with authorship), `scientific_name_authorship`,
+#'  `canonical_name` (the name without authorship), `taxon_rank`, `taxonomic_status`, `kingdom`,
+#'  `phylum`, `class`, `order`, `family`, `genus` and `taxonomic_dataset` (always `"GBIF"`).
 #'
 #' @examples
 #' \dontrun{
@@ -89,6 +94,7 @@ gbif_rank_order <- c(
 #' generate_taxonomic_reference_list(c("Rutaceae", "Sapindaceae"), country = "AU")
 #' }
 #'
+#' @importFrom rlang .data
 #' @export
 generate_taxonomic_reference_list <- function(taxon_name,
                                                name_rank = NULL,
@@ -176,10 +182,14 @@ generate_taxonomic_reference_list <- function(taxon_name,
 
   full_tree |>
     dplyr::transmute(
-      gbif_key = .data$key,
+      taxon_ID = .data$key,
       parent_key = .data$parentKey,
-      accepted_key = .data$acceptedKey,
-      taxon_name = .data$scientificName,
+      # GBIF only populates `acceptedKey` for synonyms; an already-accepted row
+      # points to itself here, matching how `accepted_name_usage_ID` is filled
+      # in for accepted names in APC downloads (never `NA`).
+      accepted_name_usage_ID = dplyr::coalesce(.data$acceptedKey, .data$key),
+      scientific_name = .data$scientificName,
+      scientific_name_authorship = .data$authorship,
       canonical_name = .data$canonicalName,
       taxon_rank = tolower(.data$rank),
       taxonomic_status = tolower(.data$taxonomicStatus),
@@ -189,9 +199,9 @@ generate_taxonomic_reference_list <- function(taxon_name,
       order = .data$order,
       family = .data$family,
       genus = .data$genus,
-      taxonomic_reference = "GBIF"
+      taxonomic_dataset = "GBIF"
     ) |>
-    dplyr::distinct(.data$gbif_key, .keep_all = TRUE) |>
+    dplyr::distinct(.data$taxon_ID, .keep_all = TRUE) |>
     dplyr::arrange(.data$taxon_rank, .data$canonical_name)
 }
 

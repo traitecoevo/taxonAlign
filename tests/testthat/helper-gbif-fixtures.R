@@ -15,7 +15,8 @@ gbif_taxon_row <- function(key,
                             class = "Magnoliopsida",
                             order = "Sapindales",
                             family = "Rutaceae",
-                            genus = NA_character_) {
+                            genus = NA_character_,
+                            authorship = NA_character_) {
   tibble::tibble(
     key = as.integer(key),
     parentKey = as.integer(parentKey),
@@ -29,7 +30,8 @@ gbif_taxon_row <- function(key,
     class = class,
     order = order,
     family = family,
-    genus = genus
+    genus = genus,
+    authorship = authorship
   )
 }
 

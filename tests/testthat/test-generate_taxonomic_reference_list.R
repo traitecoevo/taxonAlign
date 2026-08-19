@@ -312,12 +312,25 @@ test_that("generate_taxonomic_reference_list returns the documented columns", {
   expect_s3_class(out, "tbl_df")
   expect_setequal(
     names(out),
-    c("gbif_key", "parent_key", "accepted_key", "taxon_name", "canonical_name",
-      "taxon_rank", "taxonomic_status", "kingdom", "phylum", "class", "order",
-      "family", "genus", "taxonomic_reference")
+    c("taxon_ID", "parent_key", "accepted_name_usage_ID", "scientific_name",
+      "scientific_name_authorship", "canonical_name", "taxon_rank", "taxonomic_status",
+      "kingdom", "phylum", "class", "order", "family", "genus", "taxonomic_dataset")
   )
-  expect_equal(unique(out$taxonomic_reference), "GBIF")
-  expect_setequal(out$gbif_key, c(1L, 2L, 3L))
+  expect_equal(unique(out$taxonomic_dataset), "GBIF")
+  expect_setequal(out$taxon_ID, c(1L, 2L, 3L))
+})
+
+test_that("accepted_name_usage_ID is filled in for accepted names (self-referential, as in APC downloads)", {
+  local_mock_gbif_end_to_end()
+  out <- generate_taxonomic_reference_list("Boronia", cache_dir = withr::local_tempdir(), quiet = TRUE)
+
+  accepted <- out[out$taxonomic_status == "accepted", ]
+  expect_false(anyNA(accepted$accepted_name_usage_ID))
+  expect_equal(accepted$accepted_name_usage_ID, accepted$taxon_ID)
+
+  # key 3 is a synonym of key 2 -- its accepted_name_usage_ID should point there, not to itself
+  synonym <- out[out$taxon_ID == 3, ]
+  expect_equal(synonym$accepted_name_usage_ID, 2L)
 })
 
 test_that("include_synonyms = FALSE drops synonym rows", {
@@ -326,7 +339,7 @@ test_that("include_synonyms = FALSE drops synonym rows", {
     "Boronia", include_synonyms = FALSE, cache_dir = withr::local_tempdir(), quiet = TRUE
   )
   expect_false("synonym" %in% out$taxonomic_status)
-  expect_setequal(out$gbif_key, c(1L, 2L))
+  expect_setequal(out$taxon_ID, c(1L, 2L))
 })
 
 test_that("rank filters to that rank and narrower", {
@@ -338,13 +351,13 @@ test_that("rank filters to that rank and narrower", {
   expect_false("genus" %in% out$taxon_rank)
 })
 
-test_that("country restricts to taxa with an occurrence record there (including via accepted_key)", {
+test_that("country restricts to taxa with an occurrence record there (including via accepted_name_usage_ID)", {
   local_mock_gbif_end_to_end()
   out <- generate_taxonomic_reference_list(
     "Boronia", country = "au", cache_dir = withr::local_tempdir(), quiet = TRUE
   )
-  # key 2 has the occurrence; key 3 (its synonym) is kept via accepted_key
-  expect_setequal(out$gbif_key, c(2L, 3L))
+  # key 2 has the occurrence; key 3 (its synonym) is kept via accepted_name_usage_ID
+  expect_setequal(out$taxon_ID, c(2L, 3L))
 })
 
 test_that("multiple taxon_name values are resolved and merged with no duplicate keys", {
@@ -352,8 +365,8 @@ test_that("multiple taxon_name values are resolved and merged with no duplicate 
   out <- generate_taxonomic_reference_list(
     c("Boronia", "Zieria"), cache_dir = withr::local_tempdir(), quiet = TRUE
   )
-  expect_setequal(out$gbif_key, c(1L, 2L, 3L, 10L, 20L))
-  expect_equal(anyDuplicated(out$gbif_key), 0)
+  expect_setequal(out$taxon_ID, c(1L, 2L, 3L, 10L, 20L))
+  expect_equal(anyDuplicated(out$taxon_ID), 0)
 })
 
 test_that("output is deduplicated even if the same taxon is requested twice", {
@@ -361,5 +374,5 @@ test_that("output is deduplicated even if the same taxon is requested twice", {
   out <- generate_taxonomic_reference_list(
     c("Boronia", "Boronia"), cache_dir = withr::local_tempdir(), quiet = TRUE
   )
-  expect_equal(anyDuplicated(out$gbif_key), 0)
+  expect_equal(anyDuplicated(out$taxon_ID), 0)
 })
