@@ -53,7 +53,7 @@ ausinvertraits_aligned_names <- read_csv(here("../ausinvertraits.addons/data_ext
 
 ausinvertraits_aligned_names$original_name |> unique() |> length()
 
-ausinvertraits_names 
+ausinvertraits_aligned_names
 ```
 
 ```{r}
