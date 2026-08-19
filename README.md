@@ -10,13 +10,13 @@
 `taxonAlign` helps you:
 
 1.  **Build a personalised taxonomic reference** by combining one or
-    more taxonomic reference tables – your own, one built from the
-    GBIF backbone taxonomy with
-    `generate_GBIF_taxonomic_reference_list()`, or a mix of both.
+    more taxonomic reference tables – your own, one built from the GBIF
+    backbone taxonomy with `generate_GBIF_taxonomic_reference_list()`,
+    or a mix of both.
 2.  **Fuzzy-match a list of raw taxon names** against that reference,
     resolving misspellings, synonyms, and names only identifiable to a
-    higher rank (`genus sp.`), to maximise how many of your names
-    align successfully.
+    higher rank (`genus sp.`), to maximise how many of your names align
+    successfully.
 
 It’s inspired by [APCalign](https://traitecoevo.github.io/APCalign/)’s
 approach to aligning taxon names to the Australian Plant Census,
@@ -27,8 +27,7 @@ just genus/species/family.
 
 ## Installation
 
-`taxonAlign` isn’t on CRAN. Install the development version from
-GitHub:
+`taxonAlign` isn’t on CRAN. Install the development version from GitHub:
 
 ``` r
 # install.packages("pak")
@@ -47,8 +46,8 @@ pak::pak("traitecoevo/taxonAlign")
 
 ## Example
 
-Given a small taxonomic reference (built here by hand for the example
-– in practice, this would usually come from your own data, or from
+Given a small taxonomic reference (built here by hand for the example –
+in practice, this would usually come from your own data, or from
 `generate_GBIF_taxonomic_reference_list()`):
 
 ``` r
