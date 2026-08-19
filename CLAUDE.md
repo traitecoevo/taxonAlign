@@ -227,17 +227,27 @@ Architecture of the matching engine itself:
     spuriously "match" whichever resource row happened to have an `NA` `canonical_name`, rather than
     correctly matching nothing. Real GBIF data occasionally has an `NA` `canonicalName`. Fixed at the
     source rather than at each call site: `prepare_taxonomic_resources()` now drops (with a warning)
-    any row where `canonical_name` and its `taxon_name` fallback are *both* `NA` -- such a row could
-    never be usefully matched against anyway, and leaving it in is a landmine for this exact `%in%`
-    gotcha in every match block, not just the fuzzy ones.
+    any row whose `canonical_name` is `NA` -- such a row could never be usefully matched against
+    anyway, and leaving it in is a landmine for this exact `%in%` gotcha in every match block, not just
+    the fuzzy ones.
+- `prepare_taxonomic_resources()` renames raw column names on the way in using APCalign's own
+  `column_rename` vector verbatim (`APCalign::load_taxonomic_resources()`'s, copied as-is) --
+  `canonicalName`/`taxonRank`/`taxonomicStatus`/`scientificName`/etc. get renamed to
+  `canonical_name`/`taxon_rank`/`taxonomic_status`/`scientific_name`/etc. automatically. There's
+  deliberately **no `taxon_name` column or fallback concept at all** -- an earlier version of this
+  function had `canonical_name` optionally fall back to a separate `taxon_name` column (inherited from
+  the ported `AusInvertAlign` prototype, whose AFD-derived CSV happens to have both), but that
+  introduced exactly the column-naming ambiguity APCalign avoids by only ever using `canonical_name`.
+  `canonical_name` is now a straightforwardly required column; a row where it's `NA` is dropped (see
+  the bug note above), not silently patched from a second name field.
 
 Not yet implemented (deliberately deferred, tracked as GitHub issues):
 - A higher-level wrapper that prompts a user to read in their own taxon list and interactively map its
-  columns onto the names `prepare_taxonomic_resources()` expects (`scientific_name`, `taxon_rank`,
-  `taxonomic_status`, `taxonomic_dataset`, `genus`, `taxon_ID`, `accepted_name_usage_ID`, with
-  `canonical_name`/`taxon_name` optional) — sketched in comments in
-  `R/match_taxa_for_inverts_202500304-use this.R` but not built; `prepare_taxonomic_resources()` today
-  just errors if a required column is missing.
+  columns onto the names `prepare_taxonomic_resources()` expects (`canonical_name`, `scientific_name`,
+  `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`, `genus`, `taxon_ID`,
+  `accepted_name_usage_ID`) — sketched in comments in `R/match_taxa_for_inverts_202500304-use this.R`
+  but not built; `prepare_taxonomic_resources()` today only renames a fixed set of known raw Darwin
+  Core column names (see above) and otherwise just errors if a required column is missing.
 - Hybrid names, graded/"affinis" names (`aff.`/`cf.`), and indecision/intergrade names — real
   APCalign's internal `match_taxa()` has dedicated match blocks for all of these
   (`match_03*`/`match_04*`/`match_06*`/`match_08*`); taxonAlign's `match_taxa()` has none of them yet.

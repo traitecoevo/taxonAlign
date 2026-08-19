@@ -1,8 +1,20 @@
 test_that("prepare_taxonomic_resources errors clearly when required columns are missing", {
   expect_error(
-    prepare_taxonomic_resources(dplyr::tibble(taxon_name = "Boronia serrulata")),
+    prepare_taxonomic_resources(dplyr::tibble(canonical_name = "Boronia serrulata")),
     "missing required column"
   )
+})
+
+test_that("prepare_taxonomic_resources renames raw Darwin Core columns, exactly like APCalign::load_taxonomic_resources()", {
+  raw <- dplyr::tibble(
+    canonicalName = "Boronia serrulata", scientificName = "Boronia serrulata Sm.",
+    taxonRank = "species", taxonomicStatus = "accepted", taxonomic_dataset = "TEST",
+    genus = "Boronia", taxonID = "sp1", acceptedNameUsageID = "sp1"
+  )
+  resources <- prepare_taxonomic_resources(raw)
+
+  expect_equal(resources$species$accepted$canonical_name, "Boronia serrulata")
+  expect_equal(resources$species$accepted$taxon_ID, "sp1")
 })
 
 test_that("prepare_taxonomic_resources errors when there are no species-level rows", {
@@ -32,35 +44,18 @@ test_that("prepare_taxonomic_resources builds both subgenus conventions", {
   expect_equal(resources$subgenus_v2$genus_and_subgenus, "Boronia (Valvatae)")
 })
 
-test_that("canonical_name falls back to taxon_name when NA", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
-  # the variety row had canonical_name = NA in the input
-  expect_true("Boronia pinnata var. pinnata" %in% resources$species$accepted$canonical_name)
-})
-
-test_that("taxon_name is entirely optional -- matches generate_taxonomic_reference_list()'s output shape", {
-  # generate_taxonomic_reference_list() has no `taxon_name` column at all (it was renamed to
-  # `scientific_name`/`canonical_name` to match APCalign's conventions) -- prepare_taxonomic_resources()
-  # must accept that shape, not just data that happens to carry a `taxon_name` column too.
-  no_taxon_name <- sample_taxon_resources() |> dplyr::select(-taxon_name)
-  # the variety row ("sp2") has no usable name without a taxon_name fallback, and gets dropped with a
-  # warning (covered by its own test below) -- suppressed here since this test is about the rest of
-  # the table still working, not about that specific row
-  resources <- suppressWarnings(prepare_taxonomic_resources(no_taxon_name))
-  expect_equal(resources$species$accepted$canonical_name[resources$species$accepted$taxon_ID == "sp1"], "Boronia serrulata")
-})
-
-test_that("a row with no usable name (canonical_name and taxon_name both NA) is dropped, with a warning", {
+test_that("a row with a missing (NA) canonical_name is dropped, with a warning", {
   # regression test: leaving such a row in is an active hazard, not just untidy data -- `NA %in% x` is
   # TRUE whenever `x` contains an NA, so a legitimately-failed fuzzy_match() (which returns NA) would
   # otherwise spuriously "match" this row instead of correctly matching nothing at all.
-  no_taxon_name <- sample_taxon_resources() |> dplyr::select(-taxon_name)
+  broken <- sample_taxon_resources()
+  broken$canonical_name[broken$taxon_ID == "sp2"] <- NA_character_
+
   expect_warning(
-    resources <- prepare_taxonomic_resources(no_taxon_name),
-    "no usable name"
+    resources <- prepare_taxonomic_resources(broken),
+    "missing \\(NA\\) `canonical_name`"
   )
-  # the variety row ("sp2") had canonical_name = NA and no taxon_name to fall back to -- it should be
-  # gone, while everything else survives
+  # the variety row ("sp2") should be gone, while everything else survives
   expect_false("sp2" %in% resources$species$accepted$taxon_ID)
   expect_true("sp1" %in% resources$species$accepted$taxon_ID)
 })
