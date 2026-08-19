@@ -12,7 +12,16 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
-Suggests: 
+Imports:
+    dplyr,
+    purrr,
+    rgbif,
+    tools,
+    utils
+Suggests:
     knitr,
-    rmarkdown
+    rmarkdown,
+    testthat (>= 3.1.9),
+    withr
 VignetteBuilder: knitr
+Config/testthat/edition: 3
