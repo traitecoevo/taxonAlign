@@ -88,15 +88,29 @@ session (see Architecture #2 below). `test-match_taxa.R` covers the opt-in `hybr
 `intergrades_affinis` matching (issue #9), plus `progress = TRUE` (issue #5, also covered in
 `test-align_taxa.R`). `test-load_taxonomic_resources.R` covers `load_taxonomic_resources("AFD")`
 (issue #6) against a small AFD-shaped fixture (`helper-afd-fixtures.R`, see Architecture #3 below) --
-also offline-safe, no need for the real 89MB `inst/extdata/AFD.csv`. 242 expectations across all
-offline-safe test files, all passing as of the last run. (See Architecture #2 below for a
-fuzzy-matching gotcha this fixture data has to dodge.)
+also offline-safe, no need for the real 89MB `inst/extdata/AFD.csv`.
+
+`test-match_taxa_typos.R` covers messy, invertebrate-flavoured name oddities specifically -- every
+edit-distance type of typo (deletion/insertion/substitution/transposition), the first-letter
+anti-cross-matching rule (a 1-edit-distance genus typo that changes the first letter must still fail),
+a genuinely ambiguous fuzzy tie (must resolve to nothing, not a guess), case/whitespace/trailing-notes/
+`sensu lato` normalisation, morphospecies codes (`sp. 1`/`sp. nov.`/`sp. indet.`), the nominotypical
+subgenus bracket convention (`Genus (Genus) species`), and two synonyms of the same accepted species
+where one sits under a *different* genus entirely (a real, common invertebrate-taxonomy pattern) --
+using a second fixture, `sample_invert_taxon_resources()` (`helper-invert-typo-fixtures.R`), grounded in
+naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the hyphenated
+"letter-shape" epithet convention, `"t-viride"`) rather than invented from scratch.
+`test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
+first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
+
+271 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+#2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 242) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 271) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (245 total, as of the last online run) (see Architecture #2 below).
+passing expectations on top (278 total, as of the last online run) (see Architecture #2 below).
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
