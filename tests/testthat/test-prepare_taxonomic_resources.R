@@ -35,23 +35,91 @@ test_that("prepare_taxonomic_resources splits by rank and status, deriving all r
   expect_equal(nrow(resources$species$synonym), 2) # "oldname" + "missingaccepted"
   # genus/order each have an accepted row and a synonym row, unlike species -- prepare_taxonomic_resources()
   # only splits `species` further by taxonomic_status, so these stay as one combined table per rank
-  expect_setequal(resources$genus$canonical_name, c("Boronia", "Boronella"))
+  # "Zieria" is synthesised: the "Boronia oldname" synonym row's `genus` column names it, but the
+  # fixture never gives it an explicit genus-rank row of its own -- prepare_taxonomic_resources() now
+  # adds one automatically for any such implied-but-missing higher rank (see the synthesised_rows step)
+  expect_setequal(resources$genus$canonical_name, c("Boronia", "Boronella", "Zieria"))
   expect_setequal(resources$order$canonical_name, c("Sapindales", "Oldorderia"))
   expect_equal(resources$family$canonical_name, "Rutaceae")
   expect_equal(resources$tribe$canonical_name, "Zanthoxyleae")
+})
+
+test_that("prepare_taxonomic_resources synthesises missing higher-rank rows from implied hierarchy columns", {
+  # a species row can name its family via an extra `family` column without ever getting an explicit
+  # family-rank row of its own -- a real, easy gap to leave (found via this package's own get-started.qmd
+  # vignette example, where a genus named only via the `genus` column silently failed to align at all)
+  raw <- dplyr::tibble(
+    canonical_name = c("Testus alphus", "Testus betus"),
+    scientific_name = c("Testus alphus Sm.", "Testus betus Sm."),
+    taxon_rank = "species", taxonomic_status = "accepted", taxonomic_dataset = "MY_DATA",
+    genus = "Testus", family = "Testaceae",
+    taxon_ID = c("sp1", "sp2"), accepted_name_usage_ID = c("sp1", "sp2")
+  )
+
+  resources <- prepare_taxonomic_resources(raw)
+
+  expect_equal(resources$genus$canonical_name, "Testus")
+  expect_equal(resources$family$canonical_name, "Testaceae")
+  # placeholder ID format: "<taxonomic_dataset>_<taxon_rank>_<canonical_name>" -- unique across both
+  # rank (a nominotypical genus/subgenus sharing a name) and dataset (two sources both having, say, a
+  # "Testaceae" family row)
+  expect_equal(resources$genus$taxon_ID, "MY_DATA_genus_Testus")
+  expect_equal(resources$genus$accepted_name_usage_ID, "MY_DATA_genus_Testus")
+  expect_equal(resources$family$taxon_ID, "MY_DATA_family_Testaceae")
+  expect_equal(resources$genus$taxonomic_status, "accepted")
+  expect_equal(resources$genus$taxonomic_dataset, "MY_DATA")
+})
+
+test_that("prepare_taxonomic_resources doesn't duplicate a higher rank that already has an explicit row", {
+  raw <- dplyr::bind_rows(
+    dplyr::tibble(
+      canonical_name = "Testaceae", scientific_name = "Testaceae Sm.", taxon_rank = "family",
+      taxonomic_status = "accepted", taxonomic_dataset = "MY_DATA", genus = NA_character_,
+      family = NA_character_, taxon_ID = "fam1", accepted_name_usage_ID = "fam1"
+    ),
+    dplyr::tibble(
+      canonical_name = "Testus alphus", scientific_name = "Testus alphus Sm.", taxon_rank = "species",
+      taxonomic_status = "accepted", taxonomic_dataset = "MY_DATA", genus = "Testus",
+      family = "Testaceae", taxon_ID = "sp1", accepted_name_usage_ID = "sp1"
+    )
+  )
+
+  resources <- prepare_taxonomic_resources(raw)
+
+  # the explicit "fam1" row survives untouched -- no second, synthesised "Testaceae" row is added
+  expect_equal(nrow(resources$family), 1)
+  expect_equal(resources$family$taxon_ID, "fam1")
+})
+
+test_that("prepare_taxonomic_resources ignores a non-character extra column when synthesising rows", {
+  # an extra column that isn't a hierarchy column at all (e.g. a collection year) shouldn't be treated
+  # as one -- it can't hold a taxon name, and previously crashed outright (`values != ""` on a POSIXct/
+  # numeric column errors rather than returning FALSE)
+  raw <- dplyr::tibble(
+    canonical_name = "Testus alphus", scientific_name = "Testus alphus Sm.", taxon_rank = "species",
+    taxonomic_status = "accepted", taxonomic_dataset = "MY_DATA", genus = "Testus",
+    collection_year = 1999L, taxon_ID = "sp1", accepted_name_usage_ID = "sp1"
+  )
+
+  resources <- prepare_taxonomic_resources(raw)
+
+  expect_false("collection_year" %in% names(resources))
+  expect_equal(resources$genus$canonical_name, "Testus")
 })
 
 test_that("prepare_taxonomic_resources orders resources most-specific-rank-first, not alphabetically", {
   # regression test: split() on the raw rank string alone orders alphabetically (family, genus, order,
   # subgenus, tribe here) -- arbitrary, and the wrong tie-break whenever a name could match more than
   # one rank (see taxonAlign_taxon_rank_specificity's own comment, and the AFD taxon_ID-collision bug
-  # this generalises the fix for). Expected most-specific-first order here: species, then subgenus,
-  # genus, tribe, family, order (subgenus_v2 is appended after the split completes, always last).
+  # this generalises the fix for). Expected order here: species first (most specific of all), then
+  # genus before subgenus specifically (the one deliberate exception -- a bare name shared by a genus
+  # and its own nominotypical subgenus defaults to the broader genus grouping), subgenus_v2 (kept
+  # immediately alongside its own "subgenus"), then tribe, family, order most-specific-first as usual.
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   expect_equal(
     names(resources),
-    c("species", "subgenus", "genus", "tribe", "family", "order", "subgenus_v2")
+    c("species", "genus", "subgenus", "subgenus_v2", "tribe", "family", "order")
   )
 })
 
@@ -70,7 +138,8 @@ test_that("prepare_taxonomic_resources keeps an unrecognised rank's own bucket, 
 
   expect_true("totallymaderank" %in% names(resources))
   expect_equal(resources$totallymaderank$canonical_name, "Madeupia")
-  # every recognised rank still sorts before the unrecognised one (subgenus_v2 aside -- always last)
+  # every recognised rank still sorts before the unrecognised one (subgenus_v2 aside -- it's always
+  # kept immediately after its own "subgenus", never reordered relative to it)
   expect_equal(tail(setdiff(names(resources), "subgenus_v2"), 1), "totallymaderank")
 })
 

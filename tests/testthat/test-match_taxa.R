@@ -105,3 +105,64 @@ test_that("progress = TRUE still reports progress when hybrids/intergrades_affin
   )
   expect_equal(out$alignment_code, "match_03a_hybrid_exact_genus")
 })
+
+# include_bracketed_info (defaults to FALSE): APCalign's convention of formatting a higher-rank-only
+# match as "<rank name> sp. [<original name>; <identifier>]" is only actually informative when there's
+# something beyond the matched rank's own name to report -- an unresolved epithet, a morphospecies
+# code, etc. When the name being matched is *nothing more* than the rank name itself (a bare single
+# word, or a bare "Genus (Subgenus)"), the bracketed suffix is redundant (original_name already
+# preserves the raw input as its own column regardless), so the default now returns just the bare
+# matched name. include_bracketed_info = TRUE restores APCalign's always-bracketed convention exactly.
+test_that("include_bracketed_info = FALSE (default) returns a bare name when nothing more was in the input", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+
+  out_genus <- align_taxa("Boronia", resources)
+  out_genus_synonym <- align_taxa("Boronella", resources)
+  out_family <- align_taxa("Rutaceae", resources)
+  out_subgenus_bracket <- align_taxa("Boronia (Valvatae)", resources)
+
+  expect_equal(out_genus$aligned_name, "Boronia")
+  expect_equal(out_genus$alignment_code, "match_12b_higher_rank_exact_accepted")
+  expect_equal(out_genus_synonym$aligned_name, "Boronella") # the matched (synonym) row's own name
+  expect_equal(out_family$aligned_name, "Rutaceae")
+  expect_equal(out_subgenus_bracket$aligned_name, "Boronia (Valvatae)")
+  expect_equal(out_subgenus_bracket$alignment_code, "match_12a_exact_subgenus_accepted_or_synonym")
+})
+
+test_that("include_bracketed_info = FALSE also drops a bare match's identifier, not just the original name", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia", resources, identifier = "some_dataset")
+
+  expect_equal(out$aligned_name, "Boronia") # no "[Boronia; some_dataset]" -- "nothing more" is literal
+})
+
+test_that("include_bracketed_info = FALSE still brackets a fuzzy bare-name match (match_12c)", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronela", resources) # one letter short of the genus synonym "Boronella"
+
+  # the *matched* reference name is bare, but the *input* itself was still just one (mis-spelled) word
+  # with nothing else -- still qualifies for the simplified format
+  expect_equal(out$aligned_name, "Boronella")
+  expect_equal(out$alignment_code, "match_12c_higher_rank_fuzzy_accepted")
+})
+
+test_that("include_bracketed_info = FALSE keeps the bracketed format whenever there's more to report", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+
+  # extra, unresolved content beyond the genus itself -- dropping it would lose real information
+  out_extra_epithet <- align_taxa("Boronia unresolvedepithet", resources)
+  out_morphospecies <- align_taxa("Boronia sp. 1", resources)
+
+  expect_true(grepl("^Boronia sp\\. \\[Boronia unresolvedepithet\\]$", out_extra_epithet$aligned_name))
+  expect_true(grepl("^Boronia sp\\. \\[Boronia sp\\. 1\\]$", out_morphospecies$aligned_name))
+})
+
+test_that("include_bracketed_info = TRUE always uses the bracketed format, matching APCalign's convention", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+
+  out_genus <- align_taxa("Boronia", resources, include_bracketed_info = TRUE)
+  out_subgenus_bracket <- align_taxa("Boronia (Valvatae)", resources, include_bracketed_info = TRUE)
+
+  expect_equal(out_genus$aligned_name, "Boronia sp. [Boronia]")
+  expect_equal(out_subgenus_bracket$aligned_name, "Boronia (Valvatae) sp. [Boronia (Valvatae)]")
+})

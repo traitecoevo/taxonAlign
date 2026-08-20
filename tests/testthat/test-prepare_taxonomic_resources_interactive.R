@@ -175,8 +175,12 @@ test_that("the 'any additional reference(s)?' loop adds more tables via user_res
     )
   )
 
-  expect_setequal(names(resources), c("species", "family"))
+  # "genus" also appears: `first`'s species row names "Boronia" in its `genus` column but never gives
+  # it an explicit genus-rank row of its own, so prepare_taxonomic_resources() synthesises one
+  expect_setequal(names(resources), c("species", "genus", "family"))
   expect_equal(resources$species$accepted$taxonomic_dataset, "FIRST")
+  expect_equal(resources$genus$canonical_name, "Boronia")
+  expect_equal(resources$genus$taxonomic_dataset, "FIRST")
   expect_equal(resources$family$taxonomic_dataset, "SECOND")
 })
 

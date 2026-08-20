@@ -171,6 +171,18 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #'  way. Defaults to `FALSE`.
 #' @param identifier A dataset, location or other identifier,
 #'  which defaults to NA.
+#' @param include_bracketed_info Logical; controls the `"<rank name> sp. [<original name>; <identifier>]"`
+#'  formatting APCalign uses for every higher-rank-only match. When `FALSE` (the default) *and* the
+#'  name being matched reduces to nothing more than the matched rank's own name (a bare single word for
+#'  an ordinary rank, or a bare `"Genus (Subgenus)"` for the bracketed-subgenus convention -- see
+#'  `?prepare_taxonomic_resources`) -- i.e. there's nothing beyond the rank name itself worth echoing
+#'  back, since `original_name` already preserves the raw input as its own column regardless -- the
+#'  bracketed suffix (and any `identifier`) is dropped entirely and `aligned_name` is just the bare
+#'  matched name. Whenever the name being matched has anything beyond the rank name itself (an
+#'  unresolved epithet, a morphospecies code, a hybrid/intergrade/indecision/affinis marker, ...), the
+#'  bracketed format is used regardless of this argument, since dropping it there would lose real
+#'  information. Set to `TRUE` to always use the bracketed format, matching APCalign's convention
+#'  exactly. Defaults to `FALSE`.
 #' @param progress Logical; if `TRUE`, prints a text progress bar (`utils::txtProgressBar()`) tracking
 #'  what fraction of `taxa$tocheck` has been resolved so far, updated after every match block. Tracks
 #'  rows resolved rather than which match block is currently running, since blocks aren't equal-cost --
@@ -189,6 +201,7 @@ match_taxa <- function(
     hybrids = FALSE,
     intergrades_affinis = FALSE,
     identifier = NA_character_,
+    include_bracketed_info = FALSE,
     progress = FALSE
 ) {
 
@@ -935,6 +948,12 @@ match_taxa <- function(
         resources$subgenus_v2$genus_and_subgenus
       )
 
+    # TRUE where the name being matched is *nothing more* than "Genus (Subgenus)" itself (exactly two
+    # whitespace-delimited tokens -- the bracketed part counts as its own token) -- no species epithet,
+    # "sp." marker, morphospecies code, or anything else. See ?match_taxa's include_bracketed_info.
+    bare_rank_name <- !include_bracketed_info &
+      stringr::str_count(stringr::str_trim(taxa$tocheck[i,]$cleaned_name), "\\S+") == 2
+
     taxa$tocheck[i,] <- taxa$tocheck[i,] |>
       dplyr::mutate(
         taxonomic_dataset = resources$subgenus_v2$taxonomic_dataset[ii],
@@ -943,9 +962,10 @@ match_taxa <- function(
         taxon_ID = resources$subgenus_v2$taxon_ID[ii],
         accepted_name_usage_ID = resources$subgenus_v2$accepted_name_usage_ID[ii],
         aligned_name_tmp = paste0(resources$subgenus_v2$genus_and_subgenus[ii], " sp. [", cleaned_name),
-        aligned_name = ifelse(is.na(identifier_string2),
-                              paste0(aligned_name_tmp, "]"),
-                              paste0(aligned_name_tmp, identifier_string2, "]")
+        aligned_name = dplyr::case_when(
+          bare_rank_name ~ resources$subgenus_v2$genus_and_subgenus[ii],
+          is.na(identifier_string2) ~ paste0(aligned_name_tmp, "]"),
+          TRUE ~ paste0(aligned_name_tmp, identifier_string2, "]")
         ),
         aligned_reason = paste0(
           "Exact match a genus (subgenus) to a ", taxon_rank, " in ", taxonomic_dataset, " (",
@@ -978,6 +998,12 @@ match_taxa <- function(
         resources[[ranks]]$word_one_stripped
       )
 
+    # TRUE where the name being matched is *nothing more* than this rank's own name -- a single
+    # whitespace-delimited token, no epithet/"sp."/morphospecies code/etc. beyond it. See ?match_taxa's
+    # include_bracketed_info.
+    bare_rank_name <- !include_bracketed_info &
+      stringr::str_count(stringr::str_trim(taxa$tocheck[i,]$cleaned_name), "\\S+") == 1
+
     taxa$tocheck[i,] <- taxa$tocheck[i,] |>
       dplyr::mutate(
         taxonomic_dataset = resources[[ranks]]$taxonomic_dataset[ii],
@@ -986,9 +1012,10 @@ match_taxa <- function(
         taxon_ID = resources[[ranks]]$taxon_ID[ii],
         accepted_name_usage_ID = resources[[ranks]]$accepted_name_usage_ID[ii],
         aligned_name_tmp = paste0(resources[[ranks]]$word_one_stripped[ii], " sp. [", cleaned_name),
-        aligned_name = ifelse(is.na(identifier_string2),
-                              paste0(aligned_name_tmp, "]"),
-                              paste0(aligned_name_tmp, identifier_string2, "]")
+        aligned_name = dplyr::case_when(
+          bare_rank_name ~ resources[[ranks]]$word_one_stripped[ii],
+          is.na(identifier_string2) ~ paste0(aligned_name_tmp, "]"),
+          TRUE ~ paste0(aligned_name_tmp, identifier_string2, "]")
         ),
         aligned_reason = paste0(
           "Exact match of the first word of the taxon name to a ", taxon_rank, " in ", taxonomic_dataset, " (",
@@ -1010,14 +1037,36 @@ match_taxa <- function(
   # higher order taxon name in one of the taxonomic references.
   # The 'taxon name' is then reformatted as `genus sp.` with the original name in square brackets.
   for (ranks in taxon_ranks_to_check) {
+    # `fuzzy_match_genus` must be recomputed fresh against *this* rank's word_one_stripped on every
+    # iteration -- reusing whatever match_02c's loop last left it as (whichever rank happened to be
+    # last in taxon_ranks_to_check, not necessarily this one) meant this block only ever fuzzy-matched
+    # correctly by coincidence. Found via real AusInvertTraits data: morphospecies "voucher code" names
+    # like "Aderid BF05" should fuzzy-match the tribe "Aderini" (distance 2, well within tolerance) but
+    # didn't, because fuzzy_match_genus held a stale result against an unrelated, usually near-empty
+    # rank instead.
+    taxa$tocheck <- taxa$tocheck |>
+      dplyr::mutate(
+        fuzzy_match_genus = fuzzy_match_genera(word_one_stripped, resources[[ranks]]$word_one_stripped)
+      )
+
     i <-
       taxa$tocheck$fuzzy_match_genus %in% resources[[ranks]]$word_one_stripped
 
+    # `ii` must look up the *fuzzy match result* (fuzzy_match_genus), not the original query's own
+    # word_one_stripped -- the original word is (by definition, since this is the fuzzy fallback) not
+    # itself present in resources[[ranks]], so looking it up here always returned NA, silently
+    # corrupting every match this block did find via `i` with entirely blank taxonomic_dataset/
+    # taxon_ID/etc. columns.
     ii <-
       match(
-        taxa$tocheck[i,]$word_one_stripped,
+        taxa$tocheck[i,]$fuzzy_match_genus,
         resources[[ranks]]$word_one_stripped
       )
+
+    # TRUE where the name being matched is *nothing more* than a single (mis-spelled) token fuzzy-matching
+    # this rank's own name -- see ?match_taxa's include_bracketed_info.
+    bare_rank_name <- !include_bracketed_info &
+      stringr::str_count(stringr::str_trim(taxa$tocheck[i,]$cleaned_name), "\\S+") == 1
 
     taxa$tocheck[i,] <- taxa$tocheck[i,] |>
       dplyr::mutate(
@@ -1027,9 +1076,10 @@ match_taxa <- function(
         taxon_ID = resources[[ranks]]$taxon_ID[ii],
         accepted_name_usage_ID = resources[[ranks]]$accepted_name_usage_ID[ii],
         aligned_name_tmp = paste0(fuzzy_match_genus, " sp. [", cleaned_name),
-        aligned_name = ifelse(is.na(identifier_string2),
-                              paste0(aligned_name_tmp, "]"),
-                              paste0(aligned_name_tmp, identifier_string2, "]")
+        aligned_name = dplyr::case_when(
+          bare_rank_name ~ fuzzy_match_genus,
+          is.na(identifier_string2) ~ paste0(aligned_name_tmp, "]"),
+          TRUE ~ paste0(aligned_name_tmp, identifier_string2, "]")
         ),
         aligned_reason = paste0(
           "Fuzzy match of the first word of the taxon name to a ", taxon_rank, " in ", taxonomic_dataset, " (",

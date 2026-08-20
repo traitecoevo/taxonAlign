@@ -15,6 +15,7 @@ align_taxa(
   taxon_ranks_to_check = NULL,
   hybrids = FALSE,
   intergrades_affinis = FALSE,
+  include_bracketed_info = FALSE,
   progress = FALSE,
   full = FALSE
 )
@@ -53,6 +54,14 @@ than leaving them for later, inappropriate match attempts. Defaults to \code{FAL
 \item{intergrades_affinis}{Logical; if \code{TRUE}, resolve names suggesting an intergrade, an
 indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
 Defaults to \code{FALSE}. See \code{?match_taxa}.}
+
+\item{include_bracketed_info}{Logical; controls the \code{"<rank name> sp. [<original name>; <identifier>]"} formatting used for a higher-rank-only match. When \code{FALSE} (the default) and the
+name being matched is nothing more than the matched rank's own name (a bare single word, or a bare
+\code{"Genus (Subgenus)"}), the bracketed suffix is dropped and \code{aligned_name} is just the bare matched
+name -- \code{original_name} already preserves the raw input as its own column regardless. Whenever
+there's anything beyond the rank name itself to report, the bracketed format is used regardless of
+this argument. Set to \code{TRUE} to always use the bracketed format (matching APCalign's convention
+exactly). Defaults to \code{FALSE}. See \code{?match_taxa}.}
 
 \item{progress}{Logical; if \code{TRUE}, prints a text progress bar tracking what fraction of
 \code{original_name} has been resolved so far. Useful for large inputs, where matching can take a while.

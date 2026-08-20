@@ -103,17 +103,19 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-286 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+321 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
 #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 286) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 321) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (293 total, as of the last online run). One local run hit a transient
-failure here (`load_APC()` → `dplyr::mutate()` on a `NULL` `APC$family_accepted`, i.e. a live
-`APCalign::load_taxonomic_resources()` call momentarily not returning that element) that didn't
-reproduce on retry -- worth a second look if it recurs, but not treated as a real bug off one occurrence.
+passing expectations on top (328 total, as of the last online run that succeeded). This has also failed
+intermittently across several local runs (`load_APC()` → `dplyr::mutate()` on a `NULL`
+`APC$family_accepted`, i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning
+that element) -- looks like a real, if intermittent, upstream issue (rate limiting or a partial
+response on the live APC download) rather than anything introduced by taxonAlign, but not yet root-caused;
+retry if you hit it.
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -284,7 +286,7 @@ Architecture of the matching engine itself:
   carry over APCalign's `taxonomic_splits` disambiguation (APC-specific split history an arbitrary
   reference can't be expected to document) or its genus-substring-splicing trick for reconstructing a
   suggested name when only the genus changed (doesn't obviously generalize across ranks).
-- **Four real bugs found by testing against real, messy data** (not just the hand-built fixture) that
+- **Five real bugs found by testing against real, messy data** (not just the hand-built fixture) that
   are worth knowing about if you touch this code again:
   - `fuzzy_match()` (`match_taxa_helpers.R`) used to crash with "missing value where TRUE/FALSE
     needed" whenever a reference list's `accepted_list` argument contained an `NA` (real GBIF data with
@@ -330,6 +332,23 @@ Architecture of the matching engine itself:
     everything else (not a literal `split()` by the status string), while still preserving each row's
     real `taxonomic_status` value inside the `synonym` bucket (`match_taxa()` already pulls
     `taxonomic_status` from the row itself, not the bucket name, so output fidelity is unaffected).
+  - Discovered against the real, combined AFD+iNaturalist reference (not a fixture): museum "voucher
+    code" morphospecies names (e.g. `"Aderid BF05"`) that should fuzzy-match a real, present tribe/family
+    name (`"Aderini"`/`"Aderidae"`, well within fuzzy tolerance) silently failed to, in `match_taxa()`'s
+    final generic higher-rank fuzzy fallback (`match_12c`). Two compounding bugs in the same loop: (1)
+    `fuzzy_match_genus` was never recomputed against *this* rank's `word_one_stripped` on each iteration
+    of `for (ranks in taxon_ranks_to_check)` -- it was reused as a stale leftover from `match_02c`'s own
+    loop, against whichever rank that loop had last tested (not necessarily the rank `match_12c` was
+    currently on), so a fuzzy match only ever succeeded by coincidence; (2) even when a fuzzy candidate
+    genuinely existed, the `ii <- match(...)` lookup used the original query's own `word_one_stripped`
+    (which, being the fuzzy fallback, is by definition *not* present in `resources[[ranks]]`) instead of
+    the fuzzy match result itself, so `ii` was always `NA`, corrupting the matched row's
+    `taxonomic_dataset`/`taxon_ID`/etc. with blanks even on the rare case (1) let through. Fixed both:
+    recompute `fuzzy_match_genus` fresh inside the loop against `resources[[ranks]]$word_one_stripped`,
+    and look `ii` up via the fuzzy match result, not the original word. This changed some morphospecies
+    codes that historically resolved to tribe rank (alphabetically checked before family in
+    `taxon_ranks_to_check`'s default order) to resolve to family rank instead where both are valid
+    fuzzy-match targets -- confirmed as acceptable, not a regression to chase further.
 - **`taxonomic_status`-based disambiguation when the same lookup key repeats** -- real reference data
   (e.g. real APC data's "Genoplesium insigne", which recurs under more than one non-"accepted" status)
   can list the same `canonical_name`/`scientific_name`/binomial/trinomial more than once with different
@@ -429,6 +448,46 @@ Architecture of the matching engine itself:
   with a column recording which) as have one uniform source. Moved onto the same
   `prompt_column_or_fixed_value()` path as the other two rather than keeping a separate, more limited
   mechanism — this also retired `prompt_free_text()` entirely (it had no other caller).
+- **Missing higher-rank rows are synthesised automatically** from whatever implied hierarchy
+  information a table already carries, rather than requiring the caller to add an explicit row for
+  every genus/family/etc. themselves. Found via this package's own `get-started.qmd` vignette example:
+  a species row named its genus via the `genus` column (`genus = "Xylotoles"`), but with no explicit
+  `taxon_rank = "genus"` row for "Xylotoles" anywhere in the table, `align_taxa("Xylotoles sp. 1", ...)`
+  correctly returned no match at all -- a `genus` column *value* is descriptive metadata, not the same
+  thing as a genus-rank *row* to match against, and it's an easy gap to leave (the vignette's own
+  example data had exactly this gap, for exactly this reason). `prepare_taxonomic_resources()` now scans
+  every column beyond the required 8 (plus `genus` itself, which is required but is *also* a hierarchy
+  column) for values without a corresponding explicit row at that rank, and adds one automatically --
+  right after the `taxonomic_status`-priority sort and before the big derived-columns `mutate()`, so
+  synthesised rows get `word_one`/`stripped_canonical`/etc. computed the same as every other row.
+  Deliberately scans *any* extra column, not just the fixed Linnaean kingdom/phylum/class/order/family
+  set, since real data carries ranks beyond those (tribe, subfamily, ...) -- the tradeoff, accepted
+  deliberately, is that a genuinely non-taxonomic extra column (e.g. "locality", "collection_year")
+  would also be scanned; a non-character column is skipped (it can't hold a taxon name, and previously
+  crashed outright -- `values != ""` on a POSIXct/numeric column errors rather than returning `FALSE`),
+  but a stray *character* column not meant as a hierarchy column has no such guard and will generate
+  bogus rows if included. This generalises, inside `prepare_taxonomic_resources()` itself, the same idea
+  `load_AFD()`'s `afd_higher_rank_rows()` already applies specifically to AFD's own raw export (see
+  Architecture #3) -- to *any* input table, not just AFD's. A synthesised row has no natural ID, so
+  `taxon_ID`/`accepted_name_usage_ID` fall back to a placeholder combining the dataset, rank and name
+  (`paste(taxonomic_dataset, taxon_rank, canonical_name, sep = "_")`, e.g. `"MY_DATA_genus_Xylotoles"`)
+  -- unique across both rank (a nominotypical genus/subgenus sharing a name) and dataset (two sources
+  both having, say, a "Formicidae" family row). A value that already has an explicit row at that rank
+  is left alone (no duplicate synthesised row is added).
+- **`genus` now ranks before `subgenus`** in `taxonAlign_taxon_rank_specificity` -- the one deliberate
+  exception to that vector's otherwise most-specific-first ordering. Unlike every other rank pair, a
+  bare name shared by a genus and its own nominotypical subgenus (e.g. `"Xylotoles"`) is genuinely
+  ambiguous on its own, and the safer default is to assume the user means the broader genus-rank
+  grouping -- genus names are what people actually write, the bracketed `Genus (Subgenus)` convention
+  and the plain subgenus-alone convention both still exist for when a subgenus really is intended. This
+  is *unrelated* to the separate `taxon_ID`-collision bug fixed in `load_taxonomic_resources.R`'s
+  `afd_higher_rank_rows()` (Architecture #3) -- that bug was about two different rows accidentally
+  sharing the same *ID string* and is fixed by rank-namespacing IDs regardless of ordering; this is
+  purely about which rank's *name* table a plain, unqualified query name should check first.
+  `subgenus_v2` is ordered immediately after `subgenus` (not before, and not always trailing last as it
+  used to) -- cosmetic only, since every functional reference to `taxon_ranks_to_check`/`update_taxa()`'s
+  flattening already excludes `subgenus_v2` by name, unaffected by list position -- but keeps the two
+  parallel subgenus conventions adjacent when a user inspects `names(resources)` themselves.
 - **Hybrid/graded/indecision/intergrade names** (issue #9) are handled by one shared, generic helper,
   `match_special_case_to_genus()` (top of `R/match_taxa.R`), rather than APCalign's ~20 separate,
   near-duplicate blocks (5 sub-blocks each for 4 pattern families, because APC/APNI's `resources` keeps
@@ -503,6 +562,40 @@ Architecture of the matching engine itself:
   bottom -- there are ~18 early returns scattered through the function (one after each match block, so
   it can stop as soon as everything is resolved), and the bar needs to close on all of them, not only
   the one at the end.
+- **`include_bracketed_info` (opt-out of APCalign's always-bracketed higher-rank format)**:
+  `match_taxa()`/`align_taxa()`/`create_taxonomic_update_lookup()` all gain an `include_bracketed_info
+  = FALSE` parameter. APCalign's convention for a higher-rank-only match is always
+  `"<rank name> sp. [<original name>; <identifier>]"`, even when the name being matched *is* nothing
+  more than the matched rank's own name (a bare `"Boronia"` alone, or a bare `"Boronia (Valvatae)"`) --
+  in that case the bracketed suffix is pure redundancy, since `original_name` already preserves the raw
+  input as its own column on every row regardless of how `aligned_name` is formatted. When `FALSE` (the
+  new default) *and* the name being matched reduces to nothing beyond the matched rank's own name,
+  `aligned_name` is just that bare name -- no `" sp."`, no brackets, no `identifier` either (dropped
+  entirely, not just de-emphasised). Whenever there's anything more in the name being matched (an
+  unresolved epithet, a morphospecies code, a hybrid/intergrade/indecision/affinis marker, ...), the
+  bracketed format is used regardless of this argument, since dropping it there would genuinely lose
+  information the bracket was the only place recording. `include_bracketed_info = TRUE` restores
+  APCalign's convention unconditionally, for anyone who wants it.
+  - Only affects the three *generic, last-resort* higher-rank match blocks -- `match_12a` (bracketed
+    subgenus fallback), `match_12b`/`match_12c` (exact/fuzzy fallback against any rank in
+    `taxon_ranks_to_check`) -- via a `bare_rank_name` check (`stringr::str_count()` on `cleaned_name`:
+    exactly 1 whitespace-delimited token for `match_12b`/`match_12c`, exactly 2 for `match_12a`'s
+    `"Genus (Subgenus)"` shape). Deliberately does **not** touch:
+    - `match_02a`/`match_02b`/`match_02c` (the explicit `"...sp."`-suffixed blocks) -- these only ever
+      fire when the *original* input already explicitly wrote `"sp."` itself, so there's always
+      something (the "sp.") beyond the bare rank name; their existing, simpler format (`"<rank name>
+      sp."` plus an optional `identifier`, no repeated original-name bracket at all) is untouched.
+    - `match_special_case_to_genus()` (the shared hybrid/intergrade/indecision/affinis helper) -- every
+      one of its `detect_fn` patterns (`" x "`, `--`, `/`, `aff.`/`affinis`/`cf.`) requires content
+      beyond a bare rank name by construction, so `cleaned_name` is never just the matched genus's own
+      name there; the marker and (for an indecision `/`) the second candidate name are real information
+      a bracket-less format would silently discard, not redundancy.
+  - Real behavioural consequence for the `sample_invert_taxonomic_resources()` fixture's own
+    `"Aporocera"`/nominotypical-subgenus-`"Aporocera"` ambiguity (see the rank-specificity-ordering
+    note above): a bare `"Aporocera"` alone now returns `aligned_name == "Aporocera"` (no bracket) by
+    default, regardless of whether the tie resolved to genus or subgenus rank underneath -- the
+    ambiguity between the two is still resolved via `taxon_rank`/`taxon_ID` as before, just no longer
+    rendered as a redundant `"Aporocera sp. [Aporocera]"` string.
 
 ### 3. Known-source reference loader — `R/load_taxonomic_resources.R` (active, exported; internal helpers `@noRd`)
 

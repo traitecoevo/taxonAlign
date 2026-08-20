@@ -47,6 +47,20 @@ test_that("create_taxonomic_update_lookup forwards fuzzy-matching arguments to a
   expect_equal(out_fuzzy$accepted_name, "Boronia serrulata")
 })
 
+test_that("create_taxonomic_update_lookup forwards include_bracketed_info to align_taxa", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+
+  out_default <- create_taxonomic_update_lookup("Boronia", resources)
+  out_bracketed <- create_taxonomic_update_lookup("Boronia", resources, include_bracketed_info = TRUE)
+
+  expect_equal(out_default$aligned_name, "Boronia")
+  expect_equal(out_bracketed$aligned_name, "Boronia sp. [Boronia]")
+  # the update step downstream is unaffected either way -- it resolves via taxon_ID, not the
+  # aligned_name string
+  expect_equal(out_default$accepted_name, "Boronia")
+  expect_equal(out_bracketed$accepted_name, "Boronia")
+})
+
 test_that("create_taxonomic_update_lookup gives a clear, actionable error when resources is missing", {
   expect_error(create_taxonomic_update_lookup("Boronia serrulata"), "prepare_taxonomic_resources")
 })

@@ -84,12 +84,23 @@ taxonAlign_taxonomic_status_priority <- c(
 # the first place (see the AFD `taxon_ID` namespacing fix in `load_taxonomic_resources.R`) -- but even
 # with that fixed, *any* other coincidental cross-rank name collision (a handful turn up in real AFD
 # data at family/order/subfamily/suborder/subtribe/superfamily/superorder/class too) would otherwise
-# still resolve to whichever rank happened to sort first alphabetically, rather than the more specific,
-# generally more informative one.
+# still resolve to whichever rank happened to sort first alphabetically, rather than a deliberately
+# chosen one -- the more specific rank in general, except genus-vs-subgenus specifically (see below).
 #
 # Species/infraspecific ranks aren't listed here -- `taxon_rank2` (below) buckets them into their own
 # `"species"` entry before this ordering is ever applied, and that bucket is always the most specific of
 # all, so it's still ranked first via `union()` at the call site.
+#
+# `genus` is deliberately placed *before* `subgenus`, even though subgenus is the taxonomically more
+# specific rank -- the one deliberate exception to "most specific first" in this whole vector. A bare
+# name shared by a genus and its own nominotypical subgenus (e.g. "Xylotoles") is ambiguous on its own,
+# and the safer default when a user writes just that name is to assume they mean the broader, genus-rank
+# grouping, not the narrower subgenus one -- genus names are what people actually write and expect to
+# resolve to; the bracketed `Genus (Subgenus)` convention (`resources$subgenus_v2`) and the plain
+# subgenus-alone convention (`resources$subgenus`) both exist for when a subgenus is genuinely intended.
+# No other pair of ranks in this vector shares this same-name ambiguity (subgenus/genus is the one
+# taxonomic level where an identical, nominotypical name is guaranteed to occur), so this is the only
+# swap needed.
 #
 # Extends (and is ordered by reversing the sense of) `gbif_rank_order`
 # (`generate_GBIF_taxonomic_reference_list.R`, broadest-to-narrowest, driving GBIF `rank`-filtering) --
@@ -112,7 +123,7 @@ taxonAlign_taxonomic_status_priority <- c(
 # vector as further rank vocabularies turn up, the same "extend, don't guess" philosophy as
 # `taxonAlign_taxonomic_status_priority` above.
 taxonAlign_taxon_rank_specificity <- c(
-  "subgenus", "genus",
+  "genus", "subgenus",
   "complex", "hybrid",
   "section", "sectionn", "subsection", "subsectionn", "zoosection", "zoosectionn",
   "zoosubsection", "zoosubsectionn", "series", "subseries",
@@ -312,6 +323,54 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     )
   }
 
+  # Synthesise a row for every implied higher rank present as its own column on the combined table
+  # (e.g. a `genus`/`family`/`order` column recorded on species rows), for whichever such value doesn't
+  # already have an explicit row of its own -- generalising what load_AFD() already does for AFD's own
+  # raw export (see afd_higher_rank_rows()) to *any* input table that happens to carry this kind of
+  # column, so someone assembling their own reference doesn't have to remember to add an explicit row
+  # for every genus/family/etc. their species rows already imply (a real, easy mistake to make -- found
+  # by making it in this package's own get-started.qmd vignette example). Any column beyond the
+  # required 8 is scanned this way, not just the standard Linnaean kingdom/phylum/class/order/family
+  # set, since real taxonomic data often has ranks beyond those (tribe, subfamily, superfamily, ...);
+  # the tradeoff is that a genuinely non-taxonomic extra column (e.g. "locality", "collector") would
+  # also be treated as an implied rank and generate rows from it -- if that's not wanted, simply don't
+  # include such a column in `taxonomic_resources` in the first place. `genus` is part of the required
+  # 8, but is *also* itself a hierarchy column implying its own rank's rows, so it's included here too.
+  # Only character columns can plausibly hold a taxon name -- an extra numeric/logical/date column
+  # (e.g. a collection year, a record count) isn't a hierarchy column at all, and treating it as one
+  # doesn't just produce silly rows, it can crash outright (e.g. `values != ""` on a POSIXct column).
+  extra_cols <- setdiff(names(taxonomic_resources), taxonAlign_required_cols)
+  extra_cols <- extra_cols[purrr::map_lgl(taxonomic_resources[extra_cols], is.character)]
+  implied_rank_cols <- union("genus", extra_cols)
+
+  synthesised_rows <- purrr::map(implied_rank_cols, function(col) {
+    values <- taxonomic_resources[[col]]
+    already_present <- taxonomic_resources$canonical_name[taxonomic_resources$taxon_rank == col]
+    to_add <- setdiff(unique(values[!is.na(values) & values != ""]), already_present)
+    if (length(to_add) == 0) return(NULL)
+
+    # attribute each synthesised row to whichever dataset first mentions that value -- consistent with
+    # the rest of the package's "first-hit wins" priority convention when the same name could otherwise
+    # be attributed to more than one source
+    dataset <- taxonomic_resources$taxonomic_dataset[match(to_add, values)]
+
+    dplyr::tibble(
+      canonical_name = to_add,
+      scientific_name = to_add,
+      taxon_rank = col,
+      taxonomic_status = "accepted",
+      taxonomic_dataset = dataset,
+      genus = NA_character_,
+      # no natural taxon_ID exists for a rank synthesised this way -- a placeholder combining the
+      # dataset, rank and name keeps it unique across both ranks (a nominotypical genus/subgenus
+      # sharing a name) and datasets (two sources both having, say, a "Formicidae" family row)
+      taxon_ID = paste(dataset, col, to_add, sep = "_"),
+      accepted_name_usage_ID = paste(dataset, col, to_add, sep = "_")
+    )
+  })
+
+  taxonomic_resources <- dplyr::bind_rows(taxonomic_resources, synthesised_rows)
+
   # Sort by taxonomic_status priority (see taxonAlign_taxonomic_status_priority above) so that, wherever
   # the same lookup key repeats under different statuses, the most reliable row is the one every
   # first-hit `match()`-based exact-match block finds, and the one the binomial/trinomial dedup below
@@ -401,6 +460,15 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   if (!is.null(resources[["subgenus"]])) {
     resources$subgenus_v2 <- resources$subgenus |>
       dplyr::mutate(genus_and_subgenus = paste0(genus, " (", canonical_name, ")"))
+
+    # `$<-` above appends subgenus_v2 at the very end of the list regardless of where "subgenus" itself
+    # sits -- reorder so it's positioned immediately after "subgenus" instead, keeping the two parallel
+    # subgenus conventions adjacent in `names(resources)` rather than one of them always trailing last
+    subgenus_pos <- which(names(resources) == "subgenus")
+    new_order <- append(
+      setdiff(names(resources), "subgenus_v2"), "subgenus_v2", after = subgenus_pos
+    )
+    resources <- resources[new_order]
   }
 
   if (!is.null(taxon_ranks_to_check)) {

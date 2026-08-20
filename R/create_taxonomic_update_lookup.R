@@ -7,7 +7,7 @@
 #' @param resources The nested list of reference tibbles produced by
 #'  [prepare_taxonomic_resources()]. A plain (already fully-formatted) taxonomic reference tibble is
 #'  also accepted directly -- see `align_taxa()`'s `resources` documentation.
-#' @param identifier,fuzzy_abs_dist,fuzzy_rel_dist,fuzzy_matches,imprecise_fuzzy_matches,taxon_ranks_to_check,hybrids,intergrades_affinis,progress
+#' @param identifier,fuzzy_abs_dist,fuzzy_rel_dist,fuzzy_matches,imprecise_fuzzy_matches,taxon_ranks_to_check,hybrids,intergrades_affinis,include_bracketed_info,progress
 #'  Forwarded to [align_taxa()]; see its documentation.
 #' @param full Logical; if `TRUE`, return every intermediate column [align_taxa()]/[update_taxa()]
 #'  compute. If `FALSE` (the default), return just the key output columns: `original_name`,
@@ -29,6 +29,7 @@ create_taxonomic_update_lookup <- function(original_name,
                                             taxon_ranks_to_check = NULL,
                                             hybrids = FALSE,
                                             intergrades_affinis = FALSE,
+                                            include_bracketed_info = FALSE,
                                             progress = FALSE,
                                             full = FALSE) {
 
@@ -55,6 +56,7 @@ create_taxonomic_update_lookup <- function(original_name,
     taxon_ranks_to_check = taxon_ranks_to_check,
     hybrids = hybrids,
     intergrades_affinis = intergrades_affinis,
+    include_bracketed_info = include_bracketed_info,
     progress = progress,
     full = TRUE
   )

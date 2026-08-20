@@ -30,6 +30,14 @@
 #' @param intergrades_affinis Logical; if `TRUE`, resolve names suggesting an intergrade, an
 #'  indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
 #'  Defaults to `FALSE`. See `?match_taxa`.
+#' @param include_bracketed_info Logical; controls the `"<rank name> sp. [<original name>;
+#'  <identifier>]"` formatting used for a higher-rank-only match. When `FALSE` (the default) and the
+#'  name being matched is nothing more than the matched rank's own name (a bare single word, or a bare
+#'  `"Genus (Subgenus)"`), the bracketed suffix is dropped and `aligned_name` is just the bare matched
+#'  name -- `original_name` already preserves the raw input as its own column regardless. Whenever
+#'  there's anything beyond the rank name itself to report, the bracketed format is used regardless of
+#'  this argument. Set to `TRUE` to always use the bracketed format (matching APCalign's convention
+#'  exactly). Defaults to `FALSE`. See `?match_taxa`.
 #' @param progress Logical; if `TRUE`, prints a text progress bar tracking what fraction of
 #'  `original_name` has been resolved so far. Useful for large inputs, where matching can take a while.
 #'  Defaults to `FALSE`. See `?match_taxa`.
@@ -56,6 +64,7 @@ align_taxa <- function(original_name,
                         taxon_ranks_to_check = NULL,
                         hybrids = FALSE,
                         intergrades_affinis = FALSE,
+                        include_bracketed_info = FALSE,
                         progress = FALSE,
                         full = FALSE) {
 
@@ -135,6 +144,7 @@ align_taxa <- function(original_name,
       hybrids = hybrids,
       intergrades_affinis = intergrades_affinis,
       identifier = identifier,
+      include_bracketed_info = include_bracketed_info,
       progress = progress
     )
   }

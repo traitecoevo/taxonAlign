@@ -52,10 +52,11 @@ test_that("too many edits fails species-level fuzzy matching but still falls bac
   # sample_invert_taxonomic_resources() gives "Aporocera" both a genus row and a nominotypical subgenus
   # row (canonical_name "Aporocera" either way -- see its own comments) -- a bare, unbracketed
   # "Aporocera" is genuinely ambiguous between the two, and the generic higher-rank fallback
-  # (match_taxa()'s taxon_ranks_to_check loop) now resolves such ties to the more specific rank
-  # (subgenus over genus), per prepare_taxonomic_resources()'s most-specific-first rank ordering
-  # (taxonAlign_taxon_rank_specificity) -- not an error, a deliberate tie-break.
-  expect_equal(out$taxon_rank, "subgenus")
+  # (match_taxa()'s taxon_ranks_to_check loop) resolves such ties in favour of genus, not subgenus --
+  # the one deliberate exception to prepare_taxonomic_resources()'s otherwise most-specific-first rank
+  # ordering (taxonAlign_taxon_rank_specificity): a bare name shared this way defaults to the broader,
+  # more commonly-intended genus-rank grouping rather than the narrower subgenus one.
+  expect_equal(out$taxon_rank, "genus")
 })
 
 test_that("a genuinely ambiguous fuzzy match (two equidistant candidates) resolves to nothing, not a guess", {
@@ -120,8 +121,8 @@ test_that("morphospecies codes ('sp. 1', 'sp. nov.', 'sp. indet.') resolve to a 
   out <- align_taxa(names, resources)
 
   # see the equivalent comment above: "Aporocera" is both a genus and (nominotypical) subgenus name in
-  # this fixture, and the generic higher-rank fallback now ties in favour of the more specific rank
-  expect_true(all(out$taxon_rank == "subgenus"))
+  # this fixture, and the generic higher-rank fallback ties in favour of genus, not subgenus
+  expect_true(all(out$taxon_rank == "genus"))
   expect_equal(out$aligned_name, paste0("Aporocera sp. [", names, "]"))
 })
 
@@ -175,4 +176,33 @@ test_that("two genera that don't share a first letter never cross-collide even u
   # doesn't exact- or fuzzy-match a species (that binomial doesn't exist), falls back to genus rank
   # under the genus actually named, not the unrelated one
   expect_true(grepl("^Aporocera sp\\. \\[", out$aligned_name))
+})
+
+test_that("a morphospecies code fuzzy-matches a higher rank (not just genus) via match_12c", {
+  # regression test: match_12c (the final, generic higher-rank fuzzy fallback) used to reuse whatever
+  # `fuzzy_match_genus` was last computed by match_02c's loop (whichever rank happened to be last in
+  # taxon_ranks_to_check, not necessarily the rank match_12c's own loop was currently testing), and its
+  # `ii <- match(...)` lookup used the *original* word_one_stripped instead of the fuzzy match result --
+  # so a name that could only resolve via a *fuzzy* match to a higher rank above genus (never an exact
+  # one) silently returned NA regardless of whether a real fuzzy candidate existed. Found via real
+  # AusInvertTraits data: a museum "voucher code" name like "Aderid BF05" should fuzzy-match the family
+  # "Aderidae" (distance 2, well within tolerance) but didn't.
+  resources <- prepare_taxonomic_resources(tibble::tribble(
+    ~scientific_name, ~canonical_name, ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Testidae Smith", "Testidae", "family", "accepted", "TEST", NA_character_, "f1", "f1",
+    # deliberately a genus name that shares no first letter with "Testid" (below), so it can't also
+    # fuzzy-match and make the test ambiguous -- the point here is isolating the family-fuzzy-match path
+    "Zzyzxus Smith", "Zzyzxus", "genus", "accepted", "TEST", NA_character_, "g1", "g1",
+    "Zzyzxus alphus Smith", "Zzyzxus alphus", "species", "accepted", "TEST", "Zzyzxus", "sp1", "sp1"
+  ))
+
+  # "Testid" is only a fuzzy (not exact) match to family "Testidae" -- never resolves via genus at all
+  out <- align_taxa("Testid BF01", resources, full = TRUE)
+
+  expect_equal(out$taxon_rank, "family")
+  expect_equal(out$alignment_code, "match_12c_higher_rank_fuzzy_accepted")
+  expect_equal(out$aligned_name, "Testidae sp. [Testid BF01]")
+  # the matched row's own reference data must carry through, not be NA'd out by a wrong `ii` lookup
+  expect_equal(out$taxonomic_dataset, "TEST")
+  expect_equal(out$taxon_ID, "f1")
 })

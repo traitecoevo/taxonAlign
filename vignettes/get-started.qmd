@@ -63,6 +63,7 @@ my_reference <- tibble::tribble(
   "Aporocera Blackburn",                      "Aporocera",                "genus",      "accepted",         "MY_DATA",          NA,           "g1",     "g1",
   "Aporocera (Aporocera) Blackburn",          "Aporocera",                "subgenus",   "accepted",         "MY_DATA",          "Aporocera",  "sg1",    "sg1",
   "Chrysomelidae Latreille",                  "Chrysomelidae",           "family",     "accepted",         "MY_DATA",          NA,           "f1",     "f1",
+  "Xylotoles Pascoe",                          "Xylotoles",                "genus",      "accepted",         "MY_DATA",          NA,           "g2",     "g2",
   "Xylotoles costatus Pascoe, 1859",          "Xylotoles costatus",      "species",    "accepted",         "MY_DATA",          "Xylotoles",  "sp4",    "sp4",
   "Xylotoles costatus mixtus Someone, 1920",  "Xylotoles costatus mixtus", "subspecies", "accepted",       "MY_DATA",          "Xylotoles",  "sp5",    "sp5"
 )
@@ -74,6 +75,15 @@ names(resources)
 `prepare_taxonomic_resources()` splits the combined table into a nested list -- one element per
 taxonomic rank present (here: `species`, `genus`, `subgenus`, `family`), with `species` further split
 into `accepted`/`synonym` sub-tables. This is the shape every other function in the package expects.
+
+Note that `my_reference` above gives an explicit `"genus"`-rank row for both `"Aporocera"` and
+`"Xylotoles"` -- but you don't actually have to. Naming a genus in the `genus` column of a species row
+is enough on its own: `prepare_taxonomic_resources()` automatically adds a genus-rank row for any genus
+(or any other rank you record in its own column, e.g. `family`) that's implied this way but doesn't yet
+have an explicit row of its own, so `"Xylotoles sp. 1"` would still align to genus rank even if the
+`"Xylotoles"` row above were deleted. Synthesised rows get a placeholder ID
+(`taxonomic_dataset_taxon_rank_canonical_name`, e.g. `"MY_DATA_genus_Xylotoles"`) since there's no
+natural ID to reuse.
 
 If your table doesn't have these columns under these exact names, pass `interactive = TRUE` and you'll
 be prompted (in the style of `traits.build`'s `metadata_add_traits()`) to map your own column names, or

@@ -15,6 +15,7 @@ create_taxonomic_update_lookup(
   taxon_ranks_to_check = NULL,
   hybrids = FALSE,
   intergrades_affinis = FALSE,
+  include_bracketed_info = FALSE,
   progress = FALSE,
   full = FALSE
 )
@@ -26,7 +27,7 @@ create_taxonomic_update_lookup(
 \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}. A plain (already fully-formatted) taxonomic reference tibble is
 also accepted directly -- see \code{align_taxa()}'s \code{resources} documentation.}
 
-\item{identifier, fuzzy_abs_dist, fuzzy_rel_dist, fuzzy_matches, imprecise_fuzzy_matches, taxon_ranks_to_check, hybrids, intergrades_affinis, progress}{Forwarded to \code{\link[=align_taxa]{align_taxa()}}; see its documentation.}
+\item{identifier, fuzzy_abs_dist, fuzzy_rel_dist, fuzzy_matches, imprecise_fuzzy_matches, taxon_ranks_to_check, hybrids, intergrades_affinis, include_bracketed_info, progress}{Forwarded to \code{\link[=align_taxa]{align_taxa()}}; see its documentation.}
 
 \item{full}{Logical; if \code{TRUE}, return every intermediate column \code{\link[=align_taxa]{align_taxa()}}/\code{\link[=update_taxa]{update_taxa()}}
 compute. If \code{FALSE} (the default), return just the key output columns: \code{original_name},
