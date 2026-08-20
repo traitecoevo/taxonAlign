@@ -161,6 +161,22 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
     purrr::list_rbind() |>
     dplyr::distinct(.data$key, .keep_all = TRUE)
 
+  # rgbif's name_lookup()/name_usage() responses omit a column entirely (rather than including it
+  # as all-NA) whenever every row in the fetched batch lacks a value for it -- a jsonlite-flattening
+  # artifact of the underlying GBIF API response, not a signal the field is genuinely unavailable.
+  # A small clade with no synonyms at all (every row's `acceptedKey` is NA) is a real, easy-to-hit
+  # case of this -- without this, the `dplyr::coalesce(.data$acceptedKey, ...)` below (and the
+  # country filter, if requested) would error with "Column `acceptedKey` not found" rather than
+  # treating it as the all-NA column it actually is. Ensure every column referenced from here on
+  # always exists first.
+  expected_int_cols <- c("key", "parentKey", "acceptedKey")
+  expected_chr_cols <- c(
+    "scientificName", "authorship", "canonicalName", "rank", "taxonomicStatus", "kingdom", "phylum",
+    "class", "order", "family", "genus"
+  )
+  full_tree[setdiff(expected_int_cols, names(full_tree))] <- NA_integer_
+  full_tree[setdiff(expected_chr_cols, names(full_tree))] <- NA_character_
+
   if (!is.null(country)) {
     # scoping the occurrence lookup per requested taxon (rather than per
     # descendant) keeps this to one cheap facet query per `taxon_name`

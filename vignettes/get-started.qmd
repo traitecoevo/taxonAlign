@@ -1,0 +1,215 @@
+---
+title: "Getting started with taxonAlign"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+execute:
+  warning: false
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+`taxonAlign` helps with two related jobs:
+
+1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference
+   tables -- your own data, a list built from the GBIF backbone taxonomy, a known source like the
+   Australian Faunal Directory (AFD) or the Australian Plant Census (APC), or any mix of these.
+2. **Align and update a list of raw taxon names** against that reference -- matching misspellings,
+   synonyms, and names only identifiable to a higher rank (`genus sp.`), then resolving each match
+   forward to its current accepted name.
+
+It's inspired by [APCalign](https://traitecoevo.github.io/APCalign/)'s approach to aligning taxon
+names to the Australian Plant Census, generalised so the reference doesn't have to be APC/APNI and
+the taxa don't have to be plants -- every function here works for any taxonomic rank present in your
+reference, not just genus/species/family.
+
+This vignette walks through every exported function, in the order you'd typically use them, then
+puts them together into the workflow you'd actually run on a real list of names.
+
+```{r setup}
+library(taxonAlign)
+library(dplyr)
+```
+
+## Building a taxonomic reference
+
+Every matching/aligning function needs a `resources` object, built by `prepare_taxonomic_resources()`
+from one or more taxonomic reference tables. There are three ways to get a reference table in the
+first place.
+
+### From your own data
+
+If you already have a taxonomic reference table -- your own species list, an export from a museum
+database, whatever -- `prepare_taxonomic_resources()` will take it as long as it has (or can be
+mapped to) eight required columns: `canonical_name`, `scientific_name`, `taxon_rank`,
+`taxonomic_status`, `taxonomic_dataset`, `genus`, `taxon_ID` and `accepted_name_usage_ID`.
+
+Here's a small, hand-built example spanning a genus, two species (one a synonym of the other) and a
+family:
+
+```{r}
+my_reference <- tibble::tribble(
+  ~scientific_name,                    ~canonical_name,          ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus,      ~taxon_ID, ~accepted_name_usage_ID,
+  "Aporocera viridipennis Lea, 1915",   "Aporocera viridipennis", "species",   "accepted",         "MY_DATA",          "Aporocera", "sp1",     "sp1",
+  "Chalcolampra viridis Blackburn, 1897", "Chalcolampra viridis", "species",   "synonym",          "MY_DATA",          "Chalcolampra", "sp2",  "sp1",
+  "Aporocera Blackburn",                "Aporocera",             "genus",     "accepted",         "MY_DATA",          NA,          "g1",      "g1",
+  "Chrysomelidae Latreille",            "Chrysomelidae",         "family",    "accepted",         "MY_DATA",          NA,          "f1",      "f1"
+)
+
+resources <- prepare_taxonomic_resources(my_reference)
+names(resources)
+```
+
+`prepare_taxonomic_resources()` splits the combined table into a nested list -- one element per
+taxonomic rank present (here: `species`, `genus`, `family`), with `species` further split into
+`accepted`/`synonym` sub-tables. This is the shape every other function in the package expects.
+
+If your table doesn't have these columns under these exact names, pass `interactive = TRUE` and
+you'll be prompted (in the style of `traits.build`'s `metadata_add_traits()`) to map your own column
+names, or supply a fixed value, instead of erroring -- see `?prepare_taxonomic_resources` for details.
+
+### From the GBIF backbone taxonomy
+
+If you don't have your own reference, `generate_GBIF_taxonomic_reference_list()` builds one from the
+GBIF backbone taxonomy for any taxon name, optionally restricted to a country and/or a minimum rank.
+The whole subtree is fetched once and cached, so repeat calls are fast.
+
+```{r}
+gbif_reference <- generate_GBIF_taxonomic_reference_list("Aporocera", country = "AU")
+gbif_reference |> select(canonical_name, taxon_rank, taxonomic_status)
+```
+
+### From a known source (AFD, APC)
+
+`load_taxonomic_resources()` fetches and reshapes a fixed set of *known* datasets into the same flat
+schema -- currently the Australian Faunal Directory (`"AFD"`) and a wrapper around
+`APCalign::load_taxonomic_resources()` (`"APC"`). Unlike the GBIF function, these aren't built from a
+taxon name -- they're a whole dataset at once:
+
+```{r}
+#| eval: false
+afd <- load_taxonomic_resources("AFD")   # reads/reshapes a local AFD export (see ?load_taxonomic_resources)
+apc <- load_taxonomic_resources("APC")   # wraps APCalign::load_taxonomic_resources()
+```
+
+`load_taxonomic_resources()` always returns a named list, even for one dataset, so both pieces above
+can be combined directly.
+
+### Combining multiple reference tables
+
+`prepare_taxonomic_resources()` also accepts a list of tables, combining them with a priority order:
+when the same name appears in more than one table, whichever table is listed *first* wins. This is
+how you'd combine a known source with your own data, or two known sources together:
+
+```{r}
+#| eval: false
+resources <- prepare_taxonomic_resources(
+  list(AFD = load_taxonomic_resources("AFD")$AFD, mine = my_reference)
+)
+```
+
+## Matching raw names: `align_taxa()`
+
+`align_taxa()` takes a vector of raw taxon names and matches each one against `resources`, trying
+(in order) exact matches, then progressively more lenient fuzzy matches, at species level first and
+then at each higher rank present in `resources`.
+
+```{r}
+align_taxa("Aporocera viridipennis", resources)  # exact match
+align_taxa("Aporocera viridipenis", resources)   # one letter missing -- fuzzy match
+align_taxa("Chalcolampra viridis", resources)    # a synonym, correctly flagged as such
+align_taxa("Aporocera", resources)                # genus only
+```
+
+A name that can't be resolved to anything is left `NA`, not an error:
+
+```{r}
+align_taxa("Completely unrelated nonsense", resources)
+```
+
+Two opt-in parameters handle names that structurally can't specify a species at all, resolving them
+to genus rank instead of leaving them to (possibly mis-)match a species-level pattern:
+
+```{r}
+align_taxa("Aporocera x hybridname", resources, hybrids = TRUE)
+align_taxa("Aporocera aff. viridipennis", resources, intergrades_affinis = TRUE)
+```
+
+`hybrids` catches `Genus x species`-style hybrid names; `intergrades_affinis` catches intergrades
+(`--`), a collector's indecision between two taxa (`/`), and graded/uncertain identifications
+(`aff.`/`cf.`). Both default to `FALSE`.
+
+For a large list, `progress = TRUE` prints a text progress bar tracking how many names have been
+resolved so far.
+
+## Resolving to current names: `update_taxa()`
+
+`align_taxa()` tells you *what a name matched* -- `update_taxa()` takes that result and resolves it
+forward to whatever the *current* accepted name is, following synonym links via
+`accepted_name_usage_ID`:
+
+```{r}
+aligned <- align_taxa("Chalcolampra viridis", resources)
+update_taxa(aligned, resources) |> select(original_name, aligned_name, accepted_name, taxonomic_status)
+```
+
+`accepted_name` is the current accepted name (`NA` if it couldn't be resolved); `suggested_name` falls
+back to `aligned_name` when there's no `accepted_name`, so it's never `NA` for anything that matched
+at all.
+
+## The one-call pipeline: `create_taxonomic_update_lookup()`
+
+Most of the time you want both steps together. `create_taxonomic_update_lookup()` runs `align_taxa()`
+then `update_taxa()` in one call:
+
+```{r}
+create_taxonomic_update_lookup(
+  c("Aporocera viridipennis", "Aporocera viridipenis", "Chalcolampra viridis", "Aporocera"),
+  resources
+) |> select(original_name, aligned_name, accepted_name, taxonomic_status, update_reason)
+```
+
+## Putting it together: updating a list of names
+
+Here's the workflow you'd actually run on a real list of raw names -- say, taxon names recorded in a
+field dataset that need reconciling against a reference before analysis.
+
+```{r}
+field_data <- tibble(
+  original_name = c(
+    "Aporocera viridipennis",   # exact match
+    "Aporocera viridipenis",    # typo
+    "Chalcolampra viridis",     # synonym
+    "Aporocera sp. 1",          # morphospecies code -- genus known, species not
+    "Totally unknown beetle"    # won't resolve to anything
+  ),
+  site = c("Site A", "Site B", "Site A", "Site C", "Site B")
+)
+
+lookup <- create_taxonomic_update_lookup(field_data$original_name, resources, identifier = field_data$site)
+lookup |> select(original_name, identifier, suggested_name, taxonomic_status, update_reason)
+```
+
+`identifier` (here, `site`) is threaded through so that a name only ever resolvable to genus rank
+(like the morphospecies code above) is disambiguated per dataset/location in its aligned name, rather
+than collapsing two genuinely different unidentified morphospecies from different sites into one.
+
+Join the lookup back onto your original data by `original_name` to get an updated name for every row:
+
+```{r}
+field_data |> left_join(lookup, by = "original_name")
+```
+
+From here, the rows worth a closer look are the ones where `taxonomic_status` is `"unknown"` (nothing
+matched at all) or `suggested_name` is `NA` -- everything else resolved to *something*, even if only
+at genus rank. Reviewing exactly those rows (rather than the whole list) is usually the fastest way to
+find the handful of names that need a manual look -- a real typo not caught by fuzzy matching, a name
+missing from your reference entirely, or a genuinely new/undescribed taxon.
+
+```{r}
+lookup |> filter(is.na(suggested_name) | taxonomic_status == "unknown")
+```

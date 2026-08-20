@@ -103,14 +103,14 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-271 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+274 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
 #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 271) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 274) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (278 total, as of the last online run) (see Architecture #2 below).
+passing expectations on top (281 total, as of the last online run) (see Architecture #2 below).
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -551,3 +551,33 @@ the result against the known-correct AusInvertTraits alignment to check the port
 `data/aligned_names_b.rds` is a saved output of that vignette run, kept for comparison.
 `data-raw/data-raw.R` is a similar external-path stub for generating package data, not a working
 reproducible data-raw script.
+
+`vignettes/get-started.qmd`, by contrast, **is** self-contained and does actually build -- a
+user-facing "getting started" walkthrough covering every exported function (`prepare_taxonomic_resources()`,
+`generate_GBIF_taxonomic_reference_list()`, `load_taxonomic_resources()`, `align_taxa()`, `update_taxa()`,
+`create_taxonomic_update_lookup()`) in the order you'd actually use them, ending in a realistic
+"update a list of raw field names" workflow. Deliberately **not** registered as a formal R/knitr
+vignette (no `%\VignetteIndexEntry`/`%\VignetteEngine` comments) -- it's meant to be rendered directly
+via `quarto render vignettes/get-started.qmd` and published as a static page (e.g. GitHub Pages), not
+built via `R CMD build`/`devtools::build_vignettes()`; `DESCRIPTION`'s `VignetteBuilder: knitr` is
+unrelated to it. Verified to `quarto render` cleanly end to end (using real, small, fast examples --
+a tiny hand-built reference table, plus a real live GBIF call for a small genus with only a handful of
+descendants) -- confirm this keeps working after any change to `align_taxa()`/`update_taxa()`/
+`create_taxonomic_update_lookup()`'s output shape. Quarto's own build leaves a `get-started_files/`
+support directory and a `.knit.md` alongside the rendered `.html` -- both are `.gitignore`'d in
+`vignettes/.gitignore`, matching the existing `*.html`/`*.R` entries there; clean them up manually if
+testing a render locally (an `R CMD check` NOTE about "non-portable file paths" pointed at
+`get-started_files/libs/...` is this leftover directory, not a real problem, if you forget to).
+
+**A real bug found while building this vignette's live GBIF example**: `generate_GBIF_taxonomic_reference_list()`
+crashed ("Column `acceptedKey` not found") on a real, small, no-synonym GBIF genus (`"Aporocera"`).
+`rgbif::name_lookup()`/`name_usage()` responses omit a column entirely (rather than including it as
+all-NA) whenever *every* row in the fetched batch lacks a value for it -- a jsonlite-flattening
+artifact of the underlying GBIF API response. A small clade where every row is already accepted (so
+every row's `acceptedKey` is genuinely NA) is a real, easy-to-hit case of this, and it broke the
+function's own `dplyr::coalesce(.data$acceptedKey, .data$key)` step (and would equally have broken the
+`country` filter's `.data$acceptedKey %in% occ_keys` check). Fixed by backfilling every column the
+function goes on to reference (`acceptedKey`/`parentKey` as integer, the rest as character) if entirely
+missing, right after the tree is fetched -- the same "ensure a possibly-absent column exists before
+anything downstream assumes it's there" defensive pattern used elsewhere in the package (e.g.
+`update_taxa()`'s `if ("genus" %in% names(all_taxa))` check).

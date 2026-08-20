@@ -387,3 +387,30 @@ test_that("output is deduplicated even if the same taxon is requested twice", {
   )
   expect_equal(anyDuplicated(out$taxon_ID), 0)
 })
+
+test_that("a clade with no synonyms at all doesn't error when acceptedKey is entirely absent", {
+  # regression test: rgbif's name_lookup()/name_usage() responses omit a column entirely (rather
+  # than including it as all-NA) whenever every row in the fetched batch lacks a value for it -- a
+  # real, jsonlite-flattening artifact hit on a real, small, no-synonym GBIF genus ("Aporocera").
+  # Simulated here by building the mocked page *without* an acceptedKey column at all, rather than
+  # via gbif_taxon_row()'s usual all-NA default -- this used to error ("Column `acceptedKey` not
+  # found") rather than treating every row as already-accepted.
+  local_mocked_bindings(
+    name_backbone = function(...) gbif_backbone_match(1, "Aporocera Sm.", rank = "GENUS"),
+    name_lookup = function(...) {
+      page <- gbif_taxon_row(2, parentKey = 1, scientificName = "Aporocera viridis Sm.",
+                              canonicalName = "Aporocera viridis", rank = "SPECIES", genus = "Aporocera")
+      gbif_lookup_page(page[, setdiff(names(page), "acceptedKey")])
+    },
+    name_usage = function(...) {
+      list(data = gbif_taxon_row(1, scientificName = "Aporocera Sm.", rank = "GENUS", genus = NA_character_))
+    },
+    .package = "rgbif"
+  )
+
+  out <- generate_GBIF_taxonomic_reference_list("Aporocera", cache_dir = withr::local_tempdir(), quiet = TRUE)
+
+  expect_setequal(out$taxon_ID, c(1L, 2L))
+  expect_false(anyNA(out$accepted_name_usage_ID))
+  expect_equal(out$accepted_name_usage_ID, out$taxon_ID) # every row self-referential (all accepted)
+})
