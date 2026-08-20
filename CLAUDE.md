@@ -81,15 +81,15 @@ called, which are safe to call directly offline). `test-prepare_taxonomic_resour
 covers `prepare_taxonomic_resources(interactive = TRUE)` by supplying `user_responses` throughout,
 exactly the way `traits.build` tests its own `metadata_add_traits()`/etc. — never a real interactive
 session (see Architecture #2 below). `test-match_taxa.R` covers the opt-in `hybrids`/
-`intergrades_affinis` matching (issue #9). 209 expectations across all offline-safe test files, all
-passing as of the last run. (See Architecture #2 below for a fuzzy-matching gotcha this fixture data
-has to dodge.)
+`intergrades_affinis` matching (issue #9), plus `progress = TRUE` (issue #5, also covered in
+`test-align_taxa.R`). 214 expectations across all offline-safe test files, all passing as of the last
+run. (See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 209) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 214) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (212 total, as of the last online run) (see Architecture #2 below).
+passing expectations on top (217 total, as of the last online run) (see Architecture #2 below).
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -421,6 +421,22 @@ Architecture of the matching engine itself:
     tie-breaking, not a real test of whether the same *pattern* is detected the same way. Since
     APCalign's `align_taxa()` has no `hybrids`/`intergrades_affinis` toggle (it always attempts these
     match families), taxonAlign is called with both turned on to compare fairly.
+
+- **Progress bar** (issue #5): `match_taxa()`/`align_taxa()`/`create_taxonomic_update_lookup()` all gain
+  a `progress = FALSE` parameter; `TRUE` prints a `utils::txtProgressBar()` (no new dependency). Tracks
+  *rows resolved so far* (`nrow(taxa$checked)` against the total `match_taxa()` started with), not which
+  match block is currently running -- match blocks aren't equal-cost (the fuzzy blocks typically do most
+  of the real work on large inputs), so a block-count-based bar would jump to "nearly done" almost
+  instantly and then stall, which is more misleading than informative. Implemented via
+  `redistribute_progress()` (`match_taxa_helpers.R`), a drop-in replacement for `redistribute()` that
+  also advances the bar if one is open -- every one of `match_taxa()`'s ~18 `taxa <- redistribute(taxa)`
+  checkpoints (including the ones inside `match_special_case_to_genus()`, the shared hybrid/
+  intergrade_affinis helper) now calls this instead. `pb` (the progress-bar object, `NULL` unless
+  `progress = TRUE`) is threaded through as an ordinary argument; `on.exit(close(pb), add = TRUE)` at the
+  top of `match_taxa()` guarantees it's closed on every exit path, not just the final return at the
+  bottom -- there are ~18 early returns scattered through the function (one after each match block, so
+  it can stop as soon as everything is resolved), and the bar needs to close on all of them, not only
+  the one at the end.
 
 ### Vignette and data tying the two together
 

@@ -92,3 +92,16 @@ test_that("intergrades_affinis = FALSE (default) leaves these names unhandled by
 
   expect_false(isTRUE(startsWith(out$alignment_code, "match_04")))
 })
+
+test_that("progress = TRUE still reports progress when hybrids/intergrades_affinis resolve a name (issue #5)", {
+  # match_special_case_to_genus() (the shared hybrid/intergrade_affinis helper) has its own internal
+  # redistribute() checkpoints, separate from match_taxa()'s own -- confirms the progress bar (`pb`) is
+  # threaded into those too, not just the top-level match blocks
+  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+
+  expect_output(
+    out <- align_taxa("Boronia x hybrida", resources, hybrids = TRUE, progress = TRUE),
+    "%"
+  )
+  expect_equal(out$alignment_code, "match_03a_hybrid_exact_genus")
+})

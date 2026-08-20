@@ -145,3 +145,13 @@ test_that("align_taxa gives a clear, actionable error when resources is a malfor
     "prepare_taxonomic_resources"
   )
 })
+
+test_that("progress = TRUE prints a progress bar and doesn't change the result (issue #5)", {
+  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  names <- c("Boronia serrulata Sm.", "Boronia oldname Sm.", "Completely unrelated nonsense taxon")
+
+  expect_silent(out_quiet <- align_taxa(names, resources))
+  expect_output(out_progress <- align_taxa(names, resources, progress = TRUE), "%")
+
+  expect_equal(out_quiet, out_progress)
+})

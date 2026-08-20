@@ -21,7 +21,7 @@
 match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep, reason_text,
                                          alignment_code_exact, alignment_code_fuzzy,
                                          alignment_code_unresolved, alignment_code_no_resource,
-                                         fuzzy_match_genera) {
+                                         fuzzy_match_genera, pb = NULL) {
 
   if (is.null(resources$genus)) {
     # no genus-rank reference at all to check against -- still flag matching rows as checked (so they
@@ -42,7 +42,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
         checked = TRUE,
         alignment_code = alignment_code_no_resource
       )
-    return(redistribute(taxa))
+    return(redistribute_progress(taxa, pb))
   }
 
   # exact genus match
@@ -64,7 +64,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
       checked = TRUE,
       alignment_code = alignment_code_exact
     )
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -89,7 +89,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
       checked = TRUE,
       alignment_code = alignment_code_fuzzy
     )
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -111,7 +111,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
       checked = TRUE,
       alignment_code = alignment_code_unresolved
     )
-  redistribute(taxa)
+  redistribute_progress(taxa, pb)
 }
 
 #' Match taxonomic names to names in a taxonomic reference
@@ -171,6 +171,11 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #'  way. Defaults to `FALSE`.
 #' @param identifier A dataset, location or other identifier,
 #'  which defaults to NA.
+#' @param progress Logical; if `TRUE`, prints a text progress bar (`utils::txtProgressBar()`) tracking
+#'  what fraction of `taxa$tocheck` has been resolved so far, updated after every match block. Tracks
+#'  rows resolved rather than which match block is currently running, since blocks aren't equal-cost --
+#'  the fuzzy-matching blocks typically do most of the real work on large inputs, so a block-count-based
+#'  bar would jump to "nearly done" almost instantly and then stall. Defaults to `FALSE`.
 #'
 #' @noRd
 match_taxa <- function(
@@ -183,12 +188,21 @@ match_taxa <- function(
     taxon_ranks_to_check = NULL,
     hybrids = FALSE,
     intergrades_affinis = FALSE,
-    identifier = NA_character_
+    identifier = NA_character_,
+    progress = FALSE
 ) {
 
   if (is.null(taxon_ranks_to_check)) {
     taxon_ranks_to_check <- setdiff(names(resources), c("species", "subgenus_v2"))
   }
+
+  # `pb` (NULL unless `progress = TRUE`) is threaded through every match block below via
+  # redistribute_progress() (match_taxa_helpers.R), including into match_special_case_to_genus()'s own
+  # internal checkpoints -- on.exit() guarantees it's closed on every exit path (the ~20 early returns
+  # scattered through this function, not just the final one at the bottom).
+  total_rows <- nrow(taxa$tocheck) + nrow(taxa$checked)
+  pb <- if (progress) utils::txtProgressBar(min = 0, max = total_rows, style = 3) else NULL
+  if (progress) on.exit(close(pb), add = TRUE)
 
   ## A function that specifies particular fuzzy matching conditions (for the
   ## function fuzzy_match_column) when matching is being done at the genus level.
@@ -246,7 +260,7 @@ match_taxa <- function(
   ## These lines of code are repeated after each matching cycle to
   ## progressively move taxa from `tocheck` to `checked`
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -281,7 +295,7 @@ match_taxa <- function(
       alignment_code = "match_01a_accepted_scientific_name_with_authorship"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
 
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
@@ -316,7 +330,7 @@ match_taxa <- function(
       alignment_code = "match_01b_synonym_scientific_name_with_authorship"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -349,7 +363,7 @@ match_taxa <- function(
       alignment_code = "match_01c_accepted_canonical_name"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -382,7 +396,7 @@ match_taxa <- function(
       alignment_code = "match_01d_synonym_canonical_name"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -433,7 +447,7 @@ match_taxa <- function(
         alignment_code = "match_02a_exact_higher_level_accepted_or_synonym"
       )
 
-    taxa <- redistribute(taxa)
+    taxa <- redistribute_progress(taxa, pb)
 
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
@@ -481,7 +495,7 @@ match_taxa <- function(
         alignment_code = "match_02b_exact_higher_level_accepted_or_synonym"
       )
 
-    taxa <- redistribute(taxa)
+    taxa <- redistribute_progress(taxa, pb)
 
     if (nrow(taxa$tocheck) == 0)
     return(taxa)
@@ -536,7 +550,7 @@ match_taxa <- function(
         alignment_code = "match_02c_fuzzy_genus_accepted"
       )
 
-    taxa <- redistribute(taxa)
+    taxa <- redistribute_progress(taxa, pb)
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
 
@@ -558,7 +572,8 @@ match_taxa <- function(
       alignment_code_fuzzy = "match_03b_hybrid_fuzzy_genus",
       alignment_code_unresolved = "match_03c_hybrid_unresolved",
       alignment_code_no_resource = "match_03d_hybrid_no_genus_resource",
-      fuzzy_match_genera = fuzzy_match_genera
+      fuzzy_match_genera = fuzzy_match_genera,
+      pb = pb
     )
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
@@ -602,7 +617,8 @@ match_taxa <- function(
       alignment_code_fuzzy = "match_04b_intergrade_affinis_fuzzy_genus",
       alignment_code_unresolved = "match_04c_intergrade_affinis_unresolved",
       alignment_code_no_resource = "match_04d_intergrade_affinis_no_genus_resource",
-      fuzzy_match_genera = fuzzy_match_genera
+      fuzzy_match_genera = fuzzy_match_genera,
+      pb = pb
     )
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
@@ -644,7 +660,7 @@ match_taxa <- function(
       alignment_code = "match_05a_fuzzy_accepted_canonical_name"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -684,7 +700,7 @@ match_taxa <- function(
       alignment_code = "match_05b_fuzzy_synonym_canonical_name"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -720,7 +736,7 @@ match_taxa <- function(
       alignment_code = "match_09a_trinomial_exact_accepted"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -753,7 +769,7 @@ match_taxa <- function(
       alignment_code = "match_09b_trinomial_exact_synonym"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -793,7 +809,7 @@ match_taxa <- function(
       alignment_code = "match_10a_binomial_exact_accepted"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -830,7 +846,7 @@ match_taxa <- function(
       alignment_code = "match_10b_binomial_exact_synonym"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -863,7 +879,7 @@ match_taxa <- function(
       alignment_code = "match_11a_no_brackets_accepted"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -897,7 +913,7 @@ match_taxa <- function(
       alignment_code = "match_11b_no_brackets_synonym"
     )
 
-  taxa <- redistribute(taxa)
+  taxa <- redistribute_progress(taxa, pb)
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
@@ -941,7 +957,7 @@ match_taxa <- function(
         alignment_code = "match_12a_exact_subgenus_accepted_or_synonym"
       )
 
-    taxa <- redistribute(taxa)
+    taxa <- redistribute_progress(taxa, pb)
 
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
@@ -984,7 +1000,7 @@ match_taxa <- function(
         alignment_code = "match_12b_higher_rank_exact_accepted"
       )
 
-    taxa <- redistribute(taxa)
+    taxa <- redistribute_progress(taxa, pb)
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
   }
@@ -1025,7 +1041,7 @@ match_taxa <- function(
         alignment_code = "match_12c_higher_rank_fuzzy_accepted"
       )
 
-    taxa <- redistribute(taxa)
+    taxa <- redistribute_progress(taxa, pb)
     if (nrow(taxa$tocheck) == 0)
       return(taxa)
   }

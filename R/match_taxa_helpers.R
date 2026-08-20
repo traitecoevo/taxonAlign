@@ -235,6 +235,21 @@ redistribute <- function(data) {
   data
 }
 
+# Drop-in replacement for redistribute() used throughout match_taxa() (issue #5) -- also advances a
+# progress bar, if one was opened (`pb`, from utils::txtProgressBar()), to reflect how many rows have
+# been resolved so far out of the total match_taxa() started with. Tracking *rows resolved* rather
+# than *which match block is currently running* is deliberate: match blocks aren't equal-cost -- the
+# fuzzy-matching blocks (match_05a/05b, the genus-level fuzzy fallbacks) do most of the real work on
+# large data, so a block-count-based bar would jump to "nearly done" almost instantly and then stall,
+# which is more misleading than informative. `pb` is NULL when `progress = FALSE` (the default);
+# `utils::setTxtProgressBar()` is skipped entirely in that case, so this has no overhead/side effect
+# when progress reporting isn't requested.
+redistribute_progress <- function(data, pb) {
+  data <- redistribute(data)
+  if (!is.null(pb)) utils::setTxtProgressBar(pb, nrow(data$checked))
+  data
+}
+
 
 ## function for extracting the first "genus" - including with hybrids
 extract_genus <- function(taxon_name) {

@@ -30,6 +30,9 @@
 #' @param intergrades_affinis Logical; if `TRUE`, resolve names suggesting an intergrade, an
 #'  indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
 #'  Defaults to `FALSE`. See `?match_taxa`.
+#' @param progress Logical; if `TRUE`, prints a text progress bar tracking what fraction of
+#'  `original_name` has been resolved so far. Useful for large inputs, where matching can take a while.
+#'  Defaults to `FALSE`. See `?match_taxa`.
 #' @param full Logical; if `TRUE`, return every intermediate column `match_taxa()` computes (useful
 #'  for inspecting *why* a name matched the way it did). If `FALSE` (the default), return just the
 #'  key output columns.
@@ -53,6 +56,7 @@ align_taxa <- function(original_name,
                         taxon_ranks_to_check = NULL,
                         hybrids = FALSE,
                         intergrades_affinis = FALSE,
+                        progress = FALSE,
                         full = FALSE) {
 
   if (missing(original_name) || length(original_name) == 0) {
@@ -130,7 +134,8 @@ align_taxa <- function(original_name,
       taxon_ranks_to_check = taxon_ranks_to_check,
       hybrids = hybrids,
       intergrades_affinis = intergrades_affinis,
-      identifier = identifier
+      identifier = identifier,
+      progress = progress
     )
   }
 

@@ -15,6 +15,7 @@ align_taxa(
   taxon_ranks_to_check = NULL,
   hybrids = FALSE,
   intergrades_affinis = FALSE,
+  progress = FALSE,
   full = FALSE
 )
 }
@@ -51,6 +52,10 @@ than leaving them for later, inappropriate match attempts. Defaults to \code{FAL
 
 \item{intergrades_affinis}{Logical; if \code{TRUE}, resolve names suggesting an intergrade, an
 indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
+Defaults to \code{FALSE}. See \code{?match_taxa}.}
+
+\item{progress}{Logical; if \code{TRUE}, prints a text progress bar tracking what fraction of
+\code{original_name} has been resolved so far. Useful for large inputs, where matching can take a while.
 Defaults to \code{FALSE}. See \code{?match_taxa}.}
 
 \item{full}{Logical; if \code{TRUE}, return every intermediate column \code{match_taxa()} computes (useful
