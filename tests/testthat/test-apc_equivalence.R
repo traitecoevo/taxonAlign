@@ -22,19 +22,15 @@
 # taxonAlign_taxonomic_status_priority (prepare_taxonomic_resources.R) now sorts by, ported and
 # extended from APCalign's own relevel_taxonomic_status_preferred_order().
 
-# Loads a real, live APC snapshot and combines it into the flat table prepare_taxonomic_resources()
-# expects -- shared by both tests below so each only has to build it once. family_accepted is missing
-# a taxonomic_dataset column (unlike every other APC table here), so it's backfilled with "APC" (the
-# value every other APC table already uses) to match, rather than being left NA by dplyr::bind_rows().
+# Loads a real, live APC snapshot -- shared by both tests below so each only has to build it once.
+# `resources` (the flat, taxonAlign-shaped combined table) comes from load_taxonomic_resources()'s own
+# "APC" wrapper (R/load_taxonomic_resources.R) rather than duplicating its combining logic here; `APC`
+# (APCalign's own raw nested list) is fetched separately since the comparison calls below need
+# APCalign::align_taxa()'s own `resources` shape directly, not the flattened one.
 load_apc_resources_for_test <- function() {
   suppressMessages(APC <- APCalign::load_taxonomic_resources())
-  combined <- dplyr::bind_rows(
-    APC$APC_accepted, APC$APC_synonyms,
-    APC$genera_accepted, APC$genera_synonym,
-    APC$family_accepted |> dplyr::mutate(taxonomic_dataset = "APC"),
-    APC$family_synonym
-  )
-  list(APC = APC, resources = prepare_taxonomic_resources(combined))
+  suppressMessages(afd_style <- load_taxonomic_resources("APC"))
+  list(APC = APC, resources = prepare_taxonomic_resources(afd_style$APC))
 }
 
 test_that("taxonAlign aligns/updates a curated set of real names the same way APCalign does", {

@@ -22,7 +22,11 @@ are exported; `match_taxa()` stays `@noRd`, matching how APCalign itself keeps i
 `match_taxa()` unexported. `prepare_taxonomic_resources()` also has an interactive on-ramp
 (`interactive = TRUE`) for a user's own, differently-shaped reference table(s) — see Architecture #2.
 Hybrid/graded-name matching is now implemented, opt-in via `hybrids`/`intergrades_affinis` (issue #9,
-see Architecture #2).
+see Architecture #2). `load_taxonomic_resources(taxonomic_dataset = ...)` (issue #6, see Architecture
+#3) fetches/reshapes known reference sources -- the Australian Faunal Directory (`"AFD"`) and a thin
+`APCalign::load_taxonomic_resources()` wrapper (`"APC"`) so far -- into the flat schema
+`prepare_taxonomic_resources()` expects, complementing it the same way
+`generate_GBIF_taxonomic_reference_list()` does for GBIF.
 
 ## Commands
 
@@ -82,14 +86,17 @@ covers `prepare_taxonomic_resources(interactive = TRUE)` by supplying `user_resp
 exactly the way `traits.build` tests its own `metadata_add_traits()`/etc. — never a real interactive
 session (see Architecture #2 below). `test-match_taxa.R` covers the opt-in `hybrids`/
 `intergrades_affinis` matching (issue #9), plus `progress = TRUE` (issue #5, also covered in
-`test-align_taxa.R`). 214 expectations across all offline-safe test files, all passing as of the last
-run. (See Architecture #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
+`test-align_taxa.R`). `test-load_taxonomic_resources.R` covers `load_taxonomic_resources("AFD")`
+(issue #6) against a small AFD-shaped fixture (`helper-afd-fixtures.R`, see Architecture #3 below) --
+also offline-safe, no need for the real 89MB `inst/extdata/AFD.csv`. 242 expectations across all
+offline-safe test files, all passing as of the last run. (See Architecture #2 below for a
+fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 214) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 242) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (217 total, as of the last online run) (see Architecture #2 below).
+passing expectations on top (245 total, as of the last online run) (see Architecture #2 below).
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -437,6 +444,88 @@ Architecture of the matching engine itself:
   bottom -- there are ~18 early returns scattered through the function (one after each match block, so
   it can stop as soon as everything is resolved), and the bar needs to close on all of them, not only
   the one at the end.
+
+### 3. Known-source reference loader — `R/load_taxonomic_resources.R` (active, exported; internal helpers `@noRd`)
+
+`load_taxonomic_resources(taxonomic_dataset = ...)` (issue #6) fetches/reshapes a fixed set of *known*
+taxonomic datasets into taxonAlign's flat, `prepare_taxonomic_resources()`-ready column schema
+(`canonical_name`, `scientific_name`, `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`, `genus`,
+`taxon_ID`, `accepted_name_usage_ID`) — complementing (not replacing) `prepare_taxonomic_resources()`
+the same way `generate_GBIF_taxonomic_reference_list()` does for GBIF, except `"AFD"`'s "fetch" is
+reading+reshaping a local file rather than an API call, and `"APC"` is a thin wrapper around
+`APCalign::load_taxonomic_resources()`. Always returns a *named list* of flat tibbles (one per
+requested dataset, even for a single one), so a user combines any mix of known and their own
+reference tables identically: `prepare_taxonomic_resources(load_taxonomic_resources(c("AFD", "APC")))`.
+Errors immediately, naming the known datasets, on an unrecognised `taxonomic_dataset` value —
+`taxonAlign_known_datasets` (top of the file) is the registry to extend as further sources are added.
+
+- **`"AFD"` (Australian Faunal Directory)**: AFD only exists as a one-off raw CSV export (no public
+  API, unlike GBIF) — `inst/extdata/AFD.csv` (~89MB, ~117k rows, one row per species/subspecies).
+  `load_AFD()` ports the *approach* of the sibling `ausinvertraits.addons` repo's
+  `scripts/02_AFD_checklist_clean.R` (confirmed the current, canonical version of that script —
+  reimplemented directly against taxonAlign's schema, not translated line-by-line; deliberately
+  excludes that repo's AusInvertTraits-specific GRIIS/WoRMS invasive-and-marine-species filtering and
+  "improper name" removal, which are curation decisions about *which* taxa to include, not part of
+  reshaping the data into taxonAlign's format):
+  - **Accepted rows**: one per raw row, `canonical_name = FULL_NAME`, `scientific_name =
+    COMPLETE_NAME`, `taxon_rank` derived from whether `SUB_SPECIES` is filled (`"species"` vs.
+    `"subspecies"`), `taxon_ID = accepted_name_usage_ID = CONCEPT_GUID` (AFD's own stable UUID,
+    self-referential -- the one rank level with a natural ID).
+  - **Higher-rank rows**: one per distinct, non-blank value of every higher-rank column AFD provides
+    (subgenus through phylum) -- mirroring the ported script's "one rank at a time, `distinct()` the
+    column" approach. None of these have a natural stable ID (`CONCEPT_GUID` only exists at
+    species/subspecies level), so `taxon_ID`/`accepted_name_usage_ID` fall back to the rank's own name.
+    `genus` is populated only for genus/subgenus rows (subgenus rows need their owning genus so
+    `prepare_taxonomic_resources()` can build the bracketed `Genus (Subgenus)` convention
+    automatically) -- every other higher rank leaves it `NA`, same as elsewhere in taxonAlign.
+    **A real AFD-specific quirk found and fixed here**: family-and-above ranks (family, superfamily,
+    order, ..., phylum) are exported ALL CAPS (`"BUPRESTIDAE"`), but subfamily-and-below (subfamily,
+    tribe, subtribe) are normal title case (`"Agrilinae"`) -- inconsistent within the same file.
+    `afd_higher_rank_rows()` normalises every rank to sentence case regardless (a no-op on the
+    already-correctly-cased ones), since an ALL-CAPS reference value would otherwise never
+    exact-match a normally-cased input name.
+  - **Synonym rows**: AFD embeds every synonym of a taxon as one semicolon-joined free-text field
+    (`SYNONYMS`), each entry mixing name + author + year with no separator between the name and its
+    authorship (e.g. `"Cisseis fossicollis Kerremans, 1903"`). `afd_synonym_rows()` splits on `"; "`,
+    drops entries identical to the row's own name (self-referential noise in the raw data), then
+    strips authorship via `strip_afd_authorship()` -- ported from the same script's technique: build a
+    regex from every distinct `AUTHOR` value present in the *whole* AFD file (a real, closed
+    vocabulary of the taxonomists appearing in it) and strip a matching trailing `"<author>, <year>"`.
+    A generic fallback (any capitalised author-like token(s) before a trailing year) catches entries
+    whose author isn't in that dictionary for some reason; if neither matches, the entry is returned
+    unchanged (including its authorship) rather than guessed at further -- verified against the real,
+    full file this only affects ~3 of ~156k synonym rows (parenthetical multi-author combinations,
+    lowercase author typos in the source data, and one very long `"in X, Y & Z"` author chain). `genus`
+    is re-derived from each synonym's own (post-strip) name via the existing `extract_genus()` helper
+    (`match_taxa_helpers.R`), not copied from the accepted row's `genus` -- a synonym can sit under a
+    *different* genus than the name it's now a synonym of (e.g. `"Cisseis fossicollis"` as a synonym of
+    accepted `"Aaaaba fossicollis"`). `taxon_ID` is synthesised per synonym row (`<CONCEPT_GUID>_syn<n>`);
+    `accepted_name_usage_ID` is the accepted row's own `CONCEPT_GUID`, resolving the synonym forward.
+  - **Caching**: the reshaped result (raw ~117k rows expand into ~310k output rows once every higher
+    rank and every synonym gets its own row -- real work, ~14s uncached, ~0.5s cached) is cached as a
+    single `.rds` in `cache_dir` (default `tools::R_user_dir("taxonAlign", "cache")`, the same
+    convention `generate_GBIF_taxonomic_reference_list()` uses), keyed by the *source file's own
+    size/mtime* rather than a time-based freshness window like the GBIF loader's -- deliberately
+    different, since a local file (unlike a remote API) lets us detect a content change directly:
+    swapping in an updated `AFD.csv` invalidates the cache automatically, without the user needing to
+    remember `refresh_cache = TRUE`.
+  - Every column is forced to character on read (`readr::cols(.default = readr::col_character())`) --
+    several raw columns (`SUB_GENUS`, `SUB_SPECIES`, and others this function doesn't use) are sparsely
+    populated enough that `readr`'s sample-based type-guessing can mis-infer them as logical, which
+    would break every string operation the moment a real (non-blank) value showed up.
+- **`"APC"`**: `load_APC()` is a thin wrapper flattening `APCalign::load_taxonomic_resources()`'s
+  several accepted/synonym/genus/family pieces into one combined table -- the exact combining logic
+  originally prototyped inline in `test-apc_equivalence.R` (issue #10), now shared from here instead
+  (that test calls `load_taxonomic_resources("APC")` too, rather than duplicating it). `family_accepted`
+  is APC's one piece missing a `taxonomic_dataset` column, backfilled with `"APC"` to match every other
+  piece. No caching needed -- `APCalign::load_taxonomic_resources()` already caches internally.
+- Test coverage: `tests/testthat/test-load_taxonomic_resources.R` covers the `"AFD"` path end to end
+  (accepted/subspecies rows, higher-rank dedup and case normalisation, subgenus pairing, synonym
+  splitting/authorship-stripping, caching, and a full `prepare_taxonomic_resources()`→
+  `create_taxonomic_update_lookup()` run) against a small, hand-built AFD-*shaped* fixture
+  (`helper-afd-fixtures.R`) -- entirely offline, no need for the real 89MB file. The `"APC"` path is
+  inherently network-dependent (like the rest of `test-apc_equivalence.R`), so its coverage lives there
+  instead, gated the same way.
 
 ### Vignette and data tying the two together
 

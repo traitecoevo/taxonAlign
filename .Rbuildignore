@@ -4,3 +4,4 @@
 ^LICENSE\.md$
 # scratch/holding area for retired ported-prototype files -- see CLAUDE.md; not package content
 ^ignore$
+^\.claude$
