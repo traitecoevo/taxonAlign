@@ -11,19 +11,22 @@
 
 1.  **Build a personalised taxonomic reference** by combining one or
     more taxonomic reference tables – your own, one built from the GBIF
-    backbone taxonomy with `generate_GBIF_taxonomic_reference_list()`,
-    or a mix of both.
+    backbone taxonomy with `generate_GBIF_taxonomic_reference_list()`, a
+    known source like the Australian Faunal Directory or the Australian
+    Plant Census via `load_taxonomic_resources()`, or any mix of these.
 2.  **Fuzzy-match a list of raw taxon names** against that reference,
     resolving misspellings, synonyms, and names only identifiable to a
     higher rank (`genus sp.`), to maximise how many of your names align
     successfully.
+3.  **Update outdated names to the currently accepted/valid name** as
+    long as the taxonomic reference you are using includes synonyms and
+    specifies the taxonomic status of all names.
 
 It’s inspired by [APCalign](https://traitecoevo.github.io/APCalign/)’s
 approach to aligning taxon names to the Australian Plant Census,
 generalised so the reference doesn’t have to be APC/APNI and the taxa
-don’t have to be plants – any taxonomic rank present in your reference
-(species, genus, family, or anything else) can be matched against, not
-just genus/species/family.
+don’t have to be plants and names of any taxonomic rank present in your
+reference (species, genus, family, or anything else) can be matched.
 
 ## Installation
 
@@ -39,45 +42,71 @@ pak::pak("traitecoevo/taxonAlign")
 | Function | What it does |
 |----|----|
 | `generate_GBIF_taxonomic_reference_list()` | Build a reference table from the GBIF backbone taxonomy for a taxon (optionally filtered by country and/or minimum rank). |
-| `prepare_taxonomic_resources()` | Combine one or more reference tables (yours, GBIF’s, or both) into the structure the matching functions need. |
+| `load_taxonomic_resources()` | Fetch/reshape a known reference dataset into the same flat schema – currently the Australian Faunal Directory (`"AFD"`) and the Australian Plant Census (`"APC"`, via `APCalign`). |
+| `prepare_taxonomic_resources()` | Combine one or more reference tables (yours, GBIF’s, a known source, or any mix) into the structure the matching functions need. |
 | `align_taxa()` | Match a list of raw taxon names against a prepared reference, via exact and fuzzy matching. |
 | `update_taxa()` | Resolve a matched (possibly synonymous) name forward to its current accepted name. |
 | `create_taxonomic_update_lookup()` | Run `align_taxa()` and `update_taxa()` together in one call – the easiest way to go from raw names to a lookup table of accepted names. |
 
 ## Example
 
-Given a small taxonomic reference (built here by hand for the example –
-in practice, this would usually come from your own data, or from
-`generate_GBIF_taxonomic_reference_list()`):
+First generated your taxonomic reference list, in this case, use
+`generate_GBIF_taxonomic_reference_list()` to fetch every name GBIF’s
+backbone taxonomy has ever used for the painted lady butterfly, *Vanessa
+cardui*: its current accepted name, plus dozens of historical synonyms
+(it’s been reclassified several times, including a long stint in the
+genus *Cynthia*).
 
 ``` r
 library(taxonAlign)
 
-reference <- tibble::tribble(
-  ~scientific_name,        ~canonical_name,     ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus,    ~taxon_ID, ~accepted_name_usage_ID,
-  "Boronia serrulata Sm.", "Boronia serrulata", "species",   "accepted",        "EXAMPLE",          "Boronia", "sp1",     "sp1",
-  "Zieria serrulata Sm.",  "Zieria serrulata",  "species",   "synonym",         "EXAMPLE",          "Zieria",  "sp2",     "sp1"
-)
-
-resources <- prepare_taxonomic_resources(reference)
+gbif_reference <- generate_GBIF_taxonomic_reference_list("Vanessa cardui")
+#> Using cached taxonomic tree for GBIF key 4299368.
+resources <- prepare_taxonomic_resources(gbif_reference)
+#> Warning: 2 row(s) in `taxonomic_resources` have a missing (NA) `canonical_name`
+#> and were dropped -- they could never be matched against anyway.
 ```
 
-`create_taxonomic_update_lookup()` matches a list of raw names –
-including a misspelling and an outdated synonym – and resolves each to
-its current accepted name in one call:
+`create_taxonomic_update_lookup()` then matches a list of raw names – an
+already-correct name, a genuine historical synonym, and a misspelling –
+and resolves each to its current accepted name in one call:
 
 ``` r
 create_taxonomic_update_lookup(
-  c("Boronia serrulata", "Boronia serulata", "Zieria serrulata"),
+  c("Vanessa cardui", "Cynthia cardui", "Vanessa carduii"),
   resources
 ) |>
-  dplyr::select(original_name, aligned_name, accepted_name, taxonomic_status)
+  dplyr::select(original_name, aligned_name, accepted_name, taxonomic_status_aligned)
 #> # A tibble: 3 × 4
-#>   original_name     aligned_name      accepted_name     taxonomic_status
-#>   <chr>             <chr>             <chr>             <chr>           
-#> 1 Boronia serrulata Boronia serrulata Boronia serrulata accepted        
-#> 2 Boronia serulata  Boronia serrulata Boronia serrulata accepted        
-#> 3 Zieria serrulata  Zieria serrulata  Boronia serrulata accepted
+#>   original_name   aligned_name   accepted_name  taxonomic_status_aligned
+#>   <chr>           <chr>          <chr>          <chr>                   
+#> 1 Vanessa cardui  Vanessa cardui Vanessa cardui accepted                
+#> 2 Cynthia cardui  Cynthia cardui Vanessa cardui synonym                 
+#> 3 Vanessa carduii Vanessa cardui Vanessa cardui accepted
 ```
+
+`Cynthia cardui` – the name this species was described under updates to
+the current accepted name, `taxonomic_status_aligned` records that it
+was a synonym, and the misspelling (`carduii`, one letter off) is
+corrected via fuzzy matching.
+
+For a known source instead of a live GBIF fetch,
+`load_taxonomic_resources()` fetches/reshapes a fixed dataset – the
+Australian Faunal Directory or the Australian Plant Census – into the
+same schema:
+
+``` r
+afd <- load_taxonomic_resources("AFD")  # reads/reshapes a local AFD export -- see ?load_taxonomic_resources
+apc <- load_taxonomic_resources("APC")  # wraps APCalign::load_taxonomic_resources()
+
+# combine a known source with your own data, or two known sources together
+resources <- prepare_taxonomic_resources(list(afd = afd$AFD, mine = my_reference))
+```
+
+See [`vignettes/get-started.qmd`](vignettes/get-started.qmd) for a full
+walkthrough of every function, including building your own reference
+table by hand, combining several sources, matching names of every rank
+(not just species), and an end-to-end “update a list of raw field names”
+workflow.
 
 <!-- You'll still need to render `README.qmd` regularly, to keep `README.md` up-to-date.  -->
