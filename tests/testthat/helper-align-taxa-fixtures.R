@@ -11,7 +11,7 @@
 # `Genus (Subgenus)` and plain `Subgenus` matching conventions). `taxon_ID`/`accepted_name_usage_ID`
 # are self-referential for every accepted row and point at the accepted counterpart for every synonym
 # row, matching the convention `prepare_taxonomic_resources()` requires.
-sample_taxon_resources <- function() {
+sample_taxonomic_resources <- function() {
   tibble::tribble(
     ~scientific_name, ~canonical_name, ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
     "Boronia serrulata Sm.", "Boronia serrulata", "species", "accepted", "TEST", "Boronia", "sp1", "sp1",

@@ -142,8 +142,19 @@ afd_accepted_rows <- function(afd) {
 # through phylum) -- mirrors 02_AFD_checklist_clean.R's own "one rank at a time, distinct() the column,
 # blank out finer ranks" approach. None of these ranks have a natural stable ID in the raw data (AFD's
 # CONCEPT_GUID only exists at species/subspecies level), so `taxon_ID`/`accepted_name_usage_ID` fall
-# back to the rank's own name -- the same fallback 02_AFD_checklist_clean.R uses, and a reasonable one
-# since these names are stable/unique in practice at their respective rank.
+# back to the rank's own name -- the same fallback 02_AFD_checklist_clean.R uses -- but namespaced with
+# the rank itself (`"<rank>:<name>"`), not the bare name alone. A bare-name fallback collides across
+# ranks whenever the same string is used at two different ranks -- which, for genus/subgenus, isn't a
+# rare coincidence but the norm: by nomenclatural convention every genus that has been split into
+# subgenera has a *nominotypical* subgenus sharing the genus's own name (e.g. genus "Agrilus" / its
+# nominotypical subgenus "Agrilus"). Real AFD data hits this for 572 of 1725 distinct genus/subgenus
+# pairs (~1180 higher-rank rows total, a handful more at family/order/subfamily/etc.). Without
+# namespacing, `update_taxa()`'s `taxon_ID`-keyed lookup (`match()`, first-hit semantics) would
+# silently resolve a subgenus-rank match to whichever colliding row happens to bind first (genus, since
+# it's listed before subgenus in `resources`) -- collapsing a correct subgenus-rank resolution down to
+# genus rank, discarding the subgenus, on every affected name. Confirmed and fixed after real user
+# testing against the full AFD.csv surfaced exactly this: names that used to align to subgenus rank
+# were coming out of `update_taxa()` at genus rank instead.
 #
 # `genus` is only populated for genus- and subgenus-rank rows (subgenus rows need their owning genus so
 # prepare_taxonomic_resources() can build the bracketed `Genus (Subgenus)` convention automatically) --
@@ -170,10 +181,11 @@ afd_higher_rank_rows <- function(afd) {
     # ALL-CAPS ones, which would otherwise never exact-match a normally-cased input name.
     values <- unique(stringr::str_to_sentence(values))
     if (length(values) == 0) return(NULL)
+    ids <- paste0(rank_label, ":", values)
     dplyr::tibble(
       canonical_name = values, scientific_name = values, taxon_rank = rank_label,
       taxonomic_status = "accepted", taxonomic_dataset = "AFD", genus = NA_character_,
-      taxon_ID = values, accepted_name_usage_ID = values
+      taxon_ID = ids, accepted_name_usage_ID = ids
     )
   })
 
@@ -183,7 +195,7 @@ afd_higher_rank_rows <- function(afd) {
     dplyr::transmute(
       canonical_name = GENUS, scientific_name = GENUS, taxon_rank = "genus",
       taxonomic_status = "accepted", taxonomic_dataset = "AFD", genus = GENUS,
-      taxon_ID = GENUS, accepted_name_usage_ID = GENUS
+      taxon_ID = paste0("genus:", GENUS), accepted_name_usage_ID = paste0("genus:", GENUS)
     )
 
   subgenus_rows <- afd |>
@@ -192,7 +204,7 @@ afd_higher_rank_rows <- function(afd) {
     dplyr::transmute(
       canonical_name = SUB_GENUS, scientific_name = SUB_GENUS, taxon_rank = "subgenus",
       taxonomic_status = "accepted", taxonomic_dataset = "AFD", genus = GENUS,
-      taxon_ID = SUB_GENUS, accepted_name_usage_ID = SUB_GENUS
+      taxon_ID = paste0("subgenus:", SUB_GENUS), accepted_name_usage_ID = paste0("subgenus:", SUB_GENUS)
     )
 
   dplyr::bind_rows(c(plain_rank_rows, list(genus_rows, subgenus_rows)))

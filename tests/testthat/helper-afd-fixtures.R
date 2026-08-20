@@ -9,7 +9,10 @@
 # ranks (to test the sentence-case normalisation); a subgenus (to test genus/subgenus pairing); a
 # synonym whose authorship is in the AUTHOR-column dictionary ("Smith") and one whose authorship isn't
 # ("Someunlistedauthor" -- capitalised, so the generic fallback pattern still strips it) -- see
-# `strip_afd_authorship()`.
+# `strip_afd_authorship()`; and a genus with a *nominotypical* subgenus -- one sharing the genus's own
+# name ("Thirdgenus" genus / "Thirdgenus" subgenus), the real, common taxonomic convention that used to
+# collide under `afd_higher_rank_rows()`'s old bare-name `taxon_ID` fallback (see the taxon_ID-namespacing
+# comment there).
 sample_afd_raw <- function() {
   tibble::tribble(
     ~FULL_NAME, ~COMPLETE_NAME, ~AUTHOR, ~YEAR, ~SUB_SPECIES, ~SPECIES, ~GENUS, ~SUB_GENUS,
@@ -25,7 +28,11 @@ sample_afd_raw <- function() {
 
     "Anothergenus (Subgenusy) gammus", "Anothergenus gammus, Brown 1999", "Brown", "1999", NA_character_, "gammus", "Anothergenus", "Subgenusy",
     "ANOTHERFAM", "Anothersubfam", "ANOTHERORDER", "INSECTA", "ARTHROPODA",
-    NA_character_, "guid-3"
+    NA_character_, "guid-3",
+
+    "Thirdgenus (Thirdgenus) deltus", "Thirdgenus deltus, White 2001", "White", "2001", NA_character_, "deltus", "Thirdgenus", "Thirdgenus",
+    "THIRDFAM", "Thirdsubfam", "THIRDORDER", "INSECTA", "ARTHROPODA",
+    NA_character_, "guid-4"
   )
 }
 

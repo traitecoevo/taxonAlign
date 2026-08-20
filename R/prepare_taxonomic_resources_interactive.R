@@ -25,6 +25,18 @@ prompt_yes_no <- function(title, user_response = NULL) {
   choice == 1
 }
 
+# Prompts for a taxonomic reference table via a file path -- used both for the initial table (when
+# `interactive = TRUE` and `taxonomic_resources` wasn't supplied at all) and for every "additional
+# reference" after it, so obtaining the first table feels identical to obtaining every later one,
+# rather than requiring the caller to already have a table in hand just to get started. Someone who
+# already has a table (a path, or a tibble they've loaded themselves) still just passes it as
+# `taxonomic_resources`/an `additional_tables` entry directly, bypassing this prompt entirely.
+# `user_response`, if supplied, is itself a table or path, substituting for the real prompt.
+prompt_for_table_path <- function(prompt_text, user_response = NULL) {
+  if (!is.null(user_response)) return(user_response)
+  readline(prompt = prompt_text)
+}
+
 # The special "is this table already fully aligned?" gate asked once per table, before the per-field
 # prompt sequence, when the automatic column_rename step didn't resolve everything on its own --
 # e.g. the table may already be in taxonAlign's target shape (from an earlier
@@ -64,14 +76,10 @@ prompt_select_column <- function(field, data, extra_choices = character(0), user
   choices[i]
 }
 
-# free-text prompt (e.g. a typed taxonomic_dataset label); `user_response` bypasses `readline()`
-prompt_free_text <- function(prompt_text, user_response = NULL) {
-  if (!is.null(user_response)) return(user_response)
-  readline(prompt = prompt_text)
-}
-
-# the "does this table have a column for `field`, or is every row the same value?" pattern used for
-# `taxon_rank`/`taxonomic_status` -- returns list(column = ..., fixed_value = ...), exactly one non-NULL.
+# the "does this table have a column for `field`, or is every row the same value?" pattern -- used
+# for `taxon_rank`/`taxonomic_status`/`taxonomic_dataset` (a combined spreadsheet someone has
+# assembled by hand can just as easily mix rows from several sources as have one uniform one).
+# Returns list(column = ..., fixed_value = ...), exactly one non-NULL.
 # `user_response`, if supplied, is itself that same list shape.
 prompt_column_or_fixed_value <- function(field, data, example_value, user_response = NULL) {
   if (!is.null(user_response)) {
@@ -96,17 +104,18 @@ prompt_column_or_fixed_value <- function(field, data, example_value, user_respon
 
 # fills in whichever of `missing_cols` this table is missing, prompting (or consulting
 # `user_responses`, a named list keyed by field) for each -- only ever called with a non-empty
-# `missing_cols`, from `resolve_taxon_resources_table()`
-map_missing_taxon_resources_columns <- function(data, missing_cols, table_label, user_responses = NULL) {
+# `missing_cols`, from `resolve_taxonomic_resources_table()`
+map_missing_taxonomic_resources_columns <- function(data, missing_cols, table_label, user_responses = NULL) {
 
   if ("taxonomic_dataset" %in% missing_cols) {
-    data$taxonomic_dataset <- prompt_free_text(
-      sprintf(
-        "Enter a label for the taxonomic dataset/source of `%s` (e.g. \"AFD\", \"iNaturalist\"): ",
-        table_label
-      ),
+    # a combined spreadsheet someone has assembled by hand (e.g. mixing rows sourced from AFD and
+    # iNaturalist into one table, with a column recording which) needs the column option here just as
+    # much as taxon_rank/taxonomic_status do -- not every table is from a single, uniform source.
+    res <- prompt_column_or_fixed_value(
+      "taxonomic_dataset", data, "AFD",
       user_responses$taxonomic_dataset
     )
+    data$taxonomic_dataset <- if (!is.null(res$column)) data[[res$column]] else res$fixed_value
   }
 
   if ("canonical_name" %in% missing_cols) {

@@ -33,7 +33,7 @@ taxonAlign_required_cols <- c(
 
 # Priority order used to disambiguate when the same lookup key (canonical_name, scientific_name,
 # binomial, trinomial, ...) appears more than once with a different taxonomic_status -- match_taxa()'s
-# exact-match blocks use `match()` (first-hit semantics), so taxon_resources is sorted by this priority
+# exact-match blocks use `match()` (first-hit semantics), so taxonomic_resources is sorted by this priority
 # before any rank/status splitting happens (see prepare_taxonomic_resources() below), ensuring the
 # highest-priority (most reliable) row wins regardless of the order the data happened to arrive in.
 #
@@ -85,8 +85,10 @@ taxonAlign_taxonomic_status_priority <- c(
 #' reference data the user supplies -- at whatever set of taxonomic ranks it happens to contain, not
 #' just genus/species/family.
 #'
-#' @param taxon_resources A tibble, a path to a CSV file, or a (optionally named) list of either --
-#'  one element per taxonomic reference table to combine. Each table needs (at least) the columns
+#' @param taxonomic_resources A tibble, a path to a CSV file, or a (optionally named) list of either --
+#'  one element per taxonomic reference table to combine. Optional (`NULL`) when `interactive = TRUE`
+#'  -- you'll be prompted for a path to the first table, the same way you're prompted for every
+#'  additional one (see `interactive`, below). Each table needs (at least) the columns
 #'  `canonical_name`, `scientific_name`, `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`,
 #'  `genus`, `taxon_ID` and `accepted_name_usage_ID` -- the column names produced by
 #'  [generate_GBIF_taxonomic_reference_list()], and matching
@@ -100,7 +102,7 @@ taxonAlign_taxonomic_status_priority <- c(
 #' @param taxon_ranks_to_check Optional character vector restricting which taxonomic ranks (besides
 #'  species/infraspecific ranks) are retained in the returned `resources` for higher-rank matching
 #'  (e.g. `c("genus", "family")`). Defaults to `NULL`, which keeps every rank present in
-#'  `taxon_resources`.
+#'  `taxonomic_resources`.
 #' @param interactive Logical; if `TRUE`, prompts (in the style of `traits.build`'s
 #'  `metadata_add_traits()`/`metadata_add_locations()`) for any of the required columns a table is
 #'  missing -- letting a column be picked from that table, or (for some fields) a fixed value typed in
@@ -110,23 +112,24 @@ taxonAlign_taxonomic_status_priority <- c(
 #'  under column names `interactive` didn't recognise) before being walked through the per-field
 #'  prompts. Once every initially-supplied table is resolved, also asks whether there are any
 #'  additional taxonomic reference(s) to include -- repeating for as many as the user has -- so a
-#'  single file passed in via `taxon_resources` can grow into a combined set interactively, rather
+#'  single file passed in via `taxonomic_resources` can grow into a combined set interactively, rather
 #'  than requiring the whole set to be assembled up front. When more than one table ends up in the
 #'  final set, also prompts once for a priority order across them. Defaults to `FALSE`, which errors
 #'  immediately (as before) if any required column is missing, and skips both of the prompts above.
 #' @param user_responses Optional named list bypassing the real prompts `interactive = TRUE` would
-#'  otherwise show -- for scripting or testing. Keyed by table name (matching `taxon_resources`'s
+#'  otherwise show -- for scripting or testing. Keyed by table name (matching `taxonomic_resources`'s
 #'  names, or `"table 1"`/`"table 2"`/... if unnamed), each holding the responses for that table's
 #'  missing fields (`already_aligned` (logical), `taxonomic_dataset`, `canonical_name`,
 #'  `scientific_name`, `taxon_rank`, `taxonomic_status`, `genus`, `taxon_ID`,
-#'  `accepted_name_usage_ID` -- see `?map_missing_taxon_resources_columns` for exact shapes), plus two
-#'  top-level elements: `additional_tables` (an optionally-named list of further tables/paths to add,
-#'  bypassing the "any additional reference(s)?" prompt loop -- each is still resolved via its own
-#'  entry in `user_responses`, keyed the same way) and `priority_order`, when the final set has more
-#'  than one table. Ignored unless `interactive = TRUE`.
+#'  `accepted_name_usage_ID` -- see `?map_missing_taxonomic_resources_columns` for exact shapes), plus two
+#'  top-level elements: `initial_table` (a table/path bypassing the prompt for the first table, when
+#'  `taxonomic_resources` itself is `NULL`), `additional_tables` (an optionally-named list of further
+#'  tables/paths to add, bypassing the "any additional reference(s)?" prompt loop -- each is still
+#'  resolved via its own entry in `user_responses`, keyed the same way) and `priority_order`, when the
+#'  final set has more than one table. Ignored unless `interactive = TRUE`.
 #'
 #' @return A named list of tibbles (and, for `species`, a further named list split by
-#'  `taxonomic_status`): one element per taxonomic rank present in `taxon_resources` (after applying
+#'  `taxonomic_status`): one element per taxonomic rank present in `taxonomic_resources` (after applying
 #'  `taxon_ranks_to_check`, if supplied), plus `subgenus_v2` when subgenus-rank rows are present (see
 #'  Details).
 #'
@@ -145,34 +148,45 @@ taxonAlign_taxonomic_status_priority <- c(
 #'
 #' Two matching conventions for subgenus names are supported side by side: some input name lists
 #' write the subgenus alone (e.g. `"Podosemum"`), others write the `Genus (Subgenus)` bracketed
-#' convention (e.g. `"Boronia (Podosemum)"`). To support both, when `taxon_resources` contains
+#' convention (e.g. `"Boronia (Podosemum)"`). To support both, when `taxonomic_resources` contains
 #' subgenus-rank rows, `resources$subgenus` holds the plain subgenus names (used for the first
 #' convention) and `resources$subgenus_v2` additionally holds a `genus_and_subgenus` column (used for
 #' the second).
 #'
 #' @export
-prepare_taxonomic_resources <- function(taxon_resources = NULL,
+prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
                                          taxon_ranks_to_check = NULL,
                                          interactive = FALSE,
                                          user_responses = NULL) {
 
-  if (is.null(taxon_resources)) {
-    stop(
-      "`taxon_resources` is required. Supply your own combined taxonomic reference table (or a path ",
-      "to one), or build one with `generate_GBIF_taxonomic_reference_list()`.",
-      call. = FALSE
+  if (is.null(taxonomic_resources)) {
+    if (!interactive) {
+      stop(
+        "`taxonomic_resources` is required. Supply your own combined taxonomic reference table (or a path ",
+        "to one), or build one with `generate_GBIF_taxonomic_reference_list()`. Or pass ",
+        "`interactive = TRUE` to be prompted for one.",
+        call. = FALSE
+      )
+    }
+    # interactive = TRUE with nothing supplied yet -- prompt for the first table exactly the way
+    # additional tables are already asked for below (see the `repeat` loop), rather than requiring the
+    # caller to already have a table in hand before they can even start. Someone who *does* already
+    # have a table (a path, or a tibble they've loaded themselves) still just passes it as
+    # `taxonomic_resources` directly, as before -- this only fills the gap where they don't.
+    taxonomic_resources <- prompt_for_table_path(
+      "Enter the file path for your taxonomic reference: ", user_responses$initial_table
     )
   }
 
-  tables <- normalise_taxon_resources_input(taxon_resources)
+  tables <- normalise_taxonomic_resources_input(taxonomic_resources)
 
   resolved <- purrr::imap(
     tables,
-    function(data, label) resolve_taxon_resources_table(data, label, interactive, user_responses[[label]])
+    function(data, label) resolve_taxonomic_resources_table(data, label, interactive, user_responses[[label]])
   )
 
   # Interactively, keep asking for one more taxonomic reference until the user says there isn't one --
-  # rather than requiring every table to be assembled into `taxon_resources` up front, this lets
+  # rather than requiring every table to be assembled into `taxonomic_resources` up front, this lets
   # someone start with just the one file they have open and add others as they think of them.
   # `user_responses$additional_tables` (a list of extra tables/paths, optionally named) bypasses the
   # real loop for scripting/testing -- each entry is resolved exactly like any other table, using
@@ -189,14 +203,14 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
         new_label <- names(extra_tables)[extra_index]
       } else {
         if (!prompt_yes_no("\nDo you have any additional taxonomic reference(s) to include?")) break
-        new_raw <- readline(prompt = "Enter the file path for the additional taxonomic reference: ")
+        new_raw <- prompt_for_table_path("Enter the file path for the additional taxonomic reference: ")
         new_label <- NULL
       }
 
       if (is.null(new_label) || new_label == "") new_label <- paste("table", length(resolved) + 1)
-      if (is.character(new_raw) && length(new_raw) == 1) new_raw <- read_taxon_resources_file(new_raw)
+      if (is.character(new_raw) && length(new_raw) == 1) new_raw <- read_taxonomic_resources_file(new_raw)
 
-      resolved[[new_label]] <- resolve_taxon_resources_table(
+      resolved[[new_label]] <- resolve_taxonomic_resources_table(
         new_raw, new_label, interactive, user_responses[[new_label]]
       )
     }
@@ -209,15 +223,15 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
       # no prompt: the order tables were supplied in already *is* the priority
       names(resolved)
     }
-    taxon_resources <- dplyr::bind_rows(resolved[order])
+    taxonomic_resources <- dplyr::bind_rows(resolved[order])
   } else {
-    taxon_resources <- resolved[[1]]
+    taxonomic_resources <- resolved[[1]]
   }
 
   # dummy placeholder for blank cells -- fuzzy matching doesn't cope with blank/duplicate cells
   zzz <- "zzzz zzzz"
 
-  taxon_resources <- taxon_resources |>
+  taxonomic_resources <- taxonomic_resources |>
     dplyr::mutate(
       # normalise to character regardless of the source column's type (our own
       # generate_GBIF_taxonomic_reference_list() gives integer taxon_IDs; real APC/AFD data gives URI/UUID
@@ -233,12 +247,12 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
   # fuzzy_match() call that legitimately finds no match (returning NA) would otherwise spuriously
   # "match" this row's NA canonical_name instead of correctly matching nothing, in every match block
   # that does `i <- some_value %in% resources$...$canonical_name`-style lookups.
-  n_before <- nrow(taxon_resources)
-  taxon_resources <- taxon_resources |> dplyr::filter(!is.na(canonical_name))
-  n_dropped <- n_before - nrow(taxon_resources)
+  n_before <- nrow(taxonomic_resources)
+  taxonomic_resources <- taxonomic_resources |> dplyr::filter(!is.na(canonical_name))
+  n_dropped <- n_before - nrow(taxonomic_resources)
   if (n_dropped > 0) {
     warning(
-      n_dropped, " row(s) in `taxon_resources` have a missing (NA) `canonical_name` and were dropped ",
+      n_dropped, " row(s) in `taxonomic_resources` have a missing (NA) `canonical_name` and were dropped ",
       "-- they could never be matched against anyway.",
       call. = FALSE
     )
@@ -248,13 +262,13 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
   # the same lookup key repeats under different statuses, the most reliable row is the one every
   # first-hit `match()`-based exact-match block finds, and the one the binomial/trinomial dedup below
   # keeps (it discards later duplicates, so ordering matters there too). This is a stable sort, so it
-  # composes correctly with priority *between* multiple combined taxon_resources tables (row-bind
+  # composes correctly with priority *between* multiple combined taxonomic_resources tables (row-bind
   # order, established above): rows tie on taxonomic_status keep the relative order they already had,
   # so a higher-priority *dataset*'s "accepted" row still comes before a lower-priority dataset's.
-  taxon_resources <- taxon_resources |>
+  taxonomic_resources <- taxonomic_resources |>
     dplyr::arrange(factor(taxonomic_status, levels = taxonAlign_taxonomic_status_priority))
 
-  taxon_resources <- taxon_resources |>
+  taxonomic_resources <- taxonomic_resources |>
     dplyr::mutate(
       word_one = extract_genus(canonical_name),
       taxon_rank = APCalign::standardise_taxon_rank(taxon_rank),
@@ -276,10 +290,10 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
     )
 
   # split by taxon rank -- unlike APCalign, higher ranks beyond genus/family are expected and kept
-  resources <- split(taxon_resources, taxon_resources$taxon_rank2)
+  resources <- split(taxonomic_resources, taxonomic_resources$taxon_rank2)
 
   if (is.null(resources[["species"]])) {
-    stop("`taxon_resources` contains no rows at species/infraspecific rank -- nothing to align names against.")
+    stop("`taxonomic_resources` contains no rows at species/infraspecific rank -- nothing to align names against.")
   }
 
   # for species, split further into "accepted" vs everything else -- not a literal split() by the raw
@@ -327,7 +341,7 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
     unknown_ranks <- setdiff(taxon_ranks_to_check, higher_ranks_present)
     if (length(unknown_ranks) > 0) {
       warning(
-        "`taxon_ranks_to_check` includes rank(s) not present in `taxon_resources`: ",
+        "`taxon_ranks_to_check` includes rank(s) not present in `taxonomic_resources`: ",
         paste(unknown_ranks, collapse = ", "), ". They will have no effect.",
         call. = FALSE
       )
@@ -344,23 +358,23 @@ prepare_taxonomic_resources <- function(taxon_resources = NULL,
   resources
 }
 
-# Normalises `taxon_resources` (a data frame, a file path, or a list of either, optionally named) into
+# Normalises `taxonomic_resources` (a data frame, a file path, or a list of either, optionally named) into
 # a *named* list of data frames -- reading any file-path elements via readr::read_csv(). Unnamed (or
 # partially named) lists get positional labels ("table 1", "table 2", ...) for prompts/error messages.
-normalise_taxon_resources_input <- function(taxon_resources) {
+normalise_taxonomic_resources_input <- function(taxonomic_resources) {
 
-  if (is.data.frame(taxon_resources)) {
-    tables <- list(taxon_resources)
-  } else if (is.character(taxon_resources) && length(taxon_resources) == 1) {
-    tables <- list(read_taxon_resources_file(taxon_resources))
-  } else if (is.list(taxon_resources) && length(taxon_resources) > 0) {
+  if (is.data.frame(taxonomic_resources)) {
+    tables <- list(taxonomic_resources)
+  } else if (is.character(taxonomic_resources) && length(taxonomic_resources) == 1) {
+    tables <- list(read_taxonomic_resources_file(taxonomic_resources))
+  } else if (is.list(taxonomic_resources) && length(taxonomic_resources) > 0) {
     tables <- purrr::map(
-      taxon_resources,
-      function(x) if (is.character(x) && length(x) == 1) read_taxon_resources_file(x) else x
+      taxonomic_resources,
+      function(x) if (is.character(x) && length(x) == 1) read_taxonomic_resources_file(x) else x
     )
   } else {
     stop(
-      "`taxon_resources` must be a tibble/data frame, a path to a CSV file, or a (optionally named) ",
+      "`taxonomic_resources` must be a tibble/data frame, a path to a CSV file, or a (optionally named) ",
       "list of either.", call. = FALSE
     )
   }
@@ -374,16 +388,16 @@ normalise_taxon_resources_input <- function(taxon_resources) {
   tables
 }
 
-read_taxon_resources_file <- function(path) {
+read_taxonomic_resources_file <- function(path) {
   if (!file.exists(path)) {
-    stop("`taxon_resources` names a file that doesn't exist: ", path, call. = FALSE)
+    stop("`taxonomic_resources` names a file that doesn't exist: ", path, call. = FALSE)
   }
   readr::read_csv(path, show_col_types = FALSE, progress = FALSE)
 }
 
 # Applies the column_rename step to one table, then either returns it as-is (already complete),
 # errors (interactive = FALSE), or interactively fills in whatever's missing (interactive = TRUE).
-resolve_taxon_resources_table <- function(data, table_label, interactive, user_responses) {
+resolve_taxonomic_resources_table <- function(data, table_label, interactive, user_responses) {
 
   data <- data |> dplyr::rename(dplyr::any_of(taxonAlign_column_rename))
   missing_cols <- setdiff(taxonAlign_required_cols, names(data))
@@ -394,7 +408,7 @@ resolve_taxon_resources_table <- function(data, table_label, interactive, user_r
 
   if (!interactive) {
     stop(
-      "`taxon_resources` (`", table_label, "`) is missing required column(s): ",
+      "`taxonomic_resources` (`", table_label, "`) is missing required column(s): ",
       paste(missing_cols, collapse = ", "), ". See `?prepare_taxonomic_resources` for the expected ",
       "input columns, or pass `interactive = TRUE` to be prompted for them.",
       call. = FALSE
@@ -417,5 +431,5 @@ resolve_taxon_resources_table <- function(data, table_label, interactive, user_r
     )
   }
 
-  map_missing_taxon_resources_columns(data, missing_cols, table_label, user_responses)
+  map_missing_taxonomic_resources_columns(data, missing_cols, table_label, user_responses)
 }

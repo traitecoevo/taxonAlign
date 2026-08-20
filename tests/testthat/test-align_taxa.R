@@ -1,5 +1,5 @@
 test_that("align_taxa exact-matches a scientific name (with authorship)", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia serrulata Sm.", resources)
 
   expect_equal(out$aligned_name, "Boronia serrulata")
@@ -8,7 +8,7 @@ test_that("align_taxa exact-matches a scientific name (with authorship)", {
 })
 
 test_that("align_taxa exact-matches a canonical name (no authorship)", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia serrulata", resources)
 
   expect_equal(out$aligned_name, "Boronia serrulata")
@@ -16,7 +16,7 @@ test_that("align_taxa exact-matches a canonical name (no authorship)", {
 })
 
 test_that("align_taxa matches a synonymous scientific name and reports its status", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia oldname Sm.", resources)
 
   expect_equal(out$aligned_name, "Boronia oldname")
@@ -25,7 +25,7 @@ test_that("align_taxa matches a synonymous scientific name and reports its statu
 })
 
 test_that("align_taxa matches a synonymous canonical name (no authorship)", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia oldname", resources)
 
   expect_equal(out$aligned_name, "Boronia oldname")
@@ -34,7 +34,7 @@ test_that("align_taxa matches a synonymous canonical name (no authorship)", {
 })
 
 test_that("align_taxa falls back to genus level for a bare 'genus sp.' name", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia sp.", resources)
 
   expect_equal(out$taxon_rank, "genus")
@@ -42,7 +42,7 @@ test_that("align_taxa falls back to genus level for a bare 'genus sp.' name", {
 })
 
 test_that("align_taxa falls back to a non-hardcoded higher rank ('tribe')", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Zanthoxyleae sp.", resources)
 
   expect_equal(out$taxon_rank, "tribe")
@@ -50,7 +50,7 @@ test_that("align_taxa falls back to a non-hardcoded higher rank ('tribe')", {
 })
 
 test_that("align_taxa matches the bracketed 'Genus (Subgenus) sp.' convention", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia (Valvatae) sp.", resources)
 
   expect_equal(out$taxon_rank, "subgenus")
@@ -58,7 +58,7 @@ test_that("align_taxa matches the bracketed 'Genus (Subgenus) sp.' convention", 
 })
 
 test_that("align_taxa matches the plain 'Subgenus sp.' convention", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Valvatae sp.", resources)
 
   expect_equal(out$taxon_rank, "subgenus")
@@ -66,7 +66,7 @@ test_that("align_taxa matches the plain 'Subgenus sp.' convention", {
 })
 
 test_that("align_taxa fuzzy-matches a slightly misspelled canonical name", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia serulata", resources) # missing one 'r'
 
   expect_equal(out$aligned_name, "Boronia serrulata")
@@ -74,21 +74,21 @@ test_that("align_taxa fuzzy-matches a slightly misspelled canonical name", {
 })
 
 test_that("align_taxa leaves an unmatchable name unresolved rather than erroring", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Completely unrelated nonsense taxon", resources)
 
   expect_true(is.na(out$aligned_name))
 })
 
 test_that("taxon_ranks_to_check restricts which higher ranks align_taxa will use", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Zanthoxyleae sp.", resources, taxon_ranks_to_check = c("genus", "family"))
 
   expect_true(is.na(out$aligned_name))
 })
 
 test_that("align_taxa preserves length, order and duplicates of the input vector", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   names <- c("Boronia serrulata Sm.", NA, "Boronia serrulata Sm.", "Completely unrelated nonsense taxon")
   out <- align_taxa(names, resources)
 
@@ -99,7 +99,7 @@ test_that("align_taxa preserves length, order and duplicates of the input vector
 })
 
 test_that("identifier is recycled or validated against original_name length", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   expect_error(
     align_taxa(c("a", "b"), resources, identifier = c("x", "y", "z")),
     "`identifier` must have length 1"
@@ -110,14 +110,14 @@ test_that("identifier is recycled or validated against original_name length", {
 })
 
 test_that("full = TRUE returns the intermediate matching columns", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia serrulata Sm.", resources, full = TRUE)
 
   expect_true(all(c("stripped_name", "trinomial", "binomial", "word_one", "checked", "known") %in% names(out)))
 })
 
 test_that("align_taxa requires a non-empty original_name", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   expect_error(align_taxa(character(0), resources), "must have length > 0")
 })
 
@@ -130,8 +130,8 @@ test_that("align_taxa accepts a flat, already-formatted resources tibble directl
   # generate_GBIF_taxonomic_reference_list()'s own output) directly, instead of running it through
   # prepare_taxonomic_resources() first -- rather than erroring, this is now auto-detected and
   # prepared automatically, since the table itself needs no interactive column mapping
-  out_direct <- align_taxa("Boronia serrulata", resources = sample_taxon_resources())
-  out_prepared <- align_taxa("Boronia serrulata", resources = prepare_taxonomic_resources(sample_taxon_resources()))
+  out_direct <- align_taxa("Boronia serrulata", resources = sample_taxonomic_resources())
+  out_prepared <- align_taxa("Boronia serrulata", resources = prepare_taxonomic_resources(sample_taxonomic_resources()))
 
   expect_equal(out_direct, out_prepared)
   expect_equal(out_direct$aligned_name, "Boronia serrulata")
@@ -147,7 +147,7 @@ test_that("align_taxa gives a clear, actionable error when resources is a malfor
 })
 
 test_that("progress = TRUE prints a progress bar and doesn't change the result (issue #5)", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   names <- c("Boronia serrulata Sm.", "Boronia oldname Sm.", "Completely unrelated nonsense taxon")
 
   expect_silent(out_quiet <- align_taxa(names, resources))

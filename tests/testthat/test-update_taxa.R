@@ -4,7 +4,7 @@
 # asserting it in prose.
 
 test_that("update_taxa leaves an already-accepted species name unchanged", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   aligned <- align_taxa("Boronia serrulata Sm.", resources)
   out <- update_taxa(aligned, resources)
 
@@ -16,7 +16,7 @@ test_that("update_taxa leaves an already-accepted species name unchanged", {
 })
 
 test_that("update_taxa resolves a species-level synonym forward, refreshing its outdated genus", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   aligned <- align_taxa("Boronia oldname Sm.", resources)
   out <- update_taxa(aligned, resources)
 
@@ -32,7 +32,7 @@ test_that("update_taxa resolves a species-level synonym forward, refreshing its 
 })
 
 test_that("update_taxa resolves a genus-level synonym forward (not just species)", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   aligned <- align_taxa("Boronella", resources)
   out <- update_taxa(aligned, resources)
 
@@ -45,7 +45,7 @@ test_that("update_taxa resolves a genus-level synonym forward (not just species)
 })
 
 test_that("update_taxa resolves a synonym at a third, arbitrary higher rank ('order')", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   aligned <- align_taxa("Oldorderia", resources)
   out <- update_taxa(aligned, resources)
 
@@ -58,7 +58,7 @@ test_that("update_taxa resolves a synonym at a third, arbitrary higher rank ('or
 })
 
 test_that("update_taxa degrades gracefully when accepted_name_usage_ID doesn't resolve", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   aligned <- align_taxa("Boronia missingaccepted Sm.", resources)
   out <- update_taxa(aligned, resources)
 
@@ -70,7 +70,7 @@ test_that("update_taxa degrades gracefully when accepted_name_usage_ID doesn't r
 })
 
 test_that("update_taxa reports 'unknown' status and NA names for a completely unmatched name", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   aligned <- align_taxa("Completely unrelated nonsense taxon", resources)
   out <- update_taxa(aligned, resources)
 
@@ -94,10 +94,10 @@ test_that("update_taxa gives a clear, actionable error when resources is missing
 })
 
 test_that("update_taxa accepts a flat, already-formatted resources tibble directly", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   aligned <- align_taxa("Boronia oldname Sm.", resources)
 
-  out_direct <- update_taxa(aligned, resources = sample_taxon_resources())
+  out_direct <- update_taxa(aligned, resources = sample_taxonomic_resources())
   out_prepared <- update_taxa(aligned, resources = resources)
 
   expect_equal(out_direct, out_prepared)

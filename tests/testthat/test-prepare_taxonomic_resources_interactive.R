@@ -14,7 +14,7 @@ test_that("interactive = TRUE maps a raw table missing every optional/typed fiel
     user_responses = list(
       `table 1` = list(
         already_aligned = FALSE,
-        taxonomic_dataset = "TEST",
+        taxonomic_dataset = list(column = NULL, fixed_value = "TEST"),
         canonical_name = "name",
         scientific_name = "authorship",
         taxon_rank = list(column = "rank", fixed_value = NULL),
@@ -60,6 +60,43 @@ test_that("interactive = TRUE with a fixed-value taxon_rank/taxonomic_status app
   expect_equal(resources$species$accepted$accepted_name_usage_ID, "table 1_1")
 })
 
+test_that("interactive = TRUE reads taxonomic_dataset from a column, for a table mixing several sources", {
+  # a spreadsheet someone has assembled by hand can just as easily mix rows sourced from more than
+  # one reference as have one uniform source -- taxonomic_dataset needs the same column-or-fixed-value
+  # choice taxon_rank/taxonomic_status already get, not just a single label for the whole table
+  raw <- tibble::tribble(
+    ~canonical_name, ~scientific_name, ~genus, ~source,
+    "Boronia serrulata", "Boronia serrulata Sm.", "Boronia", "AFD",
+    "Boronia oldname", "Boronia oldname Sm.", "Zieria", "iNaturalist"
+  )
+
+  resources <- prepare_taxonomic_resources(
+    raw,
+    interactive = TRUE,
+    user_responses = list(
+      `table 1` = list(
+        already_aligned = FALSE,
+        taxonomic_dataset = list(column = "source", fixed_value = NULL),
+        taxon_rank = list(column = NULL, fixed_value = "species"),
+        taxonomic_status = list(column = NULL, fixed_value = "accepted"),
+        taxon_ID = .taxonAlign_generate_automatically,
+        accepted_name_usage_ID = .taxonAlign_already_accepted
+      ),
+      additional_tables = list()
+    )
+  )
+
+  expect_setequal(resources$species$accepted$taxonomic_dataset, c("AFD", "iNaturalist"))
+  expect_equal(
+    resources$species$accepted$taxonomic_dataset[resources$species$accepted$canonical_name == "Boronia serrulata"],
+    "AFD"
+  )
+  expect_equal(
+    resources$species$accepted$taxonomic_dataset[resources$species$accepted$canonical_name == "Boronia oldname"],
+    "iNaturalist"
+  )
+})
+
 test_that("asserting already_aligned = TRUE errors clearly when columns are still genuinely missing", {
   raw <- tibble::tribble(
     ~canonical_name, ~scientific_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
@@ -83,7 +120,18 @@ test_that("a fully-correct table needs no per-field prompts, even with interacti
   # were actually attempted for this already-complete table, there'd be nothing to consult and it would
   # likewise fall through to a real prompt.
   resources <- prepare_taxonomic_resources(
-    sample_taxon_resources(), interactive = TRUE, user_responses = list(additional_tables = list())
+    sample_taxonomic_resources(), interactive = TRUE, user_responses = list(additional_tables = list())
+  )
+  expect_equal(resources$species$accepted$canonical_name |> sort(), c("Boronia pinnata var. pinnata", "Boronia serrulata"))
+})
+
+test_that("interactive = TRUE prompts for the initial table when taxonomic_resources isn't supplied at all", {
+  # someone starting from scratch (no table already in hand) gets the same "give me a table" prompt
+  # for the *first* reference as they already do for every additional one -- rather than being
+  # required to have already assembled `taxonomic_resources` themselves before they can even begin
+  resources <- prepare_taxonomic_resources(
+    interactive = TRUE,
+    user_responses = list(initial_table = sample_taxonomic_resources(), additional_tables = list())
   )
   expect_equal(resources$species$accepted$canonical_name |> sort(), c("Boronia pinnata var. pinnata", "Boronia serrulata"))
 })
@@ -141,7 +189,7 @@ test_that("interactive = FALSE (the default) still errors immediately, naming th
 
 test_that("a file path is read and processed", {
   path <- withr::local_tempfile(fileext = ".csv")
-  readr::write_csv(sample_taxon_resources(), path)
+  readr::write_csv(sample_taxonomic_resources(), path)
 
   resources <- prepare_taxonomic_resources(path)
   expect_true("Boronia serrulata" %in% resources$species$accepted$canonical_name)

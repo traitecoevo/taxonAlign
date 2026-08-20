@@ -45,8 +45,8 @@ devtools::check()          # full R CMD check
 
 Gotcha (resolved): `devtools::load_all()`/`devtools::test()`/`devtools::check()` used to fail outright
 because `R/match_taxa_for_inverts_202500304-use this.R` had top-level executable script code (it read
-`taxon_resources` from a path outside this repo) rather than only function definitions, so sourcing the
-`R/` directory errored with `object 'taxon_resources' not found` before anything got a chance to run.
+`taxonomic_resources` from a path outside this repo) rather than only function definitions, so sourcing the
+`R/` directory errored with `object 'taxonomic_resources' not found` before anything got a chance to run.
 Its logic has since been ported into real functions (see Architecture #2 below: `align_taxa()`,
 `match_taxa()`, `prepare_taxonomic_resources()`), and the original file has now been moved to
 `ignore/match_taxa_for_inverts_202500304-use this.R` (excluded from the build via `.Rbuildignore`,
@@ -75,7 +75,7 @@ and its internal helpers (`resolve_gbif_taxon()`, `fetch_gbif_taxon_tree()`, `fe
 `tests/testthat/test-prepare_taxonomic_resources.R`, `test-prepare_taxonomic_resources_interactive.R`,
 `test-align_taxa.R`, `test-match_taxa.R`, `test-update_taxa.R`, `test-create_taxonomic_update_lookup.R`
 and `test-match_taxa_helpers.R` cover the matching/alignment engine end to end against a small
-hand-built combined reference table (`sample_taxon_resources()` in
+hand-built combined reference table (`sample_taxonomic_resources()` in
 `tests/testthat/helper-align-taxa-fixtures.R`) spanning species (accepted/synonym), genus
 (accepted/synonym), family, order (accepted/synonym — a *second* higher rank with an outdated name,
 proving `update_taxa()`'s lookup isn't secretly species/genus-specific), an extra non-hardcoded rank
@@ -97,20 +97,27 @@ a genuinely ambiguous fuzzy tie (must resolve to nothing, not a guess), case/whi
 `sensu lato` normalisation, morphospecies codes (`sp. 1`/`sp. nov.`/`sp. indet.`), the nominotypical
 subgenus bracket convention (`Genus (Genus) species`), and two synonyms of the same accepted species
 where one sits under a *different* genus entirely (a real, common invertebrate-taxonomy pattern) --
-using a second fixture, `sample_invert_taxon_resources()` (`helper-invert-typo-fixtures.R`), grounded in
+using a second fixture, `sample_invert_taxonomic_resources()` (`helper-invert-typo-fixtures.R`), grounded in
 naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the hyphenated
 "letter-shape" epithet convention, `"t-viride"`) rather than invented from scratch.
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-274 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+282 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
 #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 274) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 282) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (281 total, as of the last online run) (see Architecture #2 below).
+passing expectations on top (as of the last online run before this). **Currently broken, separately
+from everything else in this section**: as of the last local run, both its tests error instead
+(`load_taxonomic_resources("APC")` → `load_APC()` → `dplyr::mutate(APC$family_accepted, ...)` on a
+`NULL` -- i.e. a live `APCalign::load_taxonomic_resources()` call is no longer returning a
+`family_accepted` element at all). Not investigated yet -- flagged here rather than silently left out,
+since it means the "APC" path (and this equivalence test) is presently unverified against live data;
+likely upstream `APCalign` output shape drift, not something introduced by any change described in this
+file.
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -193,7 +200,7 @@ create_taxonomic_update_lookup(original_name, resources, ...)   # exported, one-
 
 `align_taxa()`/`update_taxa()` are also both usable standalone (you don't have to go through
 `create_taxonomic_update_lookup()`). `resources` is built ahead of time by
-`prepare_taxonomic_resources(taxon_resources, ...)` (exported), which itself now has an interactive
+`prepare_taxonomic_resources(taxonomic_resources, ...)` (exported), which itself now has an interactive
 on-ramp for a user's own raw reference table(s) — see the `interactive`/`user_responses` bullet below.
 
 Architecture of the matching engine itself:
@@ -321,7 +328,7 @@ Architecture of the matching engine itself:
   erroring) via `factor()`'s NA-for-unmatched-level behaviour, which `dplyr::arrange()` places last by
   default -- extend the vector as further status vocabularies turn up, rather than guessing at their
   rank. The sort is stable, so it composes correctly with the existing between-*dataset* priority
-  (row-bind order, from combining multiple `taxon_resources` tables): rows tying on `taxonomic_status`
+  (row-bind order, from combining multiple `taxonomic_resources` tables): rows tying on `taxonomic_status`
   keep whatever relative order they already had.
 - `resources` has no default on `align_taxa()`/`update_taxa()`/`create_taxonomic_update_lookup()`,
   and a common real mistake is passing the *raw* output of `generate_GBIF_taxonomic_reference_list()`
@@ -359,7 +366,7 @@ Architecture of the matching engine itself:
   validated loop for ordered selections, and — critically for testing — every prompt has a
   `user_response`/`user_responses` escape hatch that substitutes a supplied value, so tests never open
   a real interactive session (see `test-prepare_taxonomic_resources_interactive.R`, all of which pass
-  `user_responses` rather than prompting). `taxon_resources` now also accepts a file path or a
+  `user_responses` rather than prompting). `taxonomic_resources` now also accepts a file path or a
   (optionally named) list of tibbles/paths, one per source dataset to combine; when more than one is
   supplied, priority is expressed purely by row order in the bind_rows()'d result (since
   `match_taxa()`'s exact blocks use first-hit `match()` semantics) — `interactive = TRUE` prompts once
@@ -379,11 +386,29 @@ Architecture of the matching engine itself:
   any additional taxonomic reference(s) to include?" (`prompt_yes_no()`) — repeating for as many as the
   user has — before the priority-order prompt. This is asked *unconditionally* (regardless of whether
   the initial table(s) needed any column mapping at all), unlike `prompt_already_aligned()` above,
-  because its purpose is different: letting someone start with a single file (`taxon_resources`) and
+  because its purpose is different: letting someone start with a single file (`taxonomic_resources`) and
   grow it into a combined set interactively, rather than requiring the whole set assembled up front.
   `user_responses$additional_tables` (an optionally-named list of further tables/paths) bypasses the
-  real loop for tests/scripting — each entry still goes through the exact same `resolve_taxon_resources_table()`
+  real loop for tests/scripting — each entry still goes through the exact same `resolve_taxonomic_resources_table()`
   path as any other table, consulting `user_responses[[its own label]]` for its own missing fields.
+- **`taxonomic_resources` is optional when `interactive = TRUE`**: if it's `NULL`, the *first* table is now
+  obtained via the same prompt used for every *additional* one (`prompt_for_table_path()`, shared by
+  both call sites) — asking for a file path via `readline()` — rather than requiring the caller to
+  already have assembled a table before they can even start. `user_responses$initial_table` bypasses
+  this for scripting/testing, the same way `additional_tables` already does for later ones. Before this,
+  someone starting from scratch had to hand-assemble their own `list(...)` of tables in R code before
+  ever calling the function at all, which is real friction for exactly the users this on-ramp is meant
+  to help — found by re-reading the `get-started.qmd` vignette's own "combining multiple references"
+  example.
+- **`taxon_rank`/`taxonomic_status`/`taxonomic_dataset` share one prompt shape**
+  (`prompt_column_or_fixed_value()`): "does the data have a column for this, or is every row the same
+  value?" -- picking a column reads a per-row value, a fixed value applies the same one to every row.
+  `taxonomic_dataset` used to be a plain free-text prompt (always one label for the whole table, no
+  column option) until a real case surfaced it: a spreadsheet someone assembles by hand can just as
+  easily mix rows sourced from several references (e.g. some rows from AFD, some from iNaturalist,
+  with a column recording which) as have one uniform source. Moved onto the same
+  `prompt_column_or_fixed_value()` path as the other two rather than keeping a separate, more limited
+  mechanism — this also retired `prompt_free_text()` entirely (it had no other caller).
 - **Hybrid/graded/indecision/intergrade names** (issue #9) are handled by one shared, generic helper,
   `match_special_case_to_genus()` (top of `R/match_taxa.R`), rather than APCalign's ~20 separate,
   near-duplicate blocks (5 sub-blocks each for 4 pattern families, because APC/APNI's `resources` keeps
@@ -488,7 +513,8 @@ Errors immediately, naming the known datasets, on an unrecognised `taxonomic_dat
   - **Higher-rank rows**: one per distinct, non-blank value of every higher-rank column AFD provides
     (subgenus through phylum) -- mirroring the ported script's "one rank at a time, `distinct()` the
     column" approach. None of these have a natural stable ID (`CONCEPT_GUID` only exists at
-    species/subspecies level), so `taxon_ID`/`accepted_name_usage_ID` fall back to the rank's own name.
+    species/subspecies level), so `taxon_ID`/`accepted_name_usage_ID` fall back to the rank's own name,
+    **namespaced by rank** (`"<rank>:<name>"`, e.g. `"genus:Agrilus"` vs. `"subgenus:Agrilus"`).
     `genus` is populated only for genus/subgenus rows (subgenus rows need their owning genus so
     `prepare_taxonomic_resources()` can build the bracketed `Genus (Subgenus)` convention
     automatically) -- every other higher rank leaves it `NA`, same as elsewhere in taxonAlign.
@@ -498,6 +524,26 @@ Errors immediately, naming the known datasets, on an unrecognised `taxonomic_dat
     `afd_higher_rank_rows()` normalises every rank to sentence case regardless (a no-op on the
     already-correctly-cased ones), since an ALL-CAPS reference value would otherwise never
     exact-match a normally-cased input name.
+    **A second, more serious real bug found the same way (via a real end-to-end run against
+    AusInvertTraits' full name list, not the hand-built fixture)**: `taxon_ID` used to fall back to the
+    *bare* rank name with no rank qualifier at all. This collides across ranks whenever the same string
+    is used at two different ranks -- and for genus/subgenus this isn't a rare coincidence but the norm:
+    by nomenclatural convention, every genus that's been split into subgenera has one *nominotypical*
+    subgenus sharing the genus's own name (e.g. genus `"Agrilus"` / its nominotypical subgenus
+    `"Agrilus"`). In the real, full AFD.csv this affects 572 of 1725 distinct genus/subgenus pairs
+    (~1180 higher-rank rows total, plus a handful more at family/order/subfamily/suborder/subtribe/
+    superfamily/superorder/class). Since `update_taxa()`'s lookup is keyed on `taxon_ID` via `match()`
+    (first-hit semantics, see the "single, rank-agnostic lookup" bullet in Architecture #2), a
+    subgenus-rank match's `accepted_name_usage_ID` (self-referential, so also the bare rank name) would
+    silently resolve to whichever colliding row bound first when `resources`' rank sublists were
+    flattened -- the genus-rank row, since `genus` sorts before `subgenus` in `names(resources)` --
+    discarding the subgenus and downgrading `taxon_rank`/`accepted_name`/`suggested_name` from subgenus
+    to genus. `align_taxa()`'s own output was never affected (it builds `aligned_name` from
+    `resources$subgenus_v2` directly, not via this ID lookup) -- only `update_taxa()`'s
+    (and hence `create_taxonomic_update_lookup()`'s) forward-resolved columns were. Fixed by
+    namespacing every higher-rank `taxon_ID` with its own rank, exactly as described above; regression
+    test: `test-load_taxonomic_resources.R`'s `"namespaces taxon_ID by rank..."` test, using a fixture
+    genus/subgenus pair that deliberately shares a name (`"Thirdgenus"`).
   - **Synonym rows**: AFD embeds every synonym of a taxon as one semicolon-joined free-text field
     (`SYNONYMS`), each entry mixing name + author + year with no separator between the name and its
     authorship (e.g. `"Cisseis fossicollis Kerremans, 1903"`). `afd_synonym_rows()` splits on `"; "`,

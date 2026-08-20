@@ -5,15 +5,17 @@
 \title{Prepare a combined taxonomic reference table for name matching}
 \usage{
 prepare_taxonomic_resources(
-  taxon_resources = NULL,
+  taxonomic_resources = NULL,
   taxon_ranks_to_check = NULL,
   interactive = FALSE,
   user_responses = NULL
 )
 }
 \arguments{
-\item{taxon_resources}{A tibble, a path to a CSV file, or a (optionally named) list of either --
-one element per taxonomic reference table to combine. Each table needs (at least) the columns
+\item{taxonomic_resources}{A tibble, a path to a CSV file, or a (optionally named) list of either --
+one element per taxonomic reference table to combine. Optional (\code{NULL}) when \code{interactive = TRUE}
+-- you'll be prompted for a path to the first table, the same way you're prompted for every
+additional one (see \code{interactive}, below). Each table needs (at least) the columns
 \code{canonical_name}, \code{scientific_name}, \code{taxon_rank}, \code{taxonomic_status}, \code{taxonomic_dataset},
 \code{genus}, \code{taxon_ID} and \code{accepted_name_usage_ID} -- the column names produced by
 \code{\link[=generate_GBIF_taxonomic_reference_list]{generate_GBIF_taxonomic_reference_list()}}, and matching
@@ -28,7 +30,7 @@ name or a synonym.}
 \item{taxon_ranks_to_check}{Optional character vector restricting which taxonomic ranks (besides
 species/infraspecific ranks) are retained in the returned \code{resources} for higher-rank matching
 (e.g. \code{c("genus", "family")}). Defaults to \code{NULL}, which keeps every rank present in
-\code{taxon_resources}.}
+\code{taxonomic_resources}.}
 
 \item{interactive}{Logical; if \code{TRUE}, prompts (in the style of \code{traits.build}'s
 \code{metadata_add_traits()}/\code{metadata_add_locations()}) for any of the required columns a table is
@@ -39,25 +41,26 @@ from an earlier \code{prepare_taxonomic_resources()}/\code{generate_GBIF_taxonom
 under column names \code{interactive} didn't recognise) before being walked through the per-field
 prompts. Once every initially-supplied table is resolved, also asks whether there are any
 additional taxonomic reference(s) to include -- repeating for as many as the user has -- so a
-single file passed in via \code{taxon_resources} can grow into a combined set interactively, rather
+single file passed in via \code{taxonomic_resources} can grow into a combined set interactively, rather
 than requiring the whole set to be assembled up front. When more than one table ends up in the
 final set, also prompts once for a priority order across them. Defaults to \code{FALSE}, which errors
 immediately (as before) if any required column is missing, and skips both of the prompts above.}
 
 \item{user_responses}{Optional named list bypassing the real prompts \code{interactive = TRUE} would
-otherwise show -- for scripting or testing. Keyed by table name (matching \code{taxon_resources}'s
+otherwise show -- for scripting or testing. Keyed by table name (matching \code{taxonomic_resources}'s
 names, or \code{"table 1"}/\code{"table 2"}/... if unnamed), each holding the responses for that table's
 missing fields (\code{already_aligned} (logical), \code{taxonomic_dataset}, \code{canonical_name},
 \code{scientific_name}, \code{taxon_rank}, \code{taxonomic_status}, \code{genus}, \code{taxon_ID},
-\code{accepted_name_usage_ID} -- see \code{?map_missing_taxon_resources_columns} for exact shapes), plus two
-top-level elements: \code{additional_tables} (an optionally-named list of further tables/paths to add,
-bypassing the "any additional reference(s)?" prompt loop -- each is still resolved via its own
-entry in \code{user_responses}, keyed the same way) and \code{priority_order}, when the final set has more
-than one table. Ignored unless \code{interactive = TRUE}.}
+\code{accepted_name_usage_ID} -- see \code{?map_missing_taxonomic_resources_columns} for exact shapes), plus two
+top-level elements: \code{initial_table} (a table/path bypassing the prompt for the first table, when
+\code{taxonomic_resources} itself is \code{NULL}), \code{additional_tables} (an optionally-named list of further
+tables/paths to add, bypassing the "any additional reference(s)?" prompt loop -- each is still
+resolved via its own entry in \code{user_responses}, keyed the same way) and \code{priority_order}, when the
+final set has more than one table. Ignored unless \code{interactive = TRUE}.}
 }
 \value{
 A named list of tibbles (and, for \code{species}, a further named list split by
-\code{taxonomic_status}): one element per taxonomic rank present in \code{taxon_resources} (after applying
+\code{taxonomic_status}): one element per taxonomic rank present in \code{taxonomic_resources} (after applying
 \code{taxon_ranks_to_check}, if supplied), plus \code{subgenus_v2} when subgenus-rank rows are present (see
 Details).
 }
@@ -88,7 +91,7 @@ is row-bound first is preferred when a name exists in more than one.
 
 Two matching conventions for subgenus names are supported side by side: some input name lists
 write the subgenus alone (e.g. \code{"Podosemum"}), others write the \code{Genus (Subgenus)} bracketed
-convention (e.g. \code{"Boronia (Podosemum)"}). To support both, when \code{taxon_resources} contains
+convention (e.g. \code{"Boronia (Podosemum)"}). To support both, when \code{taxonomic_resources} contains
 subgenus-rank rows, \code{resources$subgenus} holds the plain subgenus names (used for the first
 convention) and \code{resources$subgenus_v2} additionally holds a \code{genus_and_subgenus} column (used for
 the second).

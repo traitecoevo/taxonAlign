@@ -4,7 +4,7 @@
 # R/match_taxa.R for the shared implementation both toggles call into.
 
 test_that("hybrids = FALSE (default) leaves a hybrid-looking name to ordinary match blocks", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia x hybrida", resources)
 
   # may still resolve via the *generic* higher-rank genus fallback (match_12b/12c) -- the point of
@@ -13,7 +13,7 @@ test_that("hybrids = FALSE (default) leaves a hybrid-looking name to ordinary ma
 })
 
 test_that("hybrids = TRUE resolves a hybrid name to genus rank via an exact genus match", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia x hybrida", resources, hybrids = TRUE)
 
   expect_equal(out$taxon_rank, "genus")
@@ -22,7 +22,7 @@ test_that("hybrids = TRUE resolves a hybrid name to genus rank via an exact genu
 })
 
 test_that("hybrids = TRUE fuzzy-matches a misspelled genus, respecting fuzzy_matches", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   out_fuzzy <- align_taxa("Boronai x hybrida", resources, hybrids = TRUE) # fuzzy_matches defaults TRUE
   expect_equal(out_fuzzy$alignment_code, "match_03b_hybrid_fuzzy_genus")
@@ -35,7 +35,7 @@ test_that("hybrids = TRUE fuzzy-matches a misspelled genus, respecting fuzzy_mat
 })
 
 test_that("hybrids = TRUE degrades gracefully when the genus isn't in the reference at all", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Xylomelum x foobar", resources, hybrids = TRUE)
 
   expect_true(is.na(out$aligned_name))
@@ -43,7 +43,7 @@ test_that("hybrids = TRUE degrades gracefully when the genus isn't in the refere
 })
 
 test_that("intergrades_affinis = TRUE resolves an intergrade name (double dash) to genus rank", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia serrulata -- Boronia pinnata", resources, intergrades_affinis = TRUE)
 
   expect_equal(out$taxon_rank, "genus")
@@ -52,7 +52,7 @@ test_that("intergrades_affinis = TRUE resolves an intergrade name (double dash) 
 })
 
 test_that("intergrades_affinis = TRUE resolves an indecision name (slash) to genus rank", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia serrulata/pinnata", resources, intergrades_affinis = TRUE)
 
   expect_equal(out$taxon_rank, "genus")
@@ -60,7 +60,7 @@ test_that("intergrades_affinis = TRUE resolves an indecision name (slash) to gen
 })
 
 test_that("intergrades_affinis = TRUE resolves a graded/'affinis'/'cf.' identification to genus rank", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   out_aff <- align_taxa("Boronia aff. serrulata", resources, intergrades_affinis = TRUE)
   expect_equal(out_aff$taxon_rank, "genus")
@@ -72,7 +72,7 @@ test_that("intergrades_affinis = TRUE resolves a graded/'affinis'/'cf.' identifi
 })
 
 test_that("intergrades_affinis distinguishes a real 'affinis' epithet from an affinity qualifier", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   # "affinis" immediately followed by an infraspecific rank marker is a genuine specific epithet
   # (e.g. the real "Gomphrena affinis subsp. pilbarensis"), not an affinity qualifier -- should NOT be
@@ -87,7 +87,7 @@ test_that("intergrades_affinis distinguishes a real 'affinis' epithet from an af
 })
 
 test_that("intergrades_affinis = FALSE (default) leaves these names unhandled by match_04", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia aff. serrulata", resources)
 
   expect_false(isTRUE(startsWith(out$alignment_code, "match_04")))
@@ -97,7 +97,7 @@ test_that("progress = TRUE still reports progress when hybrids/intergrades_affin
   # match_special_case_to_genus() (the shared hybrid/intergrade_affinis helper) has its own internal
   # redistribute() checkpoints, separate from match_taxa()'s own -- confirms the progress bar (`pb`) is
   # threaded into those too, not just the top-level match blocks
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   expect_output(
     out <- align_taxa("Boronia x hybrida", resources, hybrids = TRUE, progress = TRUE),

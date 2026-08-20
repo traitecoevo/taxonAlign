@@ -15,9 +15,9 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 
 `taxonAlign` helps with two related jobs:
 
-1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference
-   tables -- your own data, a list built from the GBIF backbone taxonomy, a known source like the
-   Australian Faunal Directory (AFD) or the Australian Plant Census (APC), or any mix of these.
+1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference tables --
+   your own data, a list built from the GBIF backbone taxonomy, a known source like the Australian
+   Faunal Directory (AFD) or the Australian Plant Census (APC), or any mix of these.
 2. **Align and update a list of raw taxon names** against that reference -- matching misspellings,
    synonyms, and names only identifiable to a higher rank (`genus sp.`), then resolving each match
    forward to its current accepted name.
@@ -25,7 +25,9 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 It's inspired by [APCalign](https://traitecoevo.github.io/APCalign/)'s approach to aligning taxon
 names to the Australian Plant Census, generalised so the reference doesn't have to be APC/APNI and
 the taxa don't have to be plants -- every function here works for any taxonomic rank present in your
-reference, not just genus/species/family.
+reference, not just species. A real list of raw names is rarely all species anyway -- some
+identifications only ever make it to genus, family, or a "morphospecies" code -- so every example
+below deliberately mixes ranks, not just species names.
 
 This vignette walks through every exported function, in the order you'd typically use them, then
 puts them together into the workflow you'd actually run on a real list of names.
@@ -44,20 +46,25 @@ first place.
 ### From your own data
 
 If you already have a taxonomic reference table -- your own species list, an export from a museum
-database, whatever -- `prepare_taxonomic_resources()` will take it as long as it has (or can be
-mapped to) eight required columns: `canonical_name`, `scientific_name`, `taxon_rank`,
-`taxonomic_status`, `taxonomic_dataset`, `genus`, `taxon_ID` and `accepted_name_usage_ID`.
+database, whatever -- `prepare_taxonomic_resources()` will take it as long as it has (or can be mapped
+to) eight required columns: `canonical_name`, `scientific_name`, `taxon_rank`, `taxonomic_status`,
+`taxonomic_dataset`, `genus`, `taxon_ID` and `accepted_name_usage_ID`.
 
-Here's a small, hand-built example spanning a genus, two species (one a synonym of the other) and a
-family:
+Here's a small, hand-built example spanning several ranks: two genera, a family, a subgenus, a species
+with two synonyms (one under a different genus entirely -- a real, common pattern when a species is
+reclassified over its taxonomic history), and a subspecies.
 
 ```{r}
 my_reference <- tibble::tribble(
-  ~scientific_name,                    ~canonical_name,          ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus,      ~taxon_ID, ~accepted_name_usage_ID,
-  "Aporocera viridipennis Lea, 1915",   "Aporocera viridipennis", "species",   "accepted",         "MY_DATA",          "Aporocera", "sp1",     "sp1",
-  "Chalcolampra viridis Blackburn, 1897", "Chalcolampra viridis", "species",   "synonym",          "MY_DATA",          "Chalcolampra", "sp2",  "sp1",
-  "Aporocera Blackburn",                "Aporocera",             "genus",     "accepted",         "MY_DATA",          NA,          "g1",      "g1",
-  "Chrysomelidae Latreille",            "Chrysomelidae",         "family",    "accepted",         "MY_DATA",          NA,          "f1",      "f1"
+  ~scientific_name,                          ~canonical_name,             ~taxon_rank,  ~taxonomic_status, ~taxonomic_dataset, ~genus,      ~taxon_ID, ~accepted_name_usage_ID,
+  "Aporocera t-viride Blackburn, 1899",       "Aporocera t-viride",       "species",    "accepted",         "MY_DATA",          "Aporocera",  "sp1",    "sp1",
+  "Aporocera viridipennis Lea, 1915",         "Aporocera viridipennis",   "species",    "synonym",          "MY_DATA",          "Aporocera",  "sp2",    "sp1",
+  "Chalcolampra viridis Blackburn, 1897",     "Chalcolampra viridis",     "species",    "synonym",          "MY_DATA",          "Chalcolampra", "sp3",  "sp1",
+  "Aporocera Blackburn",                      "Aporocera",                "genus",      "accepted",         "MY_DATA",          NA,           "g1",     "g1",
+  "Aporocera (Aporocera) Blackburn",          "Aporocera",                "subgenus",   "accepted",         "MY_DATA",          "Aporocera",  "sg1",    "sg1",
+  "Chrysomelidae Latreille",                  "Chrysomelidae",           "family",     "accepted",         "MY_DATA",          NA,           "f1",     "f1",
+  "Xylotoles costatus Pascoe, 1859",          "Xylotoles costatus",      "species",    "accepted",         "MY_DATA",          "Xylotoles",  "sp4",    "sp4",
+  "Xylotoles costatus mixtus Someone, 1920",  "Xylotoles costatus mixtus", "subspecies", "accepted",       "MY_DATA",          "Xylotoles",  "sp5",    "sp5"
 )
 
 resources <- prepare_taxonomic_resources(my_reference)
@@ -65,12 +72,22 @@ names(resources)
 ```
 
 `prepare_taxonomic_resources()` splits the combined table into a nested list -- one element per
-taxonomic rank present (here: `species`, `genus`, `family`), with `species` further split into
-`accepted`/`synonym` sub-tables. This is the shape every other function in the package expects.
+taxonomic rank present (here: `species`, `genus`, `subgenus`, `family`), with `species` further split
+into `accepted`/`synonym` sub-tables. This is the shape every other function in the package expects.
 
-If your table doesn't have these columns under these exact names, pass `interactive = TRUE` and
-you'll be prompted (in the style of `traits.build`'s `metadata_add_traits()`) to map your own column
-names, or supply a fixed value, instead of erroring -- see `?prepare_taxonomic_resources` for details.
+If your table doesn't have these columns under these exact names, pass `interactive = TRUE` and you'll
+be prompted (in the style of `traits.build`'s `metadata_add_traits()`) to map your own column names, or
+supply a fixed value, instead of erroring. If you don't even have a table loaded yet, you can omit
+`taxonomic_resources` entirely and you'll be prompted for a file path to start from:
+
+```{r}
+#| eval: false
+prepare_taxonomic_resources(interactive = TRUE)
+#> Enter the file path for your taxonomic reference: my_beetles.csv
+#> Does the data have a column for `taxon_rank`, or is every row the same value? ...
+```
+
+See `?prepare_taxonomic_resources` for the full set of prompts.
 
 ### From the GBIF backbone taxonomy
 
@@ -79,9 +96,13 @@ GBIF backbone taxonomy for any taxon name, optionally restricted to a country an
 The whole subtree is fetched once and cached, so repeat calls are fast.
 
 ```{r}
-gbif_reference <- generate_GBIF_taxonomic_reference_list("Aporocera", country = "AU")
-gbif_reference |> select(canonical_name, taxon_rank, taxonomic_status)
+gbif_resources <- generate_GBIF_taxonomic_reference_list("Aporocera", country = "AU") |>
+  prepare_taxonomic_resources()
 ```
+
+Real GBIF data can include a handful of "doubtful" or incompletely-classified records with no
+canonical name at all -- `prepare_taxonomic_resources()` drops these automatically (with a warning),
+since a name with no usable label could never be matched against anyway.
 
 ### From a known source (AFD, APC)
 
@@ -102,27 +123,46 @@ can be combined directly.
 ### Combining multiple reference tables
 
 `prepare_taxonomic_resources()` also accepts a list of tables, combining them with a priority order:
-when the same name appears in more than one table, whichever table is listed *first* wins. This is
-how you'd combine a known source with your own data, or two known sources together:
+when the same name appears in more than one table, whichever table is listed *first* wins. This is how
+you'd combine a known source with your own data, or two known sources together, when you already have
+each table in hand:
 
 ```{r}
 #| eval: false
-resources <- prepare_taxonomic_resources(
-  list(AFD = load_taxonomic_resources("AFD")$AFD, mine = my_reference)
-)
+resources <- prepare_taxonomic_resources(list(mine = my_reference, gbif = gbif_resources))
+```
+
+If you'd rather be walked through it -- especially useful when you're adding sources one at a time
+rather than assembling them all up front -- `interactive = TRUE` handles the whole thing itself: it
+asks for the first table (a path, exactly as above), walks through its column mapping, then asks "Do
+you have any additional taxonomic reference(s) to include?" -- repeating for as many as you have. You
+never construct the combined list yourself; the function builds it internally as you go.
+
+```{r}
+#| eval: false
+prepare_taxonomic_resources(interactive = TRUE)
+#> Enter the file path for your taxonomic reference: my_beetles.csv
+#> ... (column mapping for my_beetles.csv) ...
+#> Do you have any additional taxonomic reference(s) to include? 1: Yes 2: No
+#> Selection: 1
+#> Enter the file path for the additional taxonomic reference: more_beetles.csv
+#> ... (column mapping for more_beetles.csv) ...
+#> Do you have any additional taxonomic reference(s) to include? 1: Yes 2: No
+#> Selection: 2
+#> Multiple taxonomic reference tables were supplied. Enter their priority order ...
 ```
 
 ## Matching raw names: `align_taxa()`
 
-`align_taxa()` takes a vector of raw taxon names and matches each one against `resources`, trying
-(in order) exact matches, then progressively more lenient fuzzy matches, at species level first and
-then at each higher rank present in `resources`.
+`align_taxa()` takes one or more raw taxon names and matches each against `resources`, trying (in
+order) exact matches, then progressively more lenient fuzzy matches, at species level first and then
+at each higher rank present in `resources`.
 
 ```{r}
-align_taxa("Aporocera viridipennis", resources)  # exact match
+align_taxa("Aporocera viridipennis", resources)  # exact match, a synonym
 align_taxa("Aporocera viridipenis", resources)   # one letter missing -- fuzzy match
-align_taxa("Chalcolampra viridis", resources)    # a synonym, correctly flagged as such
-align_taxa("Aporocera", resources)                # genus only
+align_taxa("Xylotoles costatus mixtus", resources) # a subspecies
+align_taxa("Chrysomelidae", resources)            # family only
 ```
 
 A name that can't be resolved to anything is left `NA`, not an error:
@@ -131,8 +171,34 @@ A name that can't be resolved to anything is left `NA`, not an error:
 align_taxa("Completely unrelated nonsense", resources)
 ```
 
-Two opt-in parameters handle names that structurally can't specify a species at all, resolving them
-to genus rank instead of leaving them to (possibly mis-)match a species-level pattern:
+### Matching more than one name at once
+
+`align_taxa()` is vectorised -- pass as many names as you like in one call, spanning as many different
+ranks as your raw data actually has:
+
+```{r}
+align_taxa(
+  c("Aporocera t-viride", "Aporocera viridipenis", "Xylotoles costatus mixtus", "Chrysomelidae", "Xylotoles sp. 1"),
+  resources
+) |>
+  select(original_name, aligned_name, taxon_rank)
+```
+
+In practice your names usually live in a column of a data frame, not a bare vector -- just pass that
+column straight in:
+
+```{r}
+field_data <- tibble(
+  name = c("Aporocera t-viride", "Chalcolampra viridis", "Xylotoles sp. 1", "Totally unknown beetle"),
+  site = c("Site A", "Site B", "Site C", "Site B")
+)
+
+align_taxa(field_data$name, resources) |>
+  select(original_name, aligned_name, taxon_rank, taxonomic_status)
+```
+
+Two opt-in parameters handle names that structurally can't specify a species at all, resolving them to
+genus rank instead of leaving them to (possibly mis-)match a species-level pattern:
 
 ```{r}
 align_taxa("Aporocera x hybridname", resources, hybrids = TRUE)
@@ -150,16 +216,18 @@ resolved so far.
 
 `align_taxa()` tells you *what a name matched* -- `update_taxa()` takes that result and resolves it
 forward to whatever the *current* accepted name is, following synonym links via
-`accepted_name_usage_ID`:
+`accepted_name_usage_ID`. This works the same way regardless of rank -- a species-level synonym and a
+higher-rank one both resolve via the same lookup:
 
 ```{r}
-aligned <- align_taxa("Chalcolampra viridis", resources)
-update_taxa(aligned, resources) |> select(original_name, aligned_name, accepted_name, taxonomic_status)
+aligned <- align_taxa(c("Chalcolampra viridis", "Xylotoles sp. 1"), resources)
+update_taxa(aligned, resources) |>
+  select(original_name, aligned_name, accepted_name, taxonomic_status)
 ```
 
 `accepted_name` is the current accepted name (`NA` if it couldn't be resolved); `suggested_name` falls
-back to `aligned_name` when there's no `accepted_name`, so it's never `NA` for anything that matched
-at all.
+back to `aligned_name` when there's no `accepted_name`, so it's never `NA` for anything that matched at
+all.
 
 ## The one-call pipeline: `create_taxonomic_update_lookup()`
 
@@ -168,35 +236,38 @@ then `update_taxa()` in one call:
 
 ```{r}
 create_taxonomic_update_lookup(
-  c("Aporocera viridipennis", "Aporocera viridipenis", "Chalcolampra viridis", "Aporocera"),
+  c("Aporocera viridipennis", "Aporocera viridipenis", "Chalcolampra viridis", "Xylotoles costatus mixtus", "Chrysomelidae"),
   resources
-) |> select(original_name, aligned_name, accepted_name, taxonomic_status, update_reason)
+) |>
+  select(original_name, aligned_name, accepted_name, taxonomic_status, update_reason)
 ```
 
 ## Putting it together: updating a list of names
 
 Here's the workflow you'd actually run on a real list of raw names -- say, taxon names recorded in a
-field dataset that need reconciling against a reference before analysis.
+field dataset that need reconciling against a reference before analysis, spanning several ranks and
+including a couple of names nothing will match.
 
 ```{r}
 field_data <- tibble(
   original_name = c(
-    "Aporocera viridipennis",   # exact match
+    "Aporocera viridipennis",   # a synonym
     "Aporocera viridipenis",    # typo
-    "Chalcolampra viridis",     # synonym
+    "Xylotoles costatus mixtus", # a subspecies
+    "Chrysomelidae",             # family only
     "Aporocera sp. 1",          # morphospecies code -- genus known, species not
     "Totally unknown beetle"    # won't resolve to anything
   ),
-  site = c("Site A", "Site B", "Site A", "Site C", "Site B")
+  site = c("Site A", "Site B", "Site A", "Site C", "Site B", "Site B")
 )
 
 lookup <- create_taxonomic_update_lookup(field_data$original_name, resources, identifier = field_data$site)
 lookup |> select(original_name, identifier, suggested_name, taxonomic_status, update_reason)
 ```
 
-`identifier` (here, `site`) is threaded through so that a name only ever resolvable to genus rank
-(like the morphospecies code above) is disambiguated per dataset/location in its aligned name, rather
-than collapsing two genuinely different unidentified morphospecies from different sites into one.
+`identifier` (here, `site`) is threaded through so that a name only ever resolvable to genus rank (like
+the morphospecies code above) is disambiguated per dataset/location in its aligned name, rather than
+collapsing two genuinely different unidentified morphospecies from different sites into one.
 
 Join the lookup back onto your original data by `original_name` to get an updated name for every row:
 
@@ -205,8 +276,8 @@ field_data |> left_join(lookup, by = "original_name")
 ```
 
 From here, the rows worth a closer look are the ones where `taxonomic_status` is `"unknown"` (nothing
-matched at all) or `suggested_name` is `NA` -- everything else resolved to *something*, even if only
-at genus rank. Reviewing exactly those rows (rather than the whole list) is usually the fastest way to
+matched at all) or `suggested_name` is `NA` -- everything else resolved to *something*, even if only at
+a higher rank. Reviewing exactly those rows (rather than the whole list) is usually the fastest way to
 find the handful of names that need a manual look -- a real typo not caught by fuzzy matching, a name
 missing from your reference entirely, or a genuinely new/undescribed taxon.
 

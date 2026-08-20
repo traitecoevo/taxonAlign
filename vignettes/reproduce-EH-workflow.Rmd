@@ -23,11 +23,11 @@ library(here)
 ## User to load taxonomic resources
 
 ```{r}
-taxon_resources <- read_csv("../ausinvertraits.addons/data_extra/taxon_list_for_AusInvertAlign.csv")
+taxonomic_resources <- read_csv("../ausinvertraits.addons/data_extra/taxon_list_for_AusInvertAlign.csv")
 
 # Preview
-taxon_resources
-names(taxon_resources)
+taxonomic_resources
+names(taxonomic_resources)
 ```
 
 ### Prepare and split taxonomic resources
@@ -38,7 +38,7 @@ list `align_taxa()` expects -- by taxon rank, further splitting `species` by tax
 building both subgenus-matching conventions (see `?prepare_taxonomic_resources`).
 
 ```{r}
-resources <- prepare_taxonomic_resources(taxon_resources)
+resources <- prepare_taxonomic_resources(taxonomic_resources)
 
 names(resources)
 names(resources$species)

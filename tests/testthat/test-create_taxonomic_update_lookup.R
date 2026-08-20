@@ -1,5 +1,5 @@
 test_that("create_taxonomic_update_lookup runs align_taxa + update_taxa end to end", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   names <- c("Boronia serrulata Sm.", "Boronia oldname Sm.", "Boronella", "Completely unrelated nonsense taxon")
   out <- create_taxonomic_update_lookup(names, resources)
 
@@ -12,7 +12,7 @@ test_that("create_taxonomic_update_lookup runs align_taxa + update_taxa end to e
 })
 
 test_that("create_taxonomic_update_lookup's default output has the documented slim column set", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- create_taxonomic_update_lookup("Boronia serrulata Sm.", resources)
 
   expect_setequal(
@@ -24,14 +24,14 @@ test_that("create_taxonomic_update_lookup's default output has the documented sl
 })
 
 test_that("create_taxonomic_update_lookup(full = TRUE) returns the fuller intermediate columns too", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- create_taxonomic_update_lookup("Boronia serrulata Sm.", resources, full = TRUE)
 
   expect_true(all(c("stripped_name", "trinomial", "binomial", "taxon_ID", "accepted_name_usage_ID") %in% names(out)))
 })
 
 test_that("create_taxonomic_update_lookup forwards fuzzy-matching arguments to align_taxa", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   # with fuzzy matching off, the misspelled species epithet ("serulata") no longer fuzzy-matches at
   # species level -- but the correctly-spelled genus ("Boronia") still resolves via the (non-fuzzy)
   # genus-level fallback block, so this isn't left entirely unmatched, just resolved at a coarser rank
@@ -52,9 +52,9 @@ test_that("create_taxonomic_update_lookup gives a clear, actionable error when r
 })
 
 test_that("create_taxonomic_update_lookup accepts a flat, already-formatted resources tibble directly", {
-  out_direct <- create_taxonomic_update_lookup("Boronia oldname Sm.", resources = sample_taxon_resources())
+  out_direct <- create_taxonomic_update_lookup("Boronia oldname Sm.", resources = sample_taxonomic_resources())
   out_prepared <- create_taxonomic_update_lookup(
-    "Boronia oldname Sm.", resources = prepare_taxonomic_resources(sample_taxon_resources())
+    "Boronia oldname Sm.", resources = prepare_taxonomic_resources(sample_taxonomic_resources())
   )
 
   expect_equal(out_direct, out_prepared)

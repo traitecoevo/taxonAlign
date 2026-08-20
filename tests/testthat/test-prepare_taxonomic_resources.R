@@ -5,7 +5,7 @@ test_that("prepare_taxonomic_resources errors clearly when required columns are 
   )
 })
 
-test_that("prepare_taxonomic_resources gives a clear, actionable error when taxon_resources is missing", {
+test_that("prepare_taxonomic_resources gives a clear, actionable error when taxonomic_resources is missing", {
   expect_error(prepare_taxonomic_resources(), "generate_GBIF_taxonomic_reference_list")
 })
 
@@ -22,12 +22,12 @@ test_that("prepare_taxonomic_resources renames raw Darwin Core columns, exactly 
 })
 
 test_that("prepare_taxonomic_resources errors when there are no species-level rows", {
-  no_species <- sample_taxon_resources() |> dplyr::filter(taxon_rank != "species", taxon_rank != "variety")
+  no_species <- sample_taxonomic_resources() |> dplyr::filter(taxon_rank != "species", taxon_rank != "variety")
   expect_error(prepare_taxonomic_resources(no_species), "no rows at species/infraspecific rank")
 })
 
 test_that("prepare_taxonomic_resources splits by rank and status, deriving all ranks present", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   expect_setequal(names(resources), c("species", "genus", "family", "order", "tribe", "subgenus", "subgenus_v2"))
   expect_setequal(names(resources$species), c("accepted", "synonym"))
@@ -42,7 +42,7 @@ test_that("prepare_taxonomic_resources splits by rank and status, deriving all r
 })
 
 test_that("prepare_taxonomic_resources builds both subgenus conventions", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources())
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   expect_equal(resources$subgenus$canonical_name, "Valvatae")
   expect_equal(resources$subgenus_v2$genus_and_subgenus, "Boronia (Valvatae)")
@@ -52,7 +52,7 @@ test_that("a row with a missing (NA) canonical_name is dropped, with a warning",
   # regression test: leaving such a row in is an active hazard, not just untidy data -- `NA %in% x` is
   # TRUE whenever `x` contains an NA, so a legitimately-failed fuzzy_match() (which returns NA) would
   # otherwise spuriously "match" this row instead of correctly matching nothing at all.
-  broken <- sample_taxon_resources()
+  broken <- sample_taxonomic_resources()
   broken$canonical_name[broken$taxon_ID == "sp2"] <- NA_character_
 
   expect_warning(
@@ -65,7 +65,7 @@ test_that("a row with a missing (NA) canonical_name is dropped, with a warning",
 })
 
 test_that("taxon_ranks_to_check filters out unwanted higher ranks (and subgenus_v2 with subgenus)", {
-  resources <- prepare_taxonomic_resources(sample_taxon_resources(), taxon_ranks_to_check = c("genus", "family"))
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources(), taxon_ranks_to_check = c("genus", "family"))
 
   expect_setequal(names(resources), c("species", "genus", "family"))
   expect_null(resources$tribe)
@@ -75,7 +75,7 @@ test_that("taxon_ranks_to_check filters out unwanted higher ranks (and subgenus_
 
 test_that("taxon_ranks_to_check warns about ranks not present in the data", {
   expect_warning(
-    prepare_taxonomic_resources(sample_taxon_resources(), taxon_ranks_to_check = c("genus", "class")),
+    prepare_taxonomic_resources(sample_taxonomic_resources(), taxon_ranks_to_check = c("genus", "class")),
     "not present"
   )
 })
@@ -89,7 +89,7 @@ test_that("a reference table with only one taxonomic_status still gets a 0-row s
   # NULL$<column> is NULL, and dplyr::mutate(x = NULL) *drops* the column rather than leaving it NA, so
   # every alignment (matching nothing in that block, as always happens when there's nothing to match
   # against) hit a "Can't recycle input of size N to size M" error rather than aligning normally.
-  accepted_only <- sample_taxon_resources() |> dplyr::filter(taxonomic_status == "accepted")
+  accepted_only <- sample_taxonomic_resources() |> dplyr::filter(taxonomic_status == "accepted")
   resources <- prepare_taxonomic_resources(accepted_only)
 
   expect_setequal(names(resources$species), c("accepted", "synonym"))

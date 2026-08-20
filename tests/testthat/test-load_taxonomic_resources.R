@@ -44,14 +44,14 @@ test_that("load_taxonomic_resources(\"AFD\") builds distinct higher-rank rows, c
   # FAMILY/ORDER are ALL CAPS in the raw fixture (matching real AFD's own export convention for
   # family-and-above ranks) -- confirms they're normalised to sentence case, not left as-is
   family_rows <- afd |> dplyr::filter(taxon_rank == "family")
-  expect_setequal(family_rows$canonical_name, c("Testidae", "Anotherfam"))
+  expect_setequal(family_rows$canonical_name, c("Testidae", "Anotherfam", "Thirdfam"))
 
   order_rows <- afd |> dplyr::filter(taxon_rank == "order")
-  expect_setequal(order_rows$canonical_name, c("Testoptera", "Anotherorder"))
+  expect_setequal(order_rows$canonical_name, c("Testoptera", "Anotherorder", "Thirdorder"))
 
   # SUBFAMILY is already properly cased in the raw fixture -- confirms normalisation is a no-op there
   subfamily_rows <- afd |> dplyr::filter(taxon_rank == "subfamily")
-  expect_setequal(subfamily_rows$canonical_name, c("Testinae", "Anothersubfam"))
+  expect_setequal(subfamily_rows$canonical_name, c("Testinae", "Anothersubfam", "Thirdsubfam"))
 
   # two rows share GENUS/FAMILY/ORDER/CLASS/PHYLUM -- confirms distinct() dedup, not one row per input row
   expect_equal(nrow(afd |> dplyr::filter(taxon_rank == "genus", canonical_name == "Testus")), 1)
@@ -62,13 +62,40 @@ test_that("load_taxonomic_resources(\"AFD\") builds subgenus rows paired with th
   path <- write_sample_afd_csv()
   afd <- load_taxonomic_resources("AFD", path = path, cache_dir = withr::local_tempdir(), quiet = TRUE)$AFD
 
-  subgenus_row <- afd |> dplyr::filter(taxon_rank == "subgenus")
+  # filter to this fixture's non-nominotypical subgenus specifically -- "Thirdgenus" also has a
+  # (nominotypical) subgenus row, covered by its own dedicated test below
+  subgenus_row <- afd |> dplyr::filter(taxon_rank == "subgenus", canonical_name == "Subgenusy")
   expect_equal(subgenus_row$canonical_name, "Subgenusy")
   expect_equal(subgenus_row$genus, "Anothergenus")
 
   # prepare_taxonomic_resources() should be able to build the bracketed convention from this
   resources <- prepare_taxonomic_resources(afd)
-  expect_equal(resources$subgenus_v2$genus_and_subgenus, "Anothergenus (Subgenusy)")
+  expect_true("Anothergenus (Subgenusy)" %in% resources$subgenus_v2$genus_and_subgenus)
+})
+
+test_that("load_taxonomic_resources(\"AFD\") namespaces taxon_ID by rank so a nominotypical subgenus doesn't collide with its genus", {
+  # "Thirdgenus" the genus and "Thirdgenus" the (nominotypical) subgenus share a canonical_name -- a
+  # real, common taxonomic convention (every genus split into subgenera has one sharing the genus's own
+  # name), not an edge case. Before taxon_ID was namespaced by rank, both rows fell back to the same
+  # bare-name taxon_ID ("Thirdgenus"), so update_taxa()'s taxon_ID-keyed match() (first-hit semantics)
+  # would silently resolve a subgenus-rank match to the colliding genus-rank row instead, discarding the
+  # subgenus and downgrading taxon_rank from "subgenus" to "genus".
+  path <- write_sample_afd_csv()
+  afd <- load_taxonomic_resources("AFD", path = path, cache_dir = withr::local_tempdir(), quiet = TRUE)$AFD
+
+  genus_row <- afd |> dplyr::filter(taxon_rank == "genus", canonical_name == "Thirdgenus")
+  subgenus_row <- afd |> dplyr::filter(taxon_rank == "subgenus", canonical_name == "Thirdgenus")
+
+  expect_equal(nrow(genus_row), 1)
+  expect_equal(nrow(subgenus_row), 1)
+  expect_false(genus_row$taxon_ID == subgenus_row$taxon_ID)
+
+  # end to end: a name using the bracketed Genus (Subgenus) convention, for a species AFD doesn't itself
+  # list (forcing the subgenus fallback block, not an exact species match), should resolve at subgenus
+  # rank all the way through update_taxa() -- not silently collapse to genus rank.
+  resources <- prepare_taxonomic_resources(afd)
+  out <- create_taxonomic_update_lookup("Thirdgenus (Thirdgenus) unlistedus", resources)
+  expect_equal(out$taxon_rank, "subgenus")
 })
 
 test_that("load_taxonomic_resources(\"AFD\") splits SYNONYMS and strips authorship", {
