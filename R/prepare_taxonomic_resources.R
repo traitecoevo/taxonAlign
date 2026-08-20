@@ -72,6 +72,60 @@ taxonAlign_taxonomic_status_priority <- c(
   "included"
 )
 
+# Specificity order (most specific first) used to decide, when a name could in principle match more
+# than one taxonomic rank, which rank wins -- both when `resources`' rank sublists are flattened back
+# into one table (`update_taxa()`'s `taxon_ID`-keyed lookup, `match()`, first-hit semantics) and when
+# `match_taxa()`'s generic higher-rank loops (`match_02b`/`match_02c`/`match_12b`/`match_12c`) walk
+# `taxon_ranks_to_check` one rank at a time, stopping at the first rank a row matches. Previously,
+# `prepare_taxonomic_resources()` derived rank order from a plain `split()` on the raw rank string,
+# which orders alphabetically -- arbitrary, and actively wrong whenever two ranks' rows can carry the
+# same taxon_ID or name: real AFD data guarantees this for genus/subgenus (every genus split into
+# subgenera has a *nominotypical* subgenus sharing the genus's own name), which is what surfaced this in
+# the first place (see the AFD `taxon_ID` namespacing fix in `load_taxonomic_resources.R`) -- but even
+# with that fixed, *any* other coincidental cross-rank name collision (a handful turn up in real AFD
+# data at family/order/subfamily/suborder/subtribe/superfamily/superorder/class too) would otherwise
+# still resolve to whichever rank happened to sort first alphabetically, rather than the more specific,
+# generally more informative one.
+#
+# Species/infraspecific ranks aren't listed here -- `taxon_rank2` (below) buckets them into their own
+# `"species"` entry before this ordering is ever applied, and that bucket is always the most specific of
+# all, so it's still ranked first via `union()` at the call site.
+#
+# Extends (and is ordered by reversing the sense of) `gbif_rank_order`
+# (`generate_GBIF_taxonomic_reference_list.R`, broadest-to-narrowest, driving GBIF `rank`-filtering) --
+# not reused directly, since that vector's own trailing "cultivar"/"other"/"unranked" placeholders exist
+# for GBIF-filtering purposes specific to that file and aren't meaningful specificity-order entries here.
+# Adds a few rank names real AFD/iNat/APCalign-standardised data actually uses that GBIF's own enum
+# doesn't: "supertribe", "epifamily", "subterclass" (AFD/iNat), and "complex"/"hybrid" (informal,
+# species-adjacent identification concepts, ranked just below subgenus). Also includes the doubled-`n`
+# spellings ("sectionn", "subsectionn", "zoosectionn", "zoosubsectionn") that
+# `APCalign::standardise_taxon_rank()` actually produces for "section"/"subsection"/"zoosection"/
+# "zoosubsection" input (its Latin-to-English substring replacement, `gsub("sectio", "section", ...,
+# fixed = TRUE)`, matches "sectio" as a *substring* of the already-English "section", appending a
+# spurious extra "n" -- an upstream APCalign quirk, not a taxonAlign bug, but real values this vector
+# needs to rank correctly since they're what actually reaches `prepare_taxonomic_resources()`).
+#
+# A rank not in this vector isn't dropped or misplaced -- the call site builds the actual `factor()`
+# levels as `union(taxonAlign_taxon_rank_specificity, unique(taxon_rank2))`, so an unrecognised rank
+# simply keeps its own bucket, appended after every known rank (i.e. treated as least-specific/lowest
+# tie-break priority, the conservative default when specificity is genuinely unknown) -- extend this
+# vector as further rank vocabularies turn up, the same "extend, don't guess" philosophy as
+# `taxonAlign_taxonomic_status_priority` above.
+taxonAlign_taxon_rank_specificity <- c(
+  "subgenus", "genus",
+  "complex", "hybrid",
+  "section", "sectionn", "subsection", "subsectionn", "zoosection", "zoosectionn",
+  "zoosubsection", "zoosubsectionn", "series", "subseries",
+  "subtribe", "tribe", "supertribe",
+  "subfamily", "family", "epifamily", "superfamily",
+  "infraorder", "parvorder", "suborder", "order", "grandorder", "superorder", "magnorder",
+  "infracohort", "subcohort", "cohort", "supercohort",
+  "infralegion", "sublegion", "legion", "superlegion",
+  "parvclass", "infraclass", "subterclass", "subclass", "class", "superclass",
+  "infraphylum", "subphylum", "phylum", "superphylum",
+  "infrakingdom", "subkingdom", "kingdom", "domain"
+)
+
 #' Prepare a combined taxonomic reference table for name matching
 #'
 #' Takes one or more taxonomic reference tables (the user's own, one produced by
@@ -289,8 +343,21 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
       trinomial = base::replace(trinomial, duplicated(trinomial), zzz)
     )
 
-  # split by taxon rank -- unlike APCalign, higher ranks beyond genus/family are expected and kept
-  resources <- split(taxonomic_resources, taxonomic_resources$taxon_rank2)
+  # split by taxon rank -- unlike APCalign, higher ranks beyond genus/family are expected and kept.
+  # Ordered most-specific-first (see taxonAlign_taxon_rank_specificity above), not alphabetically, so
+  # `names(resources)` -- and everything derived from it (`match_taxa()`'s default
+  # `taxon_ranks_to_check`, `update_taxa()`'s flattened lookup table) -- checks/resolves the more
+  # specific rank first whenever a name could in principle match at more than one rank. `"species"`
+  # (the most specific bucket of all) is prepended explicitly via `union()`'s ordering rather than
+  # listed inside taxonAlign_taxon_rank_specificity itself, since it's handled as its own case just
+  # below. `union()` keeps every rank actually present, even ones not in the specificity vector at all
+  # -- those simply keep their own bucket, appended after every known rank (drop = TRUE below then
+  # discards whichever of the *specificity vector's* ranks aren't actually present, rather than creating
+  # empty placeholder tibbles for them).
+  rank_levels <- union(c("species", taxonAlign_taxon_rank_specificity), unique(taxonomic_resources$taxon_rank2))
+  resources <- split(
+    taxonomic_resources, factor(taxonomic_resources$taxon_rank2, levels = rank_levels), drop = TRUE
+  )
 
   if (is.null(resources[["species"]])) {
     stop("`taxonomic_resources` contains no rows at species/infraspecific rank -- nothing to align names against.")

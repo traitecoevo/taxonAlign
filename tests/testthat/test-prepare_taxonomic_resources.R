@@ -41,6 +41,39 @@ test_that("prepare_taxonomic_resources splits by rank and status, deriving all r
   expect_equal(resources$tribe$canonical_name, "Zanthoxyleae")
 })
 
+test_that("prepare_taxonomic_resources orders resources most-specific-rank-first, not alphabetically", {
+  # regression test: split() on the raw rank string alone orders alphabetically (family, genus, order,
+  # subgenus, tribe here) -- arbitrary, and the wrong tie-break whenever a name could match more than
+  # one rank (see taxonAlign_taxon_rank_specificity's own comment, and the AFD taxon_ID-collision bug
+  # this generalises the fix for). Expected most-specific-first order here: species, then subgenus,
+  # genus, tribe, family, order (subgenus_v2 is appended after the split completes, always last).
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+
+  expect_equal(
+    names(resources),
+    c("species", "subgenus", "genus", "tribe", "family", "order", "subgenus_v2")
+  )
+})
+
+test_that("prepare_taxonomic_resources keeps an unrecognised rank's own bucket, appended after every known rank", {
+  # a rank name absent from taxonAlign_taxon_rank_specificity entirely (not a typo of a known one) must
+  # not be dropped -- it should get its own bucket, just placed last (least-specific/lowest tie-break
+  # priority is the safe default when specificity is genuinely unknown)
+  with_weird_rank <- sample_taxonomic_resources() |>
+    dplyr::bind_rows(dplyr::tibble(
+      canonical_name = "Madeupia", scientific_name = "Madeupia", taxon_rank = "totallymaderank",
+      taxonomic_status = "accepted", taxonomic_dataset = "TEST", genus = NA_character_,
+      taxon_ID = "weird1", accepted_name_usage_ID = "weird1"
+    ))
+
+  resources <- prepare_taxonomic_resources(with_weird_rank)
+
+  expect_true("totallymaderank" %in% names(resources))
+  expect_equal(resources$totallymaderank$canonical_name, "Madeupia")
+  # every recognised rank still sorts before the unrecognised one (subgenus_v2 aside -- always last)
+  expect_equal(tail(setdiff(names(resources), "subgenus_v2"), 1), "totallymaderank")
+})
+
 test_that("prepare_taxonomic_resources builds both subgenus conventions", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 

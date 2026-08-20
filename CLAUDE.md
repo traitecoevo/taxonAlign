@@ -103,21 +103,17 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-282 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+286 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
 #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 282) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 286) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (as of the last online run before this). **Currently broken, separately
-from everything else in this section**: as of the last local run, both its tests error instead
-(`load_taxonomic_resources("APC")` → `load_APC()` → `dplyr::mutate(APC$family_accepted, ...)` on a
-`NULL` -- i.e. a live `APCalign::load_taxonomic_resources()` call is no longer returning a
-`family_accepted` element at all). Not investigated yet -- flagged here rather than silently left out,
-since it means the "APC" path (and this equivalence test) is presently unverified against live data;
-likely upstream `APCalign` output shape drift, not something introduced by any change described in this
-file.
+passing expectations on top (293 total, as of the last online run). One local run hit a transient
+failure here (`load_APC()` → `dplyr::mutate()` on a `NULL` `APC$family_accepted`, i.e. a live
+`APCalign::load_taxonomic_resources()` call momentarily not returning that element) that didn't
+reproduce on retry -- worth a second look if it recurs, but not treated as a real bug off one occurrence.
 
 Gotcha if you add more end-to-end tests: don't wrap a block of `local_mocked_bindings()` calls in a
 plain helper function and call that helper from inside `test_that()` without forwarding `.env` — the
@@ -219,6 +215,30 @@ Architecture of the matching engine itself:
   which derives the set of higher ranks to check from `names(resources)` itself (minus
   `"species"`/`"subgenus_v2"`), so this generalizes to whatever ranks the user's combined reference
   happens to contain, not a hardcoded invertebrate-specific list.
+- **`names(resources)` (and hence `taxon_ranks_to_check`'s default, and `update_taxa()`'s flattened
+  lookup table) is ordered most-specific-rank-first, not alphabetically.** `prepare_taxonomic_resources()`
+  used to just `split()` on the raw rank string, which orders alphabetically -- arbitrary, and actively
+  wrong wherever a name could in principle match at more than one rank (two ranks whose rows carry the
+  same `taxon_ID`, as the AFD nominotypical-subgenus case above did before its fix, but also two ranks
+  whose rows just happen to have the same *name* — real AFD data has a handful of these at
+  family/order/subfamily/suborder/subtribe/superfamily/superorder/class too, and
+  `sample_invert_taxonomic_resources()`'s own `"Aporocera"` genus/nominotypical-subgenus fixture is a
+  deliberately-built example): `match_taxa()`'s generic higher-rank loops (`match_02b`/`match_02c`/
+  `match_12b`/`match_12c`) stop at the first rank in `taxon_ranks_to_check` a row matches, and
+  `update_taxa()`'s `taxon_ID`-keyed lookup is first-hit `match()` too, so whichever rank happened to
+  sort first alphabetically silently won every such tie. Fixed by `taxonAlign_taxon_rank_specificity`
+  (`prepare_taxonomic_resources.R`) -- a fixed, most-specific-first rank vocabulary (extending, in the
+  opposite direction, `gbif_rank_order`'s broadest-to-narrowest one) that `taxonomic_resources$taxon_rank2`
+  is turned into a `factor()` against (via `union()` with whatever ranks are actually present, so an
+  unrecognised rank still gets its own bucket -- just appended after every known rank, sorting last/
+  least-specific, the same "extend as new vocabulary turns up, don't guess" convention
+  `taxonAlign_taxonomic_status_priority` already uses) before `split()`, and `"species"` (always the
+  single most specific bucket) is prepended explicitly at both this split and again in `update_taxa()`'s
+  own bind order. A practical consequence, not just a tie-break for pathological input: this is what
+  makes a subgenus-rank match survive `update_taxa()` as `"subgenus"` rather than being silently
+  downgraded to `"genus"` whenever the underlying loader (e.g. AFD, see below) ever produces a
+  cross-rank `taxon_ID` collision again in the future -- most-specific-first ordering is a second,
+  independent line of defense on top of namespacing the IDs themselves.
 - **Subgenus gets two parallel matching conventions**, both preserved deliberately:
   `resources$subgenus` (plain subgenus name alone, e.g. `"Podosemum"`, matched via the generic
   `taxon_ranks_to_check` loop like any other higher rank) and `resources$subgenus_v2` (a

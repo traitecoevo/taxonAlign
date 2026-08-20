@@ -44,12 +44,18 @@ test_that("a genus typo that changes the first letter is correctly rejected, not
   expect_true(is.na(out$aligned_name))
 })
 
-test_that("too many edits fails species-level fuzzy matching but still falls back to genus rank", {
+test_that("too many edits fails species-level fuzzy matching but still falls back to a higher rank", {
   resources <- prepare_taxonomic_resources(sample_invert_taxonomic_resources())
   out <- align_taxa("Aporocera zzzzzzzzzz", resources) # correct genus, unrecognisable epithet
 
   expect_true(grepl("^Aporocera sp\\. \\[", out$aligned_name))
-  expect_equal(out$taxon_rank, "genus")
+  # sample_invert_taxonomic_resources() gives "Aporocera" both a genus row and a nominotypical subgenus
+  # row (canonical_name "Aporocera" either way -- see its own comments) -- a bare, unbracketed
+  # "Aporocera" is genuinely ambiguous between the two, and the generic higher-rank fallback
+  # (match_taxa()'s taxon_ranks_to_check loop) now resolves such ties to the more specific rank
+  # (subgenus over genus), per prepare_taxonomic_resources()'s most-specific-first rank ordering
+  # (taxonAlign_taxon_rank_specificity) -- not an error, a deliberate tie-break.
+  expect_equal(out$taxon_rank, "subgenus")
 })
 
 test_that("a genuinely ambiguous fuzzy match (two equidistant candidates) resolves to nothing, not a guess", {
@@ -107,13 +113,15 @@ test_that("compound/'ex' authorship after a valid name doesn't prevent matching"
   expect_equal(out$aligned_name, "Aporocera t-viride")
 })
 
-test_that("morphospecies codes ('sp. 1', 'sp. nov.', 'sp. indet.') resolve to genus rank, not an error", {
+test_that("morphospecies codes ('sp. 1', 'sp. nov.', 'sp. indet.') resolve to a higher rank, not an error", {
   resources <- prepare_taxonomic_resources(sample_invert_taxonomic_resources())
   names <- c("Aporocera sp. 1", "Aporocera sp. nov.", "Aporocera sp. indet.", "Aporocera sp. A")
 
   out <- align_taxa(names, resources)
 
-  expect_true(all(out$taxon_rank == "genus"))
+  # see the equivalent comment above: "Aporocera" is both a genus and (nominotypical) subgenus name in
+  # this fixture, and the generic higher-rank fallback now ties in favour of the more specific rank
+  expect_true(all(out$taxon_rank == "subgenus"))
   expect_equal(out$aligned_name, paste0("Aporocera sp. [", names, "]"))
 })
 

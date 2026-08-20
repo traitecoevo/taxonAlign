@@ -71,7 +71,14 @@ update_taxa <- function(aligned_data, resources = NULL) {
   # `taxon_ID` -- this is what makes the lookup below rank-agnostic (one table, not one per rank).
   # `subgenus_v2` is excluded: it's a derived duplicate of `subgenus` (adds a `genus_and_subgenus`
   # column for the bracketed-name matching convention), not a distinct set of taxa.
-  rank_tables <- c(resources[setdiff(names(resources), c("species", "subgenus_v2"))], resources$species)
+  #
+  # Bound most-specific-rank-first (species, then `names(resources)`'s own order -- see
+  # `taxonAlign_taxon_rank_specificity` in `prepare_taxonomic_resources.R`, which is what orders
+  # `resources` itself this way): `match()` below is first-hit, so if `taxon_ID` were ever to repeat
+  # across ranks (as it did before AFD's higher-rank `taxon_ID` fallback was namespaced by rank -- see
+  # `load_taxonomic_resources.R`), the more specific, more informative rank wins the tie rather than
+  # whichever rank happened to bind first.
+  rank_tables <- c(resources$species, resources[setdiff(names(resources), c("species", "subgenus_v2"))])
   all_taxa <- dplyr::bind_rows(rank_tables)
 
   current <- all_taxa[match(aligned_data$accepted_name_usage_ID, all_taxa$taxon_ID), ]
