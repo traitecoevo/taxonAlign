@@ -17,6 +17,7 @@ generate_GBIF_taxonomic_reference_list(
   facet_limit = 1e+05,
   max_taxa = 50000,
   force_large_fetch = FALSE,
+  parallel_requests = 4,
   quiet = FALSE
 )
 }
@@ -70,6 +71,15 @@ requesting a very slow, very large first-time download. Defaults to 50000.}
 \item{force_large_fetch}{Logical; set to \code{TRUE} to proceed with a fetch that would
 otherwise be blocked by \code{max_taxa}. Defaults to \code{FALSE}.}
 
+\item{parallel_requests}{Numeric; how many of the paginated GBIF requests used to
+fetch a large taxonomic tree to run concurrently. The tree is always fetched in full
+regardless of \code{country} (see Details) -- for a large clade this can mean thousands of
+1000-row pages, previously fetched one at a time. Set to \code{1} to fetch strictly
+sequentially (the old behaviour). Only takes effect on Unix-alikes (macOS/Linux) --
+\code{\link[parallel:mclapply]{parallel::mclapply()}} silently falls back to sequential on Windows, where this has
+no effect. Defaults to 4; raise or lower depending on how many concurrent requests
+you're comfortable sending GBIF.}
+
 \item{quiet}{Logical; suppress progress messages. Defaults to \code{FALSE}.}
 }
 \value{
@@ -95,6 +105,26 @@ batches, rather than one API call per name) and cached to disk, so repeat calls 
 including calls that filter by a different \code{country} or \code{rank} -- are served from
 the cache and return almost instantly. Use \code{refresh_cache = TRUE} to force a fresh
 download, e.g. once the cache is more than a few weeks old.
+
+The full tree is always fetched (and cached) regardless of \code{country} -- \code{country}
+only filters the already-fetched tree afterwards, it never narrows the download
+itself. This is deliberate, not an easy optimisation left undone: GBIF's taxonomy
+browsing endpoint (which the tree fetch uses) has no country concept at all --
+only its \emph{occurrence-record} endpoint does, and occurrence records are normally
+tagged with a taxon's \emph{accepted} usage, not its synonyms. Filtering to occurrence-
+derived keys before fetching the tree would silently drop every synonym of a taxon
+that occurs in \code{country} (a synonym itself essentially never has its own occurrence
+records). Fetching the whole tree first, then filtering, is what preserves synonym
+coverage. For a very large clade (e.g. an insect order), most of the wall-clock time
+is this full-tree fetch; see \code{parallel_requests} to speed it up.
+
+A clade with more than 100,000 descendants (e.g. Arthropoda, Mollusca) can't be paged directly at
+all -- GBIF's lookup endpoint refuses to serve pages past that offset. For a clade this large, the
+tree is instead fetched by automatically splitting into its immediate children and fetching each one
+recursively (splitting again if a child is itself still too large), then combining the pieces. Every
+piece is cached under its own GBIF key exactly like a directly-fetched tree, so a very large fetch
+interrupted partway through (a crash, a reboot, \code{Ctrl-C}) is resumable for free: re-running the same
+call only re-fetches whichever pieces aren't already cached.
 }
 \examples{
 \dontrun{

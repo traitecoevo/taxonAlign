@@ -54,8 +54,10 @@ since its non-portable filename otherwise trips a `checking for portable file na
 WARNING) — the "temporarily move the file out and back" workaround this used to require is no longer
 needed.
 
-`DESCRIPTION` Imports now cover `APCalign`, `dplyr`, `purrr`, `readr`, `rgbif`, `rlang`, `stringdist`,
-`stringr`, `tools`, `utils` (with `Remotes: traitecoevo/APCalign` since APCalign isn't on CRAN). The
+`DESCRIPTION` Imports now cover `APCalign`, `dplyr`, `parallel`, `purrr`, `readr`, `rgbif`, `rlang`,
+`stringdist`, `stringr`, `tools`, `utils` (with `Remotes: traitecoevo/APCalign` since APCalign isn't on
+CRAN; `parallel` ships with base R but is still declared since it's called via `::`, per the concurrent
+GBIF-page-fetch note in Architecture #1). The
 vignette (only) additionally needs packages that are **not** declared as dependencies anywhere
 (`tidyverse`, `here`, `arrow`) — install these manually if you need to run it:
 
@@ -174,6 +176,101 @@ Key design points worth knowing before touching this file:
   missing. A taxon actually carrying one of those ranks would silently drop out of `rank`-filtered
   output rather than being included. Flagged but not fixed (deliberately) — pin down GBIF's exact
   ordinal placement for the missing ranks before adding them, rather than guessing.
+- **`country` can't narrow the fetch itself, only filter it afterwards** — found worth documenting
+  explicitly after being asked directly whether the AU-occurrence filter could run *before* the
+  (often much larger) full-tree download, to skip fetching taxa that don't even occur in the target
+  country. It can't: GBIF's taxonomy-browsing endpoint (`name_lookup()`, what the tree fetch uses) has
+  no country concept at all — only the *occurrence-record* endpoint (`occ_search()`, what
+  `fetch_gbif_country_keys()` already uses) does, and occurrence records are normally tagged with a
+  taxon's *accepted* usage, essentially never a synonym's own key. Filtering to occurrence-derived keys
+  before fetching the tree would silently drop every synonym of an in-country taxon (a synonym itself
+  has no occurrence records of its own to be found by). A tempting-looking alternative — use the
+  (cheap) occurrence facet to get just the in-country *accepted* keys first, then fetch full detail
+  (including synonyms) only for those via `rgbif::name_usage()` — was checked against real numbers
+  before being ruled out too: AU-occurring Insecta alone has 105,178 distinct occurrence taxonKeys, and
+  `name_usage()` doesn't accept more than one `key` at a time (confirmed: errors if you try) — that's
+  105,178+ individual API calls, dramatically *more* than the ~1,800 calls (at 1000 rows/page) needed to
+  page the whole global Insecta tree once. Fetching the whole tree first, then filtering, remains the
+  right design; the genuine speedup opportunity is in how that full-tree fetch itself is paged (next
+  bullet).
+- **The full-tree fetch is paged concurrently, not one page at a time** — `parallel_requests` (default
+  4) controls how many of `fetch_gbif_taxon_tree()`'s paginated `rgbif::name_lookup()` calls run at
+  once, via `parallel::mclapply()` (fork-based, so Unix-alike only -- silently falls back to sequential
+  on Windows, never incorrect, just not faster there). Chosen over adding a new async-HTTP dependency,
+  since `rgbif::name_lookup()` itself has no batching/async option to hook into, and over the
+  country-first alternative above. For a large clade (a GBIF-scale invertebrate phylum can mean
+  thousands of 1000-row pages) this is where nearly all the wall-clock time goes, so this is a
+  meaningful, not cosmetic, speedup — confirmed in practice fetching AU-occurring Arthropoda (2.17M
+  global descendants, ~3,100 pages). Each page is retried up to 3 times with a short backoff
+  (`fetch_page_with_retry()`) before being treated as a real failure — found necessary in the same
+  real fetch: a single page occasionally fails with a transient network/TLS error (e.g. "LibreSSL
+  SSL_read... bad decrypt") unrelated to the request itself, and without a retry this would fail the
+  *entire* multi-thousand-page tree fetch (see the no-silent-partial-data check below) even after every
+  other page already succeeded — wasteful to have to redo a very large, slow fetch from scratch over
+  one flaky page. `parallel::mclapply()`'s own child-error handling is deliberately not relied on
+  directly: each page is wrapped in its own `try()` inside `fetch_page_with_retry()` rather than letting
+  a raw error propagate out of the forked worker, since `mclapply()` additionally emits its own
+  "scheduled core N encountered error" warning for an uncaught child error, which would otherwise
+  surface confusingly alongside (and before) this function's own clearer error message. If any page
+  still fails after retries, the whole tree fetch errors clearly, naming how many of how many pages
+  were lost — matching this package's existing "clear error over silent partial data" convention (e.g.
+  the `country`-code / `canonical_name`-NA checks elsewhere in the package) — rather than silently
+  returning an incomplete tree with no indication anything went wrong.
+- **Every rgbif call gets an explicit timeout, and (outside the paginated-page path) a shared retry
+  wrapper** (`gbif_curlopts`, `with_gbif_retry()`) -- found necessary after `fetch_page_with_retry()`
+  alone still wasn't enough: a request occasionally *hangs* rather than erroring (observed directly on
+  the real Arthropoda fetch -- worker processes sitting at ~0% CPU for 30+ minutes, no error, no
+  further log output), and a hang can never trigger a retry, since a retry only runs after a request
+  actually *fails*. `gbif_curlopts` (`timeout = 60`, passed to every `rgbif::name_backbone()`/
+  `name_lookup()`/`name_usage()`/`occ_search()` call in the file via `curlopts`) turns a hang into an
+  ordinary, retry-able error after the timeout (120s -- raised from an initial 60s after direct
+  measurement showed GBIF's own deep-pagination legitimately taking up to 78s at high offsets under
+  concurrent load; see `gbif_curlopts`'s own comment). `with_gbif_retry()` is the non-paginated sibling
+  of `fetch_page_with_retry()` -- same retry-with-backoff policy, but raises on exhaustion instead of
+  returning a try-error, since name resolution/root-usage/children-page/occurrence-facet calls have no
+  cross-call aggregation to report into. Takes a zero-argument thunk (`function() ...`), not a bare
+  expression -- an R promise argument is only ever evaluated once and its value cached, so a bare
+  expression would silently *not* re-run the real network call on a second attempt. The very first
+  `name_lookup()` call in `fetch_gbif_taxon_tree()` (the one that fetches `total`, deciding whether the
+  clade needs splitting at all) was initially missed and left completely unwrapped -- found the hard
+  way when it alone took down an entire ~5,400-children-deep recursive Insecta fetch on one transient
+  failure, with no chance to retry. Now wrapped in `with_gbif_retry()` like everything else.
+- **A clade bigger than 100,000 descendants can't be paged at all** — confirmed directly against the
+  raw GBIF REST API (not just `rgbif`'s wrapper): `name_lookup()`'s underlying endpoint hard-refuses any
+  page whose offset exceeds 100,000 (`"Max offset of 100000 exceeded."`), a fixed server-side limit, not
+  a rate-limit or something retries fix. Found in practice fetching Arthropoda (~3.1M descendants,
+  ~3,100 pages) and Mollusca (~484k, ~485 pages) — both fail once paging passes page 100, regardless of
+  `parallel_requests` or `fetch_page_with_retry()`. `gbif_max_lookup_offset` (100000) is the threshold
+  `fetch_gbif_taxon_tree()` checks `total` against; above it, the direct-paging path is skipped entirely
+  in favour of `fetch_gbif_taxon_tree_by_children()`.
+  - **Recursive split-into-children**: `fetch_gbif_taxon_tree_by_children()` fetches `root_key`'s
+    immediate children (`fetch_gbif_taxon_children()`, paginated the same way via
+    `rgbif::name_usage(key, data = "children")` — its `meta` has no `count` field, only `endOfRecords`,
+    so it pages until that flag is set rather than computing a page count up front) and recurses into
+    `fetch_gbif_taxon_tree()` for each one. A child can itself still be too large and need splitting
+    again — every taxon's children are smaller than the taxon itself, so this always terminates, but a
+    `.depth` guard (6 levels) errors clearly rather than trusting that invariant blindly forever, in case
+    some corner of the backbone violates it. Children are fetched **sequentially, not in parallel**:
+    each child's own fetch already parallelises across *its* pages internally (`parallel_requests`), and
+    nesting `mclapply()` inside `mclapply()` would oversubscribe cores (e.g. 4 children × 4 pages each =
+    16-way contention on what might be a 4-8 core machine) for no real benefit.
+  - **This makes a huge fetch resumable for free, which matters a lot in practice for a fetch that can
+    run for a long time unattended** (Arthropoda's full breakdown took multiple long-running sessions,
+    including surviving a machine reboot partway through) — every recursive call caches its own result
+    under its own GBIF key exactly like a directly-fetched tree, so there's no separate checkpointing
+    mechanism to build or that can get out of sync: the disk cache *is* the checkpoint. Interrupted
+    partway through fetching, say, 30 orders under a class, re-running the exact same top-level call
+    later only re-fetches whichever orders aren't already cached — already-completed ones return
+    instantly from `cache_is_fresh()`.
+  - **A full-backbone bulk download exists as an alternative and was deliberately not used**
+    (`https://hosted-datasets.gbif.org/datasets/backbone/current/backbone.zip`, confirmed via a direct
+    HTTP HEAD request: ~971MB compressed, last modified over a year before this was investigated) — it
+    would sidestep the offset limit entirely, but using it only for the huge clades would leave the
+    combined reference with silently inconsistent currency (small phyla live/current via the API, huge
+    ones years stale from a bulk snapshot) — a worse problem for a taxonomic alignment tool than being
+    slower but uniformly live. Also a materially bigger architectural change (a new file-based ingestion
+    path covering every kingdom, not a fetch scoped to one taxon) rather than a fix to the existing
+    fetch. Worth reconsidering only if GBIF's API limits become more restrictive still.
 
 ### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/prepare_taxonomic_resources_interactive.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/update_taxa.R`, `R/create_taxonomic_update_lookup.R`, `R/match_taxa_helpers.R` (active; everything but `match_taxa()` and the helpers is exported)
 
@@ -286,7 +383,7 @@ Architecture of the matching engine itself:
   carry over APCalign's `taxonomic_splits` disambiguation (APC-specific split history an arbitrary
   reference can't be expected to document) or its genus-substring-splicing trick for reconstructing a
   suggested name when only the genus changed (doesn't obviously generalize across ranks).
-- **Five real bugs found by testing against real, messy data** (not just the hand-built fixture) that
+- **Six real bugs found by testing against real, messy data** (not just the hand-built fixture) that
   are worth knowing about if you touch this code again:
   - `fuzzy_match()` (`match_taxa_helpers.R`) used to crash with "missing value where TRUE/FALSE
     needed" whenever a reference list's `accepted_list` argument contained an `NA` (real GBIF data with
@@ -349,6 +446,21 @@ Architecture of the matching engine itself:
     codes that historically resolved to tribe rank (alphabetically checked before family in
     `taxon_ranks_to_check`'s default order) to resolve to family rank instead where both are valid
     fuzzy-match targets -- confirmed as acceptable, not a regression to chase further.
+  - Discovered against a real, ~867k-row *worldwide* (all invertebrate phyla, no country filter)
+    GBIF reference: `fuzzy_match()`'s first-letter-matching filter (`match_taxa_helpers.R`) used to
+    compare every `accepted_list` entry's extracted first letter against the query's via `==`, with no
+    guard for the extraction itself returning `NA`. Real, messy worldwide backbone data has malformed
+    higher-rank rows whose `canonical_name` is an author-citation string (e.g. `"Chandler, 1935"`) --
+    and some of *those* have no alphabetic character at all once malformed further (a bare punctuation/
+    number fragment), so `stringr::str_extract(..., "[:alpha:]")` returns `NA` for them. Subsetting a
+    vector with a logical index that itself contains `NA` doesn't drop that entry -- it inserts a
+    literal `NA` *value* into the filtered result instead, which then silently poisons every
+    `stringdist()`/`min()` computation downstream with `NA`, eventually surfacing as "missing value
+    where TRUE/FALSE needed" deep inside the unrelated-looking `check_match()` helper -- a confusing
+    error far from its actual cause. Fixed by excluding `!is.na(...)` explicitly in the first-letter
+    filter itself (such an entry correctly has "no first letter to compare", so it's excluded rather
+    than injected as `NA`), plus a defensive `na.rm = TRUE` on the `min()` calls as a backstop against
+    any other not-yet-seen data-quality issue taking a similar path.
 - **`taxonomic_status`-based disambiguation when the same lookup key repeats** -- real reference data
   (e.g. real APC data's "Genoplesium insigne", which recurs under more than one non-"accepted" status)
   can list the same `canonical_name`/`scientific_name`/binomial/trinomial more than once with different

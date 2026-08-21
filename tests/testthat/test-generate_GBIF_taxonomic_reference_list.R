@@ -47,6 +47,37 @@ test_that("name_rank/name_kingdom must be length 1 or match taxon_name", {
   )
 })
 
+# ---- with_gbif_retry (shared retry wrapper for non-paginated rgbif calls) ----------------------
+
+test_that("resolve_gbif_taxon recovers from a transient name_backbone() failure via with_gbif_retry", {
+  attempts <- 0
+  local_mocked_bindings(
+    name_backbone = function(...) {
+      attempts <<- attempts + 1
+      if (attempts < 3) stop("simulated transient network failure")
+      gbif_backbone_match(1, "Boronia Sm.", rank = "GENUS")
+    },
+    .package = "rgbif"
+  )
+
+  root <- resolve_gbif_taxon("Boronia", name_rank = NULL, name_kingdom = NULL)
+
+  expect_equal(attempts, 3)
+  expect_equal(root$key, 1L)
+})
+
+test_that("with_gbif_retry gives up and errors clearly after exhausting attempts", {
+  local_mocked_bindings(
+    name_backbone = function(...) stop("persistent simulated failure"),
+    .package = "rgbif"
+  )
+
+  expect_error(
+    resolve_gbif_taxon("Boronia", name_rank = NULL, name_kingdom = NULL),
+    "persistent simulated failure"
+  )
+})
+
 # ---- recycle_against_taxon_name -----------------------------------------
 
 test_that("recycle_against_taxon_name recycles, passes through, or errors", {
@@ -217,6 +248,279 @@ test_that("fetch_gbif_taxon_tree pages through results beyond one page", {
   # 1 root + `total` descendants, all unique
   expect_equal(nrow(tree), total + 1)
   expect_equal(length(unique(tree$key)), total + 1)
+})
+
+test_that("fetch_gbif_taxon_tree fetches pages concurrently via parallel_requests > 1, with no data loss", {
+  # regression/coverage test for the parallel::mclapply() path specifically -- the previous test above
+  # only ever has one *remaining* page (total = 1500, page_limit = 1000), so n_workers collapses to 1
+  # and it never actually exercises mclapply(). Here total = 3500 gives 3 remaining pages (1000, 2000,
+  # 3000), with parallel_requests = 2 forcing genuine concurrent fetching. Also confirms
+  # local_mocked_bindings()'s mock survives mclapply()'s fork (each worker is a forked copy of this
+  # process, inheriting whatever's already mocked at fork time) -- if it didn't, the mocked
+  # `name_lookup`/`name_usage` wouldn't be visible in the child and this would error trying to hit the
+  # real network instead.
+  cache_dir <- withr::local_tempdir()
+  page_limit <- 1000
+  total <- 3500
+  full_data <- gbif_taxon_row(
+    key = seq_len(total) + 1L,
+    scientificName = paste("Species", seq_len(total)),
+    rank = "SPECIES",
+    genus = "Boronia"
+  )
+
+  local_mocked_bindings(
+    name_lookup = function(higherTaxonKey, datasetKey, limit, start, ...) {
+      end <- min(start + limit, total)
+      idx <- seq.int(start + 1, end)
+      gbif_lookup_page(full_data[idx, ], count = total)
+    },
+    name_usage = function(key, ...) list(data = gbif_taxon_row(key, scientificName = "Boronia Sm.", rank = "GENUS")),
+    .package = "rgbif"
+  )
+
+  tree <- fetch_gbif_taxon_tree(
+    root_key = 1, cache_dir = cache_dir, refresh_cache = FALSE,
+    max_cache_age_days = 30, quiet = TRUE, max_taxa = 5000, parallel_requests = 2
+  )
+
+  # 1 root + `total` descendants, all unique -- every page accounted for, none dropped/duplicated by
+  # fetching them out of sequence
+  expect_equal(nrow(tree), total + 1)
+  expect_equal(length(unique(tree$key)), total + 1)
+  expect_setequal(tree$key, c(1L, seq_len(total) + 1L))
+})
+
+test_that("fetch_gbif_taxon_tree errors clearly if a page fails, rather than silently losing it", {
+  cache_dir <- withr::local_tempdir()
+  page_limit <- 1000
+  total <- 3500
+  full_data <- gbif_taxon_row(
+    key = seq_len(total) + 1L,
+    scientificName = paste("Species", seq_len(total)),
+    rank = "SPECIES",
+    genus = "Boronia"
+  )
+
+  local_mocked_bindings(
+    name_lookup = function(higherTaxonKey, datasetKey, limit, start, ...) {
+      if (start == 2000) stop("simulated network failure")
+      end <- min(start + limit, total)
+      idx <- seq.int(start + 1, end)
+      gbif_lookup_page(full_data[idx, ], count = total)
+    },
+    name_usage = function(key, ...) list(data = gbif_taxon_row(key, scientificName = "Boronia Sm.", rank = "GENUS")),
+    .package = "rgbif"
+  )
+
+  expect_error(
+    fetch_gbif_taxon_tree(
+      root_key = 1, cache_dir = cache_dir, refresh_cache = FALSE,
+      max_cache_age_days = 30, quiet = TRUE, max_taxa = 5000, parallel_requests = 2
+    ),
+    "failed on"
+  )
+})
+
+test_that("fetch_gbif_taxon_tree retries a page that fails transiently, rather than giving up immediately", {
+  # a page that fails once or twice before succeeding (a transient network/TLS blip, observed in
+  # practice on a large fetch) should still end up in the final tree -- not be treated as a permanent
+  # failure. Uses parallel_requests = 1 to keep the attempt counter (an ordinary R environment, `<<-`'d
+  # into) meaningful without any fork-related complications -- the retry logic itself lives inside
+  # fetch_page_with_retry(), called identically whether or not mclapply() is used, so this exercises
+  # the same code the parallel path relies on.
+  cache_dir <- withr::local_tempdir()
+  page_limit <- 1000
+  total <- 2500
+  full_data <- gbif_taxon_row(
+    key = seq_len(total) + 1L,
+    scientificName = paste("Species", seq_len(total)),
+    rank = "SPECIES",
+    genus = "Boronia"
+  )
+
+  attempts_at_1000 <- 0
+
+  local_mocked_bindings(
+    name_lookup = function(higherTaxonKey, datasetKey, limit, start, ...) {
+      if (start == 1000) {
+        attempts_at_1000 <<- attempts_at_1000 + 1
+        if (attempts_at_1000 < 3) stop("simulated transient network failure")
+      }
+      end <- min(start + limit, total)
+      idx <- seq.int(start + 1, end)
+      gbif_lookup_page(full_data[idx, ], count = total)
+    },
+    name_usage = function(key, ...) list(data = gbif_taxon_row(key, scientificName = "Boronia Sm.", rank = "GENUS")),
+    .package = "rgbif"
+  )
+
+  tree <- fetch_gbif_taxon_tree(
+    root_key = 1, cache_dir = cache_dir, refresh_cache = FALSE,
+    max_cache_age_days = 30, quiet = TRUE, max_taxa = 5000, parallel_requests = 1
+  )
+
+  expect_equal(attempts_at_1000, 3)
+  expect_equal(nrow(tree), total + 1)
+})
+
+test_that("parallel_requests = 1 fetches strictly sequentially and still returns the full tree", {
+  cache_dir <- withr::local_tempdir()
+  page_limit <- 1000
+  total <- 2500
+  full_data <- gbif_taxon_row(
+    key = seq_len(total) + 1L,
+    scientificName = paste("Species", seq_len(total)),
+    rank = "SPECIES",
+    genus = "Boronia"
+  )
+
+  local_mocked_bindings(
+    name_lookup = function(higherTaxonKey, datasetKey, limit, start, ...) {
+      end <- min(start + limit, total)
+      idx <- seq.int(start + 1, end)
+      gbif_lookup_page(full_data[idx, ], count = total)
+    },
+    name_usage = function(key, ...) list(data = gbif_taxon_row(key, scientificName = "Boronia Sm.", rank = "GENUS")),
+    .package = "rgbif"
+  )
+
+  tree <- fetch_gbif_taxon_tree(
+    root_key = 1, cache_dir = cache_dir, refresh_cache = FALSE,
+    max_cache_age_days = 30, quiet = TRUE, max_taxa = 5000, parallel_requests = 1
+  )
+
+  expect_equal(nrow(tree), total + 1)
+})
+
+# ---- fetch_gbif_taxon_tree_by_children (clades exceeding GBIF's max lookup offset) -----------------
+
+test_that("fetch_gbif_taxon_tree splits into children and recurses when a clade exceeds the max lookup offset", {
+  # root_key = 1 has (mocked) more descendants than gbif_max_lookup_offset allows to page directly --
+  # it should split into its two children (10, 20) and fetch each one's own (small, directly pageable)
+  # tree instead, combining the pieces into one result equivalent to what a direct fetch would have
+  # returned had GBIF allowed it.
+  cache_dir <- withr::local_tempdir()
+
+  local_mocked_bindings(
+    name_lookup = function(higherTaxonKey, datasetKey, limit, start, ...) {
+      if (higherTaxonKey == 1) {
+        # huge -- content doesn't matter, only `count` (this page's data is never used once the
+        # children-split path is taken)
+        return(gbif_lookup_page(gbif_taxon_row(integer(0), scientificName = character(0), rank = character(0)), count = 999999))
+      }
+      if (higherTaxonKey == 10) {
+        data <- gbif_taxon_row(key = 101:105, scientificName = paste("Childaxa alpha", 1:5), rank = "SPECIES", genus = "Childaxa")
+        return(gbif_lookup_page(data, count = nrow(data)))
+      }
+      if (higherTaxonKey == 20) {
+        data <- gbif_taxon_row(key = 201:207, scientificName = paste("Childbeta beta", 1:7), rank = "SPECIES", genus = "Childbeta")
+        return(gbif_lookup_page(data, count = nrow(data)))
+      }
+      stop("unexpected higherTaxonKey in mock: ", higherTaxonKey)
+    },
+    name_usage = function(key, data = NULL, ...) {
+      if (!is.null(data) && identical(data, "children")) {
+        if (key == 1) {
+          return(list(
+            meta = list(offset = 0, limit = 1000, endOfRecords = TRUE),
+            data = tibble::tibble(key = c(10L, 20L), canonicalName = c("Childaxa", "Childbeta"), rank = c("SUBORDER", "SUBORDER"))
+          ))
+        }
+        return(list(meta = list(offset = 0, limit = 1000, endOfRecords = TRUE), data = tibble::tibble()))
+      }
+      list(data = gbif_taxon_row(key, scientificName = paste0("Root", key), rank = "ORDER"))
+    },
+    .package = "rgbif"
+  )
+
+  tree <- fetch_gbif_taxon_tree(
+    root_key = 1, cache_dir = cache_dir, refresh_cache = FALSE,
+    max_cache_age_days = 30, quiet = TRUE, max_taxa = 10^7, force_large_fetch = TRUE
+  )
+
+  # root (1) + child roots (10, 20) + 5 + 7 species = 15 rows total
+  expect_equal(nrow(tree), 15)
+  expect_setequal(tree$key, c(1L, 10L, 20L, 101:105, 201:207))
+})
+
+test_that("fetch_gbif_taxon_tree_by_children resumes from cache without refetching an already-completed child", {
+  # a child whose tree is already cached (e.g. from an earlier, interrupted run) should be read straight
+  # from disk, not refetched -- the mock errors if name_lookup is ever called for that child's key, so
+  # this fails loudly if the caching/resume behaviour regresses
+  cache_dir <- withr::local_tempdir()
+
+  # pre-populate child 10's cache, exactly as fetch_gbif_taxon_tree() itself would have written it
+  saveRDS(
+    gbif_taxon_row(key = c(10L, 101L, 102L), scientificName = c("Childaxa", "Childaxa one", "Childaxa two"), rank = c("SUBORDER", "SPECIES", "SPECIES"), genus = c(NA, "Childaxa", "Childaxa")),
+    file.path(cache_dir, "gbif_tree_10.rds")
+  )
+
+  local_mocked_bindings(
+    name_lookup = function(higherTaxonKey, datasetKey, limit, start, ...) {
+      if (higherTaxonKey == 1) {
+        return(gbif_lookup_page(gbif_taxon_row(integer(0), scientificName = character(0), rank = character(0)), count = 999999))
+      }
+      if (higherTaxonKey == 20) {
+        data <- gbif_taxon_row(key = 201:203, scientificName = paste("Childbeta beta", 1:3), rank = "SPECIES", genus = "Childbeta")
+        return(gbif_lookup_page(data, count = nrow(data)))
+      }
+      stop("name_lookup should not have been called for an already-cached child (key ", higherTaxonKey, ")")
+    },
+    name_usage = function(key, data = NULL, ...) {
+      if (!is.null(data) && identical(data, "children")) {
+        if (key == 1) {
+          return(list(
+            meta = list(offset = 0, limit = 1000, endOfRecords = TRUE),
+            data = tibble::tibble(key = c(10L, 20L), canonicalName = c("Childaxa", "Childbeta"), rank = c("SUBORDER", "SUBORDER"))
+          ))
+        }
+        return(list(meta = list(offset = 0, limit = 1000, endOfRecords = TRUE), data = tibble::tibble()))
+      }
+      if (key == 10) stop("name_usage(key=10) should not have been called for an already-cached child")
+      list(data = gbif_taxon_row(key, scientificName = paste0("Root", key), rank = "ORDER"))
+    },
+    .package = "rgbif"
+  )
+
+  tree <- fetch_gbif_taxon_tree(
+    root_key = 1, cache_dir = cache_dir, refresh_cache = FALSE,
+    max_cache_age_days = 30, quiet = TRUE, max_taxa = 10^7, force_large_fetch = TRUE
+  )
+
+  # child 10's cached tree (3 rows) + root (1) + child 20's freshly-fetched tree (20 + 3 species = 4 rows)
+  expect_setequal(tree$key, c(1L, 10L, 101L, 102L, 20L, 201:203))
+})
+
+test_that("fetch_gbif_taxon_tree errors clearly if splitting into children never gets small enough", {
+  # a taxon whose children are (implausibly) reported as no smaller than itself should error clearly
+  # after a bounded number of recursive splits, rather than recursing forever
+  cache_dir <- withr::local_tempdir()
+
+  local_mocked_bindings(
+    name_lookup = function(higherTaxonKey, datasetKey, limit, start, ...) {
+      gbif_lookup_page(gbif_taxon_row(integer(0), scientificName = character(0), rank = character(0)), count = 999999)
+    },
+    name_usage = function(key, data = NULL, ...) {
+      if (!is.null(data) && identical(data, "children")) {
+        # every taxon reports exactly one child, itself no smaller -- never terminates on its own
+        return(list(
+          meta = list(offset = 0, limit = 1000, endOfRecords = TRUE),
+          data = tibble::tibble(key = key + 1L, canonicalName = "Stillhuge", rank = "SUBORDER")
+        ))
+      }
+      list(data = gbif_taxon_row(key, scientificName = paste0("Root", key), rank = "ORDER"))
+    },
+    .package = "rgbif"
+  )
+
+  expect_error(
+    fetch_gbif_taxon_tree(
+      root_key = 1, cache_dir = cache_dir, refresh_cache = FALSE,
+      max_cache_age_days = 30, quiet = TRUE, max_taxa = 10^7, force_large_fetch = TRUE
+    ),
+    "levels deep"
+  )
 })
 
 # ---- fetch_gbif_country_keys -----------------------------------------------

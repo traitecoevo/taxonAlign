@@ -4,6 +4,56 @@
 # checklists GBIF indexes.
 gbif_backbone_dataset_key <- "d7dddbf4-2cf0-4f39-9b2a-bb099caae36c"
 
+# GBIF's species/name_lookup search endpoint refuses to serve pages past this offset -- confirmed via a
+# direct call against the raw GBIF REST API (not just rgbif's wrapper): `"Max offset of 100000
+# exceeded."`. This is a hard server-side limit (a common deep-pagination guard on search-style APIs),
+# not something more retries or more parallel requests can work around -- a clade with more descendants
+# than this (e.g. Arthropoda: ~3.1M, Mollusca: ~484k) has to be split into its immediate children and
+# fetched recursively instead (see fetch_gbif_taxon_tree_by_children()), each piece small enough to page
+# directly. A bulk full-backbone download exists as an alternative
+# (https://hosted-datasets.gbif.org/datasets/backbone/current/backbone.zip) but was deliberately not
+# used: it's a ~1GB, infrequently-updated (checked: last modified over a year ago) snapshot covering
+# every kingdom, and using it for just the huge clades would leave the combined reference with silently
+# inconsistent currency (some phyla live/current, others years stale) -- worse than being slower but
+# uniformly live.
+gbif_max_lookup_offset <- 100000
+
+# Every rgbif call in this file passes this explicitly, rather than relying on rgbif's own default
+# (`list(http_version = 2)`, no timeout at all) -- found necessary in practice on a long, many-thousand-
+# request fetch (Arthropoda's recursive split): a request occasionally hangs indefinitely rather than
+# erroring or timing out on its own (observed directly -- worker processes sitting at ~0% CPU for 30+
+# minutes with no error, no data, and no further log output), which blocks the entire fetch forever
+# with no chance for fetch_page_with_retry() to ever kick in, since a retry can only happen after a
+# request actually fails. An explicit `timeout` (in seconds, via libcurl's CURLOPT_TIMEOUT) turns a hang
+# into an ordinary, retry-able error instead.
+#
+# `timeout = 120`, not something shorter, based on a direct measurement, not a guess: GBIF's own deep-
+# pagination genuinely gets slower as the requested offset grows within a single higherTaxonKey query
+# (normal for an Elasticsearch-backed search API -- each page costs more to compute the further in it
+# is), confirmed by fetching all 29 pages of one persistently-timing-out large clade (GBIF key 542,
+# Sarcoptiformes, one at a time with no concurrency) and finding legitimate response times up to 78s at
+# high offsets, vs. 5-8s at low ones. An initial `timeout = 60` was hitting exactly this: individually
+# borderline-slow-but-real pages, pushed over the edge by `parallel_requests`' own concurrent load
+# (multiple pages competing for bandwidth at once) -- a self-inflicted contention issue, not GBIF
+# actually failing. 120s gives real margin above the measured worst case.
+gbif_curlopts <- list(http_version = 2, timeout = 120)
+
+# Retries `thunk()` (a zero-argument function, so each attempt genuinely re-executes the call rather
+# than reusing R's cached promise value) up to `max_attempts` times with a short backoff -- shared by
+# every rgbif call in this file other than the paginated tree-page path, which has its own variant
+# (fetch_page_with_retry(), below) since it needs to hand a try-error back to its caller for cross-page
+# aggregation rather than stopping immediately. Used for name resolution, root usage lookups, children
+# pages and the occurrence facet -- any of which can hit the same transient network/TLS/timeout issue
+# found in practice on a very large, long-running fetch (see gbif_curlopts's own comment).
+with_gbif_retry <- function(thunk, max_attempts = 3) {
+  for (attempt in seq_len(max_attempts)) {
+    result <- try(thunk(), silent = TRUE)
+    if (!inherits(result, "try-error")) return(result)
+    if (attempt < max_attempts) Sys.sleep(2 * attempt)
+  }
+  stop(attr(result, "condition")$message, call. = FALSE)
+}
+
 # GBIF's `Rank` enum, ordered from broadest to narrowest. Used to answer
 # "this rank and below" filtering without needing a live taxonomy lookup.
 gbif_rank_order <- c(
@@ -32,6 +82,27 @@ gbif_rank_order <- c(
 #' including calls that filter by a different `country` or `rank` -- are served from
 #' the cache and return almost instantly. Use `refresh_cache = TRUE` to force a fresh
 #' download, e.g. once the cache is more than a few weeks old.
+#'
+#' @details
+#' The full tree is always fetched (and cached) regardless of `country` -- `country`
+#' only filters the already-fetched tree afterwards, it never narrows the download
+#' itself. This is deliberate, not an easy optimisation left undone: GBIF's taxonomy
+#' browsing endpoint (which the tree fetch uses) has no country concept at all --
+#' only its *occurrence-record* endpoint does, and occurrence records are normally
+#' tagged with a taxon's *accepted* usage, not its synonyms. Filtering to occurrence-
+#' derived keys before fetching the tree would silently drop every synonym of a taxon
+#' that occurs in `country` (a synonym itself essentially never has its own occurrence
+#' records). Fetching the whole tree first, then filtering, is what preserves synonym
+#' coverage. For a very large clade (e.g. an insect order), most of the wall-clock time
+#' is this full-tree fetch; see `parallel_requests` to speed it up.
+#'
+#' A clade with more than 100,000 descendants (e.g. Arthropoda, Mollusca) can't be paged directly at
+#' all -- GBIF's lookup endpoint refuses to serve pages past that offset. For a clade this large, the
+#' tree is instead fetched by automatically splitting into its immediate children and fetching each one
+#' recursively (splitting again if a child is itself still too large), then combining the pieces. Every
+#' piece is cached under its own GBIF key exactly like a directly-fetched tree, so a very large fetch
+#' interrupted partway through (a crash, a reboot, `Ctrl-C`) is resumable for free: re-running the same
+#' call only re-fetches whichever pieces aren't already cached.
 #'
 #' @param taxon_name Character vector of one or more taxon names to build the
 #'  reference list from (e.g. `"Rutaceae"`, `"Boronia"`, `"Lepidoptera"`). Every rank
@@ -70,6 +141,14 @@ gbif_rank_order <- c(
 #'  requesting a very slow, very large first-time download. Defaults to 50000.
 #' @param force_large_fetch Logical; set to `TRUE` to proceed with a fetch that would
 #'  otherwise be blocked by `max_taxa`. Defaults to `FALSE`.
+#' @param parallel_requests Numeric; how many of the paginated GBIF requests used to
+#'  fetch a large taxonomic tree to run concurrently. The tree is always fetched in full
+#'  regardless of `country` (see Details) -- for a large clade this can mean thousands of
+#'  1000-row pages, previously fetched one at a time. Set to `1` to fetch strictly
+#'  sequentially (the old behaviour). Only takes effect on Unix-alikes (macOS/Linux) --
+#'  [parallel::mclapply()] silently falls back to sequential on Windows, where this has
+#'  no effect. Defaults to 4; raise or lower depending on how many concurrent requests
+#'  you're comfortable sending GBIF.
 #' @param quiet Logical; suppress progress messages. Defaults to `FALSE`.
 #'
 #' @return A tibble with one row per taxon, with column names matching those used by
@@ -108,6 +187,7 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
                                                facet_limit = 100000,
                                                max_taxa = 50000,
                                                force_large_fetch = FALSE,
+                                               parallel_requests = 4,
                                                quiet = FALSE) {
 
   if (missing(taxon_name) || length(taxon_name) == 0 || anyNA(taxon_name)) {
@@ -155,7 +235,8 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
       max_cache_age_days = max_cache_age_days,
       quiet = quiet,
       max_taxa = max_taxa,
-      force_large_fetch = force_large_fetch
+      force_large_fetch = force_large_fetch,
+      parallel_requests = parallel_requests
     )
   }) |>
     purrr::list_rbind() |>
@@ -232,7 +313,11 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
 # resolve a taxon name (of any rank) to its GBIF backbone usageKey, following
 # synonym links so we always walk the tree from the accepted usage
 resolve_gbif_taxon <- function(taxon_name, name_rank, name_kingdom) {
-  match <- rgbif::name_backbone(name = taxon_name, rank = name_rank, kingdom = name_kingdom, verbose = FALSE)
+  match <- with_gbif_retry(function() {
+    rgbif::name_backbone(
+      name = taxon_name, rank = name_rank, kingdom = name_kingdom, verbose = FALSE, curlopts = gbif_curlopts
+    )
+  })
 
   if (is.null(match) || nrow(match) == 0 || isTRUE(match$matchType == "NONE")) {
     # a homonym across kingdoms (e.g. the plant and bird genera both named
@@ -278,7 +363,8 @@ resolve_gbif_taxon <- function(taxon_name, name_rank, name_kingdom) {
 # paginated batches -- this is the piece that replaces the old one-API-call-
 # per-taxon loop and is what makes repeat/filtered lookups fast
 fetch_gbif_taxon_tree <- function(root_key, cache_dir, refresh_cache, max_cache_age_days, quiet,
-                                   max_taxa = 50000, force_large_fetch = FALSE) {
+                                   max_taxa = 50000, force_large_fetch = FALSE, parallel_requests = 4,
+                                   .depth = 0) {
 
   cache_file <- file.path(cache_dir, paste0("gbif_tree_", root_key, ".rds"))
 
@@ -288,19 +374,28 @@ fetch_gbif_taxon_tree <- function(root_key, cache_dir, refresh_cache, max_cache_
   }
 
   page_limit <- 1000
-  first_page <- rgbif::name_lookup(
-    higherTaxonKey = root_key,
-    datasetKey = gbif_backbone_dataset_key,
-    limit = page_limit,
-    start = 0
-  )
+  # unlike every other rgbif call in this file, this one had no retry wrapper at all until a real
+  # failure here (deep inside a large recursive split -- ~5,400 children into fetching Insecta's own
+  # breakdown) took down the entire branch on a single transient failure, with no chance to recover.
+  first_page <- with_gbif_retry(function() {
+    rgbif::name_lookup(
+      higherTaxonKey = root_key,
+      datasetKey = gbif_backbone_dataset_key,
+      limit = page_limit,
+      start = 0,
+      curlopts = gbif_curlopts
+    )
+  })
   total <- first_page$meta$count
 
   # a bare taxon name can resolve much higher than intended (see the
   # HIGHERRANK guard in `resolve_gbif_taxon()`); this is a second, independent
   # backstop so an unexpectedly huge clade doesn't silently trigger a fetch
-  # that could take hours, rather than erroring in seconds
-  if (total > max_taxa && !force_large_fetch) {
+  # that could take hours, rather than erroring in seconds. Only checked at the top level (.depth == 0)
+  # -- a recursive call (see fetch_gbif_taxon_tree_by_children()) is fetching one piece of a clade the
+  # caller already explicitly committed to via force_large_fetch, so it always proceeds regardless of
+  # how that one piece's own size compares to max_taxa.
+  if (.depth == 0 && total > max_taxa && !force_large_fetch) {
     stop(
       "GBIF key ", root_key, " has ", total, " descendant taxa, which is more than `max_taxa` (",
       max_taxa, "). This is either intentional (a very large clade) or a sign `taxon_name` resolved ",
@@ -309,34 +404,194 @@ fetch_gbif_taxon_tree <- function(root_key, cache_dir, refresh_cache, max_cache_
     )
   }
 
-  pages <- list(first_page$data)
-
-  if (!quiet) {
-    message(sprintf(
-      "Fetching %d descendant taxa for GBIF key %d from GBIF (%d page%s)...",
-      total, root_key, ceiling(max(total, 1) / page_limit), if (total > page_limit) "s" else ""
+  # GBIF's name_lookup() can't page past offset `gbif_max_lookup_offset` at all (a hard server-side
+  # limit -- see that constant's own comment) -- split into root_key's immediate children and fetch
+  # each recursively instead, rather than attempting (and failing) to page this directly.
+  if (total > gbif_max_lookup_offset) {
+    return(fetch_gbif_taxon_tree_by_children(
+      root_key = root_key, total = total, cache_file = cache_file, cache_dir = cache_dir,
+      refresh_cache = refresh_cache, max_cache_age_days = max_cache_age_days, quiet = quiet,
+      max_taxa = max_taxa, parallel_requests = parallel_requests, .depth = .depth
     ))
   }
 
   offsets <- if (total > page_limit) seq(page_limit, total - 1, by = page_limit) else integer(0)
-  for (start in offsets) {
-    page <- rgbif::name_lookup(
+  n_workers <- max(1, min(parallel_requests, length(offsets)))
+
+  if (!quiet) {
+    message(sprintf(
+      "Fetching %d descendant taxa for GBIF key %d from GBIF (%d page%s%s)...",
+      total, root_key, ceiling(max(total, 1) / page_limit), if (total > page_limit) "s" else "",
+      if (n_workers > 1) sprintf(", %d at a time", n_workers) else ""
+    ))
+  }
+
+  fetch_page <- function(start) {
+    rgbif::name_lookup(
       higherTaxonKey = root_key,
       datasetKey = gbif_backbone_dataset_key,
       limit = page_limit,
-      start = start
-    )
-    pages[[length(pages) + 1]] <- page$data
-    if (!quiet) message(sprintf("  ...%d/%d", min(start + page_limit, total), total))
+      start = start,
+      curlopts = gbif_curlopts
+    )$data
   }
 
-  root_usage <- rgbif::name_usage(key = root_key)$data
+  # a single page occasionally fails with a transient network/TLS error (observed in practice on a
+  # large, thousands-of-pages fetch -- e.g. "LibreSSL SSL_read... bad decrypt") rather than anything
+  # wrong with the request itself; retrying a couple of times with a short backoff resolves it almost
+  # always. Without this, one flaky page would fail the *entire* tree fetch (see the "no silent partial
+  # data" check below) even after every other page of a very large, slow fetch already succeeded --
+  # wasteful for a clade with thousands of pages, where redoing the whole fetch from scratch is
+  # expensive. Retried inside fetch_page() itself (not at the mclapply()/lapply() call site) so it
+  # applies identically whichever of those two actually runs it.
+  fetch_page_with_retry <- function(start, max_attempts = 3) {
+    for (attempt in seq_len(max_attempts)) {
+      result <- try(fetch_page(start), silent = TRUE)
+      if (!inherits(result, "try-error")) return(result)
+      if (attempt < max_attempts) Sys.sleep(2 * attempt)
+    }
+    result
+  }
+
+  # the remaining pages (beyond the first, already fetched above) are independent requests -- fetch
+  # them concurrently via parallel::mclapply() rather than one at a time. This is a fork-based
+  # parallelism (Unix-alike only -- mclapply silently falls back to sequential on Windows, so this is
+  # always correct, just not always faster) chosen over adding a new async-HTTP dependency, since
+  # rgbif::name_lookup() itself has no batching/async option to hook into. For a large clade (tens of
+  # thousands of pages of descendants) this is where nearly all the wall-clock time goes, so this is a
+  # meaningful speedup, not a cosmetic one.
+  remaining_pages <- if (length(offsets) == 0) {
+    list()
+  } else if (n_workers > 1) {
+    parallel::mclapply(offsets, fetch_page_with_retry, mc.cores = n_workers)
+  } else {
+    lapply(offsets, fetch_page_with_retry)
+  }
+
+  # mclapply() doesn't propagate a worker's error to the caller -- it captures it and returns a
+  # "try-error" object for that one job instead, so a page silently going missing would otherwise
+  # produce an incomplete tree with no indication anything went wrong. Fail loudly instead, naming how
+  # many pages were lost, matching this package's existing "clear error over silent partial data"
+  # convention (e.g. the `country` code / `canonical_name`-NA checks elsewhere in the package).
+  failed <- vapply(remaining_pages, function(x) inherits(x, "try-error"), logical(1))
+  if (any(failed)) {
+    stop(
+      "Fetching GBIF key ", root_key, "'s taxonomic tree failed on ", sum(failed), " of ",
+      length(offsets), " page(s). First error: ", attr(remaining_pages[failed][[1]], "condition")$message
+    )
+  }
+
+  if (!quiet && length(offsets) > 0) {
+    message(sprintf("  ...fetched all %d page(s).", length(offsets) + 1))
+  }
+
+  pages <- c(list(first_page$data), remaining_pages)
+
+  root_usage <- with_gbif_retry(function() rgbif::name_usage(key = root_key, curlopts = gbif_curlopts)$data)
 
   tree <- dplyr::bind_rows(root_usage, pages) |>
     dplyr::distinct(.data$key, .keep_all = TRUE)
 
   saveRDS(tree, cache_file)
   tree
+}
+
+# `total` exceeds gbif_max_lookup_offset -- name_lookup() can't page root_key's descendants directly
+# (see that constant's own comment). Splits into root_key's immediate children instead and fetches each
+# one recursively via fetch_gbif_taxon_tree() itself -- a child may still be too large and need
+# splitting again (hence the .depth-guarded recursion), but every taxon's children are smaller than the
+# taxon itself, so this always terminates.
+#
+# Each recursive call caches its own result under its own key, exactly like the direct-fetch path --
+# this makes a large, multi-child fetch naturally resumable for free: if interrupted partway through
+# (a crash, a reboot, hitting Ctrl-C), whichever children already finished are cached on disk, and
+# simply calling generate_GBIF_taxonomic_reference_list() again only re-fetches whatever's still
+# missing, rather than restarting the whole clade from scratch. No separate checkpointing mechanism
+# needed -- the disk cache already used by every fetch (of any size) *is* the checkpoint.
+#
+# Children are fetched one at a time (not in parallel) -- each child's own fetch already parallelises
+# across *its* pages internally (parallel_requests), and nesting mclapply() inside mclapply() would
+# oversubscribe cores (e.g. 4 children x 4 pages each = 16-way contention on what might be a 4-8 core
+# machine) for no real benefit, since the expensive part (many pages within one large child) is already
+# concurrent.
+fetch_gbif_taxon_tree_by_children <- function(root_key, total, cache_file, cache_dir, refresh_cache,
+                                               max_cache_age_days, quiet, max_taxa, parallel_requests,
+                                               .depth) {
+
+  # a taxon's children should always be smaller than the taxon itself -- if we're still hitting the
+  # offset limit after several levels of splitting, something is structurally wrong with this part of
+  # the backbone (or a bug in this function) rather than a clade that just genuinely needs one more
+  # split; fail clearly rather than recursing indefinitely.
+  if (.depth >= 6) {
+    stop(
+      "GBIF key ", root_key, " (", total, " descendants) still exceeds GBIF's max lookup offset (",
+      gbif_max_lookup_offset, ") after splitting into children ", .depth, " levels deep. This is ",
+      "unexpected -- a taxon's children should be smaller than the taxon itself -- and likely means ",
+      "something is wrong with this part of the GBIF backbone. Investigate manually at ",
+      "https://www.gbif.org/species/", root_key, "."
+    )
+  }
+
+  if (!quiet) {
+    message(sprintf(
+      "GBIF key %d has %d descendants, more than GBIF's max lookup offset (%d) allows to page directly -- splitting into its immediate children...",
+      root_key, total, gbif_max_lookup_offset
+    ))
+  }
+
+  children <- fetch_gbif_taxon_children(root_key)
+
+  if (nrow(children) == 0) {
+    stop(
+      "GBIF key ", root_key, " has ", total, " descendants (more than GBIF's max lookup offset allows ",
+      "to page directly) but reports no children to split into -- can't fetch this taxon's tree this ",
+      "way. Investigate manually at https://www.gbif.org/species/", root_key, "."
+    )
+  }
+
+  child_trees <- purrr::map(children$key, function(child_key) {
+    fetch_gbif_taxon_tree(
+      root_key = child_key, cache_dir = cache_dir, refresh_cache = refresh_cache,
+      max_cache_age_days = max_cache_age_days, quiet = quiet, max_taxa = max_taxa,
+      # already committed to fetching this whole clade -- every child is fetched regardless of its own
+      # size relative to max_taxa
+      force_large_fetch = TRUE, parallel_requests = parallel_requests, .depth = .depth + 1
+    )
+  })
+
+  root_usage <- with_gbif_retry(function() rgbif::name_usage(key = root_key, curlopts = gbif_curlopts)$data)
+
+  tree <- dplyr::bind_rows(c(list(root_usage), child_trees)) |>
+    dplyr::distinct(.data$key, .keep_all = TRUE)
+
+  saveRDS(tree, cache_file)
+  tree
+}
+
+# the immediate (one-rank-below) children of `root_key`, not its full descendant subtree -- paginated
+# the same way as the main tree fetch, since a very large clade can have more direct children than
+# name_usage()'s own default page size (e.g. hundreds of families under a huge order). Unlike
+# name_lookup()'s paged response, name_usage(data = "children")'s `meta` has no `count` field -- only
+# `endOfRecords` -- so pages are fetched until that flag is set (or an empty page is returned) rather
+# than computed from a known total up front.
+fetch_gbif_taxon_children <- function(root_key) {
+  page_limit <- 1000
+  pages <- list()
+  start <- 0
+
+  repeat {
+    page <- with_gbif_retry(function() {
+      rgbif::name_usage(
+        key = root_key, data = "children", datasetKey = gbif_backbone_dataset_key,
+        limit = page_limit, start = start, curlopts = gbif_curlopts
+      )
+    })
+    pages[[length(pages) + 1]] <- page$data
+    if (isTRUE(page$meta$endOfRecords) || nrow(page$data) == 0) break
+    start <- start + page_limit
+  }
+
+  dplyr::bind_rows(pages)
 }
 
 # fetch (and cache) the set of backbone taxonKeys with at least one GBIF
@@ -357,13 +612,16 @@ fetch_gbif_country_keys <- function(roots, country, cache_dir,
 
     if (!quiet) message("Querying GBIF occurrences in ", country, " for GBIF key ", root$key, "...")
 
-    occ <- rgbif::occ_search(
-      taxonKey = root$key,
-      country = country,
-      limit = 0,
-      facet = "taxonKey",
-      facetLimit = facet_limit
-    )
+    occ <- with_gbif_retry(function() {
+      rgbif::occ_search(
+        taxonKey = root$key,
+        country = country,
+        limit = 0,
+        facet = "taxonKey",
+        facetLimit = facet_limit,
+        curlopts = gbif_curlopts
+      )
+    })
 
     keys <- if ("name" %in% names(occ$facets$taxonKey)) as.integer(occ$facets$taxonKey$name) else integer(0)
 

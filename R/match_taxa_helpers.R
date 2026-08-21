@@ -89,20 +89,38 @@ fuzzy_match <- function(txt, accepted_list,
   ## need to add `unique`, because for `APC-known`,
   ## sometimes duplicate canonical names each with a different taxonomic
   ## status, and then you just want to retain the first one
-  accepted_list <- accepted_list[(stringr::str_extract(accepted_list, "[:alpha:]") |>
-                                    stringr::str_to_lower()) ==
-                                    (txt_word1_start |> stringr::str_to_lower())] |>
+  ##
+  ## `accepted_list_word1_start` is computed once and checked for NA explicitly, rather than comparing
+  ## straight against `txt_word1_start` inline as this used to -- real, messy worldwide GBIF data can
+  ## contain a reference entry with no alphabetic character at all (found in practice: malformed
+  ## higher-rank backbone rows whose `canonicalName` is an author-citation string like "Chandler, 1935"
+  ## rather than a taxon name -- some of *those* entries' first extracted token has no letter, e.g. a
+  ## bare year). `str_extract(..., "[:alpha:]")` returns NA for such an entry, and subsetting a vector
+  ## with a logical index that itself contains NA doesn't drop that entry -- it inserts a literal NA
+  ## *value* into the result instead. That NA then silently poisons every distance/min() computation
+  ## below with NA, which is what eventually surfaces as "missing value where TRUE/FALSE needed" deep
+  ## inside check_match() -- a very confusing error far from its actual cause. Excluding
+  ## `!is.na(accepted_list_word1_start)` up front means such a malformed entry is correctly treated as
+  ## "can't possibly match" (it has no first letter to compare) rather than injecting NA.
+  accepted_list_word1_start <- stringr::str_extract(accepted_list, "[:alpha:]") |> stringr::str_to_lower()
+  accepted_list <- accepted_list[
+    !is.na(accepted_list_word1_start) & accepted_list_word1_start == (txt_word1_start |> stringr::str_to_lower())
+  ] |>
                     unique()
 
   ## identify the number of characters that must change for the text string to
   ## match each of the possible accepted names
   if (length(accepted_list) > 0) {
   distance_c <- stringdist::stringdist(txt, accepted_list, method = "dl")
-  
+
   ## identify the minimum number of characters that must change for the text
   ## string to match a string in the list of accepted names
-  min_dist_abs_c <-  min(distance_c)
-  min_dist_per_c <-  min(distance_c) / stringr::str_length(txt)
+  ## `na.rm = TRUE` is a defensive backstop, not the primary fix for the malformed-entry issue above
+  ## (that's now excluded from `accepted_list` before ever reaching stringdist()) -- kept anyway so an
+  ## NA distance from some other, not-yet-seen data-quality issue is treated as "not a candidate"
+  ## rather than poisoning every comparison below with NA.
+  min_dist_abs_c <-  min(distance_c, na.rm = TRUE)
+  min_dist_per_c <-  min(distance_c, na.rm = TRUE) / stringr::str_length(txt)
 
   i <- which(distance_c==min_dist_abs_c)
   potential_matches <- accepted_list[i]
