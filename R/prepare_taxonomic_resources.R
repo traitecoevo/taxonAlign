@@ -31,6 +31,21 @@ taxonAlign_required_cols <- c(
   "genus", "taxon_ID", "accepted_name_usage_ID"
 )
 
+# Column names known, with certainty, to never hold a hierarchy value -- excluded from the implied-
+# higher-rank-row synthesis scan below regardless of the "scan any extra column" default, since these
+# specifically are metadata columns taxonAlign's own loaders always produce, not something a user's own
+# data happens to include. `scientific_name_authorship` is `generate_GBIF_taxonomic_reference_list()`'s
+# own output column -- confirmed in practice against a real, large (358k-row) GBIF-derived reference:
+# every distinct author-citation string in it (e.g. "Plisko, 1965") was being synthesised into its own
+# bogus "taxon" at a fictional rank literally named "scientific_name_authorship" (66,564 such rows, ~10%
+# of the combined resource) -- a real, large-scale version of the "genuinely non-taxonomic extra column"
+# risk that feature's own design comment already flags, not just a theoretical one. Extend this vector
+# as further known-metadata columns turn up, the same "extend, don't guess" convention
+# `taxonAlign_taxon_rank_specificity`/`taxonAlign_taxonomic_status_priority` already use -- a user's own
+# arbitrary extra column is still scanned as before; this list only ever grows with columns taxonAlign
+# itself is responsible for producing.
+taxonAlign_non_hierarchy_cols <- c("scientific_name_authorship")
+
 # Priority order used to disambiguate when the same lookup key (canonical_name, scientific_name,
 # binomial, trinomial, ...) appears more than once with a different taxonomic_status -- match_taxa()'s
 # exact-match blocks use `match()` (first-hit semantics), so taxonomic_resources is sorted by this priority
@@ -281,6 +296,20 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     }
   }
 
+  # normalise taxon_ID/accepted_name_usage_ID to character on each table *before* combining --
+  # bind_rows() below errors outright ("Can't combine ..$taxon_ID <character> and ..$taxon_ID <integer>")
+  # rather than coercing, whenever two supplied tables disagree on this column's type (a real,
+  # easy-to-hit case: generate_GBIF_taxonomic_reference_list()'s own taxon_ID is integer, while AFD/APC
+  # data uses character URI/UUID strings -- combining a GBIF-derived table with an AFD/APC-derived one
+  # hits this immediately). The later, single-table normalisation below (kept for the interactive-input
+  # path, which doesn't reach here) is too late to prevent this specific crash.
+  resolved <- purrr::map(resolved, function(tbl) {
+    tbl |> dplyr::mutate(
+      taxon_ID = as.character(taxon_ID),
+      accepted_name_usage_ID = as.character(accepted_name_usage_ID)
+    )
+  })
+
   if (length(resolved) > 1) {
     order <- if (interactive) {
       prompt_priority_order(names(resolved), user_responses$priority_order)
@@ -323,6 +352,33 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     )
   }
 
+  # A row whose canonical_name is literally the bare name of its own rank (e.g. canonical_name =
+  # "Genus" on a taxon_rank = "genus" row) is just as unmatchable-in-any-useful-sense as an NA one, and
+  # actively hazardous the same way -- found in practice in real GBIF data: a real, if unusual,
+  # taxonomic convention for an undescribed genus/family/etc. is a placeholder scientific name like
+  # "Genus B JS" or "Genus ANIC A" (ANIC = Australian National Insect Collection), and GBIF's own name
+  # parsing strips the placeholder code when extracting canonicalName, leaving just the bare rank word
+  # "Genus". This collides with a *completely unrelated* real-world convention on the *query* side --
+  # morphospecies voucher codes like "Genus 1 sp.01 Corinnidae" also use the literal word "Genus" as a
+  # placeholder for "unidentified genus" -- so match_taxa()'s generic higher-rank matching would
+  # confidently but wrongly resolve such a query to whichever unrelated GBIF placeholder genus happened
+  # to be named just "Genus", rather than correctly failing to match at all. Dropped the same way as the
+  # NA-canonical_name case above, generically for any rank (not just "genus" specifically) since the
+  # same GBIF placeholder-naming convention was also confirmed for "Family"/"Order"/"Tribe"/"Subfamily".
+  n_before <- nrow(taxonomic_resources)
+  taxonomic_resources <- taxonomic_resources |>
+    dplyr::filter(tolower(canonical_name) != tolower(taxon_rank))
+  n_dropped <- n_before - nrow(taxonomic_resources)
+  if (n_dropped > 0) {
+    warning(
+      n_dropped, " row(s) in `taxonomic_resources` have a `canonical_name` that's just the bare name ",
+      "of their own rank (e.g. canonical_name = \"Genus\" at genus rank) and were dropped -- these are ",
+      "a real GBIF placeholder-naming artifact for undescribed taxa, and could never be usefully ",
+      "matched against anyway.",
+      call. = FALSE
+    )
+  }
+
   # Synthesise a row for every implied higher rank present as its own column on the combined table
   # (e.g. a `genus`/`family`/`order` column recorded on species rows), for whichever such value doesn't
   # already have an explicit row of its own -- generalising what load_AFD() already does for AFD's own
@@ -339,7 +395,9 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # Only character columns can plausibly hold a taxon name -- an extra numeric/logical/date column
   # (e.g. a collection year, a record count) isn't a hierarchy column at all, and treating it as one
   # doesn't just produce silly rows, it can crash outright (e.g. `values != ""` on a POSIXct column).
-  extra_cols <- setdiff(names(taxonomic_resources), taxonAlign_required_cols)
+  # `taxonAlign_non_hierarchy_cols` (see its own comment above) excludes specific columns known with
+  # certainty to never be hierarchy columns, regardless of type.
+  extra_cols <- setdiff(names(taxonomic_resources), c(taxonAlign_required_cols, taxonAlign_non_hierarchy_cols))
   extra_cols <- extra_cols[purrr::map_lgl(taxonomic_resources[extra_cols], is.character)]
   implied_rank_cols <- union("genus", extra_cols)
 

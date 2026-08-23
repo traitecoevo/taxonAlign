@@ -9,6 +9,49 @@ test_that("prepare_taxonomic_resources gives a clear, actionable error when taxo
   expect_error(prepare_taxonomic_resources(), "generate_GBIF_taxonomic_reference_list")
 })
 
+test_that("prepare_taxonomic_resources combines multiple tables whose taxon_ID columns have different types", {
+  # regression test: combining a table with a character taxon_ID (e.g. AFD's UUID strings) and one with
+  # an integer taxon_ID (e.g. generate_GBIF_taxonomic_reference_list()'s raw GBIF usageKey) used to
+  # error outright -- dplyr::bind_rows() doesn't coerce a type mismatch across the tables being
+  # combined, it errors ("Can't combine ..$taxon_ID <character> and ..$taxon_ID <integer>") -- and the
+  # existing as.character() normalisation ran *after* that bind_rows() call, too late to prevent it.
+  character_id_table <- dplyr::tibble(
+    canonical_name = "Boronia serrulata", scientific_name = "Boronia serrulata Sm.",
+    taxon_rank = "species", taxonomic_status = "accepted", taxonomic_dataset = "AFD_LIKE",
+    genus = "Boronia", taxon_ID = "afd-uuid-1", accepted_name_usage_ID = "afd-uuid-1"
+  )
+  integer_id_table <- dplyr::tibble(
+    canonical_name = "Boronia oldname", scientific_name = "Boronia oldname Sm.",
+    taxon_rank = "species", taxonomic_status = "synonym", taxonomic_dataset = "GBIF_LIKE",
+    genus = "Boronia", taxon_ID = 12345L, accepted_name_usage_ID = 12345L
+  )
+
+  expect_no_error(
+    resources <- prepare_taxonomic_resources(list(a = character_id_table, b = integer_id_table))
+  )
+  expect_true(is.character(resources$species$accepted$taxon_ID))
+  expect_setequal(resources$species$accepted$taxon_ID, "afd-uuid-1")
+  expect_setequal(resources$species$synonym$taxon_ID, "12345")
+})
+
+test_that("prepare_taxonomic_resources doesn't synthesise bogus rows from scientific_name_authorship", {
+  # regression test: found against a real, large (358k-row) GBIF-derived reference --
+  # generate_GBIF_taxonomic_reference_list()'s own `scientific_name_authorship` column (an extra column
+  # beyond the required 8) used to be scanned by the implied-higher-rank-row synthesis feature like any
+  # other character column, turning every distinct author-citation string (e.g. "Plisko, 1965") into its
+  # own bogus "taxon" at a fictional rank literally named "scientific_name_authorship" (66,564 such rows
+  # in that real case -- not a rare edge case).
+  raw <- dplyr::tibble(
+    canonical_name = "Testus alphus", scientific_name = "Testus alphus Sm.", taxon_rank = "species",
+    taxonomic_status = "accepted", taxonomic_dataset = "MY_DATA", genus = "Testus",
+    scientific_name_authorship = "Smith, 1900", taxon_ID = "sp1", accepted_name_usage_ID = "sp1"
+  )
+
+  resources <- prepare_taxonomic_resources(raw)
+
+  expect_false("scientific_name_authorship" %in% names(resources))
+})
+
 test_that("prepare_taxonomic_resources renames raw Darwin Core columns, exactly like APCalign::load_taxonomic_resources()", {
   raw <- dplyr::tibble(
     canonicalName = "Boronia serrulata", scientificName = "Boronia serrulata Sm.",
@@ -164,6 +207,31 @@ test_that("a row with a missing (NA) canonical_name is dropped, with a warning",
   # the variety row ("sp2") should be gone, while everything else survives
   expect_false("sp2" %in% resources$species$accepted$taxon_ID)
   expect_true("sp1" %in% resources$species$accepted$taxon_ID)
+})
+
+test_that("a row whose canonical_name is just the bare name of its own rank is dropped, with a warning", {
+  # regression test, found against a real, large GBIF-derived reference: GBIF's own backbone has a real
+  # (if unusual) taxonomic convention for an undescribed genus/family/etc. -- a placeholder scientific
+  # name like "Genus B JS" or "Genus ANIC A" -- and GBIF's canonicalName parsing strips the placeholder
+  # code, leaving just the bare rank word ("Genus"). This collides with a *completely unrelated*
+  # convention on the query side -- morphospecies voucher codes like "Genus 1 sp.01 Corinnidae" also use
+  # the literal word "Genus" as a placeholder for "unidentified genus" -- so the generic higher-rank
+  # matcher would confidently but wrongly resolve such a query to whichever unrelated placeholder genus
+  # happened to be named just "Genus", rather than correctly failing to match at all.
+  raw <- sample_taxonomic_resources() |>
+    dplyr::bind_rows(dplyr::tibble(
+      canonical_name = "Family", scientific_name = "Family Sm.", taxon_rank = "family",
+      taxonomic_status = "accepted", taxonomic_dataset = "TEST", genus = NA_character_,
+      taxon_ID = "weird_family", accepted_name_usage_ID = "weird_family"
+    ))
+
+  expect_warning(
+    resources <- prepare_taxonomic_resources(raw),
+    "bare name of their own rank"
+  )
+  expect_false("weird_family" %in% resources$family$taxon_ID)
+  # the real family row ("Rutaceae") should be untouched
+  expect_true("f1" %in% resources$family$taxon_ID)
 })
 
 test_that("taxon_ranks_to_check filters out unwanted higher ranks (and subgenus_v2 with subgenus)", {

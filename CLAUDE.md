@@ -383,7 +383,7 @@ Architecture of the matching engine itself:
   carry over APCalign's `taxonomic_splits` disambiguation (APC-specific split history an arbitrary
   reference can't be expected to document) or its genus-substring-splicing trick for reconstructing a
   suggested name when only the genus changed (doesn't obviously generalize across ranks).
-- **Six real bugs found by testing against real, messy data** (not just the hand-built fixture) that
+- **Seven real bugs found by testing against real, messy data** (not just the hand-built fixture) that
   are worth knowing about if you touch this code again:
   - `fuzzy_match()` (`match_taxa_helpers.R`) used to crash with "missing value where TRUE/FALSE
     needed" whenever a reference list's `accepted_list` argument contained an `NA` (real GBIF data with
@@ -461,6 +461,40 @@ Architecture of the matching engine itself:
     filter itself (such an entry correctly has "no first letter to compare", so it's excluded rather
     than injected as `NA`), plus a defensive `na.rm = TRUE` on the `min()` calls as a backstop against
     any other not-yet-seen data-quality issue taking a similar path.
+  - Discovered combining AFD with a real, 358k-row GBIF-derived AU-invertebrate reference: `taxon_ID`
+    columns from different sources can have different underlying types (AFD's own UUID strings vs.
+    `generate_GBIF_taxonomic_reference_list()`'s raw integer GBIF `usageKey`), and `prepare_taxonomic_resources()`'s
+    multi-table `dplyr::bind_rows()` step ran *before* the existing `as.character()` normalisation, not
+    after -- `bind_rows()` errors outright on a cross-table type mismatch ("Can't combine
+    `..1$taxon_ID` <character> and `..2$taxon_ID` <integer>") rather than coercing it, so combining any
+    two tables with different `taxon_ID` types failed immediately, regardless of what the later
+    single-table normalisation would have fixed. Fixed by normalising each table's `taxon_ID`/
+    `accepted_name_usage_ID` to character individually, before they're combined.
+  - Also discovered combining AFD with the same real GBIF-derived reference: two further real,
+    large-scale versions of "a genuinely non-taxonomic extra column gets scanned by the higher-rank
+    row-synthesis feature", not just theoretical risks that feature's own design comment already flags.
+    (1) `generate_GBIF_taxonomic_reference_list()`'s own `scientific_name_authorship` column (an extra
+    column beyond the required 8) was being scanned like any other character column, turning every
+    distinct author-citation string in it (e.g. `"Plisko, 1965"`) into its own bogus "taxon" at a
+    fictional rank literally named `"scientific_name_authorship"` -- 66,564 such rows (~10% of the
+    combined resource) in that real case. Fixed via `taxonAlign_non_hierarchy_cols`, a short, explicit
+    list of column names known with certainty to never be hierarchy columns because they're metadata
+    *taxonAlign's own loaders* always produce (not a user's own arbitrary data) -- excluded from the
+    scan regardless of the "scan any extra column" default; extend as further such columns turn up, the
+    same "extend, don't guess" convention `taxonAlign_taxon_rank_specificity`/
+    `taxonAlign_taxonomic_status_priority` already use. (2) Separately, GBIF's own backbone has a real
+    (if unusual) taxonomic convention for an undescribed genus/family/etc. -- a placeholder scientific
+    name like `"Genus B JS"` or `"Genus ANIC A"` (ANIC = Australian National Insect Collection) -- and
+    GBIF's own `canonicalName` parsing strips the placeholder code, leaving just the bare rank word
+    (`"Genus"`, `"Family"`, `"Order"`, `"Tribe"`, `"Subfamily"` were all confirmed present in the real
+    data). This collides with a *completely unrelated* convention on the query side: morphospecies
+    voucher codes like `"Genus 1 sp.01 Corinnidae"` also use the literal word `"Genus"` as a
+    placeholder for "unidentified genus", so the generic higher-rank matcher would confidently but
+    wrongly resolve such a query to whichever unrelated placeholder taxon happened to be named just
+    `"Genus"`, instead of correctly failing to match at all. Fixed the same way as the NA-`canonical_name`
+    case above (dropped, with a warning, generically for any rank via
+    `tolower(canonical_name) != tolower(taxon_rank)`) since such a row is equally unmatchable-in-any-
+    useful-sense and equally hazardous.
 - **`taxonomic_status`-based disambiguation when the same lookup key repeats** -- real reference data
   (e.g. real APC data's "Genoplesium insigne", which recurs under more than one non-"accepted" status)
   can list the same `canonical_name`/`scientific_name`/binomial/trinomial more than once with different
@@ -522,7 +556,13 @@ Architecture of the matching engine itself:
   supplied, priority is expressed purely by row order in the bind_rows()'d result (since
   `match_taxa()`'s exact blocks use first-hit `match()` semantics) — `interactive = TRUE` prompts once
   for that order (or consults `user_responses$priority_order`), `interactive = FALSE` just uses
-  supply-order with no prompt. A table missing no required columns is never interrupted, even in
+  supply-order with no prompt. **Each table's `taxon_ID`/`accepted_name_usage_ID` is normalised to
+  character *before* that `bind_rows()`, not after** -- found necessary combining AFD (character UUID
+  strings) with a `generate_GBIF_taxonomic_reference_list()`-derived table (integer `taxon_ID`, its own
+  raw GBIF usageKey): `dplyr::bind_rows()` errors outright on a type mismatch across the tables being
+  combined ("Can't combine `..1$taxon_ID` <character> and `..2$taxon_ID` <integer>") rather than
+  coercing, and the existing single-table `as.character()` normalisation (kept for the interactive-input
+  path) ran only *after* this combine step -- too late to prevent the crash. A table missing no required columns is never interrupted, even in
   `interactive = TRUE` mode — only genuinely-missing fields get prompted for, so
   `generate_GBIF_taxonomic_reference_list()`'s output (already complete) sails through untouched. When a
   table *is* missing something, it's first asked (once, `prompt_already_aligned()`) whether it's
@@ -578,7 +618,18 @@ Architecture of the matching engine itself:
   would also be scanned; a non-character column is skipped (it can't hold a taxon name, and previously
   crashed outright -- `values != ""` on a POSIXct/numeric column errors rather than returning `FALSE`),
   but a stray *character* column not meant as a hierarchy column has no such guard and will generate
-  bogus rows if included. This generalises, inside `prepare_taxonomic_resources()` itself, the same idea
+  bogus rows if included -- confirmed in practice, not just theoretically: combining AFD with a real,
+  358k-row GBIF-derived reference produced 66,564 bogus rows (~10% of the combined resource) from
+  `generate_GBIF_taxonomic_reference_list()`'s own `scientific_name_authorship` column, each turning an
+  author-citation string (e.g. `"Plisko, 1965"`) into its own fictional "taxon" at a rank literally
+  named `"scientific_name_authorship"`. Fixed for this specific, known case via
+  `taxonAlign_non_hierarchy_cols` -- a short, explicit list of column names known with certainty to
+  never be hierarchy columns because they're metadata *taxonAlign's own loaders* always produce (not a
+  user's own arbitrary data), excluded from the scan regardless of the "scan any extra column" default.
+  Extend this vector as further such columns turn up, the same "extend, don't guess" convention
+  `taxonAlign_taxon_rank_specificity`/`taxonAlign_taxonomic_status_priority` already use -- a user's own
+  arbitrary extra column is still scanned exactly as before; this only ever grows with columns taxonAlign
+  itself is responsible for producing. This generalises, inside `prepare_taxonomic_resources()` itself, the same idea
   `load_AFD()`'s `afd_higher_rank_rows()` already applies specifically to AFD's own raw export (see
   Architecture #3) -- to *any* input table, not just AFD's. A synthesised row has no natural ID, so
   `taxon_ID`/`accepted_name_usage_ID` fall back to a placeholder combining the dataset, rank and name
