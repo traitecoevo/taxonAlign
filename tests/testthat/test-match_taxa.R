@@ -64,11 +64,11 @@ test_that("intergrades_affinis = TRUE resolves a graded/'affinis'/'cf.' identifi
 
   out_aff <- align_taxa("Boronia aff. serrulata", resources, intergrades_affinis = TRUE)
   expect_equal(out_aff$taxon_rank, "genus")
-  expect_equal(out_aff$alignment_code, "match_04a_intergrade_affinis_exact_genus")
+  expect_equal(out_aff$alignment_code, "match_04g_affinis_exact_genus")
 
   out_cf <- align_taxa("Boronia cf. serrulata", resources, intergrades_affinis = TRUE)
   expect_equal(out_cf$taxon_rank, "genus")
-  expect_equal(out_cf$alignment_code, "match_04a_intergrade_affinis_exact_genus")
+  expect_equal(out_cf$alignment_code, "match_04g_affinis_exact_genus")
 })
 
 test_that("intergrades_affinis distinguishes a real 'affinis' epithet from an affinity qualifier", {
@@ -80,10 +80,11 @@ test_that("intergrades_affinis distinguishes a real 'affinis' epithet from an af
   out_real_epithet <- align_taxa("Boronia affinis subsp. serrulata", resources, intergrades_affinis = TRUE)
   expect_false(isTRUE(startsWith(out_real_epithet$alignment_code, "match_04")))
 
-  # "affinis" with no rank marker following IS an affinity qualifier
+  # "affinis" with no rank marker following, and no real listed name to exact-match, IS an affinity
+  # qualifier
   out_qualifier <- align_taxa("Boronia affinis otherspecies", resources, intergrades_affinis = TRUE)
   expect_equal(out_qualifier$taxon_rank, "genus")
-  expect_equal(out_qualifier$alignment_code, "match_04a_intergrade_affinis_exact_genus")
+  expect_equal(out_qualifier$alignment_code, "match_04g_affinis_exact_genus")
 })
 
 test_that("intergrades_affinis = FALSE (default) leaves these names unhandled by match_04", {
@@ -91,6 +92,56 @@ test_that("intergrades_affinis = FALSE (default) leaves these names unhandled by
   out <- align_taxa("Boronia aff. serrulata", resources)
 
   expect_false(isTRUE(startsWith(out$alignment_code, "match_04")))
+})
+
+# Issue #16: a real, resource-verified exact match must win over the affinis/cf. heuristic, since a
+# bare "affinis" is genuinely ambiguous between the qualifier reading and a real specific epithet --
+# guessing "a repeated word means a tautonym" would risk over-confidently upgrading a genuine hedge, so
+# the fix instead performs its own explicit, untruncated exact-match check (match_04e/match_04f)
+# before ever falling back to genus rank (match_04g-j).
+test_that("a real, listed tautonymous subspecies ('Genus affinis affinis') exact-matches rather than falling back to genus", {
+  tautonym <- dplyr::tibble(
+    canonical_name = "Boronia affinis affinis", scientific_name = "Boronia affinis affinis Sm.",
+    taxon_rank = "subspecies", taxonomic_status = "accepted", taxonomic_dataset = "TEST",
+    genus = "Boronia", taxon_ID = "taut1", accepted_name_usage_ID = "taut1"
+  )
+  resources <- prepare_taxonomic_resources(dplyr::bind_rows(sample_taxonomic_resources(), tautonym))
+
+  out <- align_taxa("Boronia affinis affinis", resources, intergrades_affinis = TRUE)
+
+  expect_equal(out$taxon_rank, "subspecies")
+  expect_equal(out$aligned_name, "Boronia affinis affinis")
+  expect_equal(out$alignment_code, "match_04e_affinis_exact_species_accepted")
+})
+
+test_that("a genuine affinity hedge that ISN'T also a real, listed name still falls back to genus rank", {
+  # same shape of query as the tautonym above, but "hedgeus" is not a real epithet anywhere in
+  # resources -- confirms the exact-match-first fix doesn't accidentally suppress the genuine fallback
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia affinis hedgeus", resources, intergrades_affinis = TRUE)
+
+  expect_equal(out$taxon_rank, "genus")
+  expect_equal(out$alignment_code, "match_04g_affinis_exact_genus")
+})
+
+test_that("a truncated binomial/trinomial coincidence doesn't fool the affinis exact-match check", {
+  # regression test for the real APC-equivalence-test failure this fix's design was refined against:
+  # a resource entry using its own informal "sp. aff. X (voucher)" naming convention reduces, once
+  # stripped, to the same truncated 2-word binomial ("genus aff") as *any* fabricated "Genus aff.
+  # <anything>" query -- match_04e/match_04f must not be fooled by that truncated coincidence, since
+  # they compare the full, untruncated ignore_bracketed_words field, not binomial/trinomial
+  placeholder <- dplyr::tibble(
+    canonical_name = "Boronia sp. aff. serrulata (Somewhere XY12345)",
+    scientific_name = "Boronia sp. aff. serrulata (Somewhere XY12345)",
+    taxon_rank = "species", taxonomic_status = "accepted", taxonomic_dataset = "TEST",
+    genus = "Boronia", taxon_ID = "voucher1", accepted_name_usage_ID = "voucher1"
+  )
+  resources <- prepare_taxonomic_resources(dplyr::bind_rows(sample_taxonomic_resources(), placeholder))
+
+  out <- align_taxa("Boronia aff. completelyfakeepithet", resources, intergrades_affinis = TRUE)
+
+  expect_equal(out$taxon_rank, "genus")
+  expect_equal(out$alignment_code, "match_04g_affinis_exact_genus")
 })
 
 test_that("progress = TRUE still reports progress when hybrids/intergrades_affinis resolve a name (issue #5)", {

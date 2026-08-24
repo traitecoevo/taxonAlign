@@ -105,14 +105,14 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-375 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+382 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
 #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 321) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 382) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (328 total, as of the last online run that succeeded). This has also failed
+passing expectations on top (389 total, as of the last online run that succeeded). This has also failed
 intermittently across several local runs (`load_APC()` → `dplyr::mutate()` on a `NULL`
 `APC$family_accepted`, i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning
 that element) -- looks like a real, if intermittent, upstream issue (rate limiting or a partial
@@ -722,10 +722,11 @@ Architecture of the matching engine itself:
   - `intergrades_affinis = TRUE` consolidates what APCalign implements as three separate pattern
     families -- an intergrade (`--`), a collector's indecision between two taxa (`/`, excluding names
     with digits/parens/apostrophes to avoid false positives), and a graded/"affinis"/"cf." identification
-    (`aff.`/`affinis`/`cf.`) -- since they're rarer than hybrids and share the same shape: `match_04a`
-    (exact genus)/`match_04b` (fuzzy genus)/`match_04c` (unresolved)/`match_04d` (no genus-rank
-    reference). The `affinis` detection specifically needs `APCalign::standardise_names()` from a
-    version including [upstream commit a2c43d1](https://github.com/traitecoevo/APCalign/commit/a2c43d1fbec29c68aec7bfd4fd46b831effccec3)
+    (`aff.`/`affinis`/`cf.`) -- since they're rarer than hybrids and share the same shape. Intergrade and
+    indecision are `match_04a` (exact genus)/`match_04b` (fuzzy genus)/`match_04c` (unresolved)/`match_04d`
+    (no genus-rank reference); the affinis/cf. family is `match_04e`-`match_04j` (see the next bullet --
+    it isn't quite the same shape). The `affinis` detection specifically needs `APCalign::standardise_names()`
+    from a version including [upstream commit a2c43d1](https://github.com/traitecoevo/APCalign/commit/a2c43d1fbec29c68aec7bfd4fd46b831effccec3)
     or later (`remotes::install_github("traitecoevo/APCalign")` to pull latest `main`) -- older versions
     unconditionally abbreviate `" affinis "` to `" aff. "` regardless of what follows, which defeats the
     rank-marker-aware check needed to tell a genuine specific epithet (`"Gomphrena affinis subsp.
@@ -733,6 +734,34 @@ Architecture of the matching engine itself:
     negative-lookahead regex (`not_before_rank_marker`) is also ported into `match_taxa()`'s own
     detection, but it's only reachable if `standardise_names()` hasn't already collapsed the distinction
     upstream.
+  - **(Issue #16) The affinis/cf. family checks for a real, exact species-level match *first*, before
+    ever falling back to genus** -- unlike intergrade/indecision, which have no equivalent step, because
+    "affinis" has a problem "--"/"/" don't: it's also a common, real specific epithet in its own right,
+    so a *repeated* bare epithet (`"Themognatha affinis affinis"`, the zoological tautonym convention
+    for a nominotypical subspecies) is genuinely indistinguishable from the qualifier reading by text
+    shape alone -- `APCalign::standardise_names()` abbreviates the first `"affinis"` to `"aff."`
+    regardless, since there's no explicit rank-marker word for the `not_before_rank_marker` lookahead to
+    catch. Found via a real validation run comparing two resource combinations on the same name list:
+    a genuinely accepted tautonymous subspecies was being discarded to genus rank purely on the
+    affinis/cf. text pattern, before exact species matching (`match_05`/`match_09`/`match_10`/`match_11`,
+    all later in the file) ever got a chance to prove the name was real. Deliberately **not** fixed by
+    guessing "a repeated word means a tautonym" -- that would be wrong in the opposite direction, silently
+    upgrading a genuine, deliberately uncertain hedge into a false, over-confident subspecies match --
+    and deliberately **not** fixed by simply moving the affinis/cf. detection to run after those later
+    exact blocks either, which was the first fix attempted and broke a real APC-equivalence-test case
+    (`test-apc_equivalence.R`): `match_09`/`match_10`'s trinomial/binomial exact matching is truncated to
+    the first 2-3 words of the *already-abbreviated* `stripped_name2`, and real reference data can have
+    its own informally-named placeholder entries using the same "sp. aff. X" convention -- a real APC
+    entry, `"Acacia sp. aff. rigens (Gerang Gerung)"`, reduces to the same truncated `"acacia aff"`
+    binomial as *any* fabricated `"Acacia aff. <anything>"` query once stripped, so a truncated exact
+    "match" there is coincidence, not evidence the query is a real, listed name. Fixed instead by adding
+    `match_04e`/`match_04f` -- an exact check the affinis/cf. block performs *itself*, at its own early
+    position, using the same *untruncated* field `match_11a`/`match_11b` use (`ignore_bracketed_words`,
+    built straight from `original_name`, never touched by the "aff." abbreviation) -- so it doesn't
+    depend on running after any other block at all. `match_04g`-`match_04j` (exact genus/fuzzy genus/
+    unresolved/no genus resource) is the unchanged genus-only fallback for whatever's left once that
+    exact check has failed -- i.e. a genuine hedge that isn't also a real, listed name, the overwhelming
+    majority case, resolves exactly as before.
   - `detect_fn` (the pattern-detection argument `match_special_case_to_genus()` takes) is a *function* of
     `cleaned_name`, not a pre-computed logical vector -- `taxa$tocheck` shrinks after each internal
     `redistribute()` call, so recomputing detection fresh each time keeps it aligned with whatever rows

@@ -167,8 +167,13 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #'  blocks to potentially mishandle. Defaults to `FALSE`.
 #' @param intergrades_affinis Logical; if `TRUE`, a name suggesting an intergrade between two taxa
 #'  (a double dash, `--`), a collector's indecision between two taxa (a slash, `/`), or a graded/
-#'  "affinis"/"cf." identification (`"aff."`, `"affinis"`, `"cf."`) is resolved to genus rank the same
-#'  way. Defaults to `FALSE`.
+#'  "affinis"/"cf." identification (`"aff."`, `"affinis"`, `"cf."`) is resolved to genus rank, unless
+#'  it's actually an exact match to a real, listed name -- see match_11c below (issue #16): a bare
+#'  "affinis" is genuinely ambiguous between the qualifier reading and a real specific epithet (e.g.
+#'  a tautonymous subspecies like "Genus affinis affinis"), and `APCalign::standardise_names()`
+#'  abbreviates it the same way either way, so the two are indistinguishable by text shape alone -- a
+#'  real, resource-verified exact match is given priority over the heuristic rather than guessing.
+#'  Defaults to `FALSE`.
 #' @param consider_english_name_endings Logical; if `TRUE`, before any fuzzy matching, try substituting
 #'  a recognised informal English vernacular name ending for its formal Latin equivalent (`"-id"` ->
 #'  `"-idae"` for family, `"-ine"` -> `"-inae"` for subfamily, `"-oid"` -> `"-oidea"` for superfamily)
@@ -856,44 +861,144 @@ match_taxa <- function(
       return(taxa)
   }
 
-  # match_04: consolidates what APCalign implements as three separate pattern families (intergrade,
-  # indecision, graded/"affinis"/"cf." identification) -- all share the same "resolve to genus, or flag
-  # as unresolved" shape, and are rarer than hybrids, so are grouped under one opt-in toggle (off by
-  # default) rather than one each. See `?match_taxa`.
+  # match_04: intergrade (double dash) and indecision (slash) names can only be aligned to genus rank
+  # -- placed here, early, before any species-level matching, since neither pattern character ("--",
+  # "/") can ever appear inside a real species epithet, so there's no ambiguity and no benefit to
+  # delaying them. (The third pattern family this toggle also covers -- a graded/"affinis"/"cf."
+  # identification -- is handled separately, right below, since it needs its own explicit exact-match
+  # step first rather than just relying on this early placement. Issue #16.)
   if (intergrades_affinis) {
-    # "affinis" is genuinely ambiguous: it's both an affinity qualifier ("Acacia affinis dealbata" =
-    # "resembles A. dealbata, not confidently identified") *and* a legitimate specific epithet in its
-    # own right ("Gomphrena affinis subsp. pilbarensis" is a real, accepted name). The lookahead below
-    # (matching a fix applied upstream in APCalign) only treats "affinis" as an affinity qualifier
-    # when it's *not* immediately followed by an infraspecific rank marker.
-    not_before_rank_marker <- "(?!\\s+(?:subsp|ssp|subvar|var|forma|form|ser|series|cv|f)\\.?(?:\\s|$))"
-    affinis_qualifier <- paste0(" affinis", not_before_rank_marker, "\\s")
-
-    is_intergrade_affinis <- function(cleaned_name) {
+    is_intergrade_indecision <- function(cleaned_name) {
       is_intergrade <- stringr::str_detect(cleaned_name, "\\ -- |\\--")
       is_indecision <- (stringr::str_detect(cleaned_name, "[:alpha:]\\/") |
                            stringr::str_detect(cleaned_name, "\\s\\/")) &
         !stringr::str_detect(cleaned_name, "[:digit:]") &
         !stringr::str_detect(cleaned_name, "\\(") &
         !stringr::str_detect(cleaned_name, "\\'")
-      is_affinis <- stringr::str_detect(cleaned_name, "[Aa]ff[\\.\\s]") |
-        stringr::str_detect(cleaned_name, affinis_qualifier) |
-        stringr::str_detect(cleaned_name, " cf[\\.\\s]")
-      is_intergrade | is_indecision | is_affinis
+      is_intergrade | is_indecision
     }
 
     taxa <- match_special_case_to_genus(
       taxa, resources,
-      detect_fn = is_intergrade_affinis,
+      detect_fn = is_intergrade_indecision,
       bracket_sep = " sp. [",
-      reason_text = paste(
-        "Taxon name suggests an intergrade, an indecision between taxa, or a graded/\"affinis\"/\"cf.\"",
-        "identification; can only be aligned to genus rank."
-      ),
+      reason_text = "Taxon name suggests an intergrade or an indecision between taxa; can only be aligned to genus rank.",
       alignment_code_exact = "match_04a_intergrade_affinis_exact_genus",
       alignment_code_fuzzy = "match_04b_intergrade_affinis_fuzzy_genus",
       alignment_code_unresolved = "match_04c_intergrade_affinis_unresolved",
       alignment_code_no_resource = "match_04d_intergrade_affinis_no_genus_resource",
+      fuzzy_match_genera = fuzzy_match_genera,
+      pb = pb
+    )
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+  }
+
+  # match_04e-j: a graded/"affinis"/"cf." identification -- also placed early (same position as
+  # match_04's intergrade/indecision above), but unlike those two patterns, this one performs its own
+  # explicit, untruncated exact-match check first, before ever falling back to genus. (Issue #16.)
+  #
+  # "affinis" is genuinely ambiguous in a way "--" and "/" are not: it's both an affinity qualifier
+  # ("Acacia affinis dealbata" = "resembles A. dealbata, not confidently identified") *and* a
+  # legitimate specific epithet in its own right ("Gomphrena affinis subsp. pilbarensis" is a real,
+  # accepted name) -- and critically, a *repeated* bare epithet ("Themognatha affinis affinis", the
+  # zoological tautonym convention for a nominotypical subspecies) is genuinely indistinguishable from
+  # the qualifier reading by text shape alone, since "affinis" is also just a common, real epithet.
+  # `APCalign::standardise_names()` unconditionally abbreviates a bare "affinis" (not immediately
+  # followed by an infraspecific rank marker) to "aff." -- so "Themognatha affinis affinis" becomes
+  # "Themognatha aff. affinis" in `cleaned_name` regardless of this toggle, indistinguishable from a
+  # genuine hedge by text shape alone. Guessing "a repeated word must mean the tautonym" would be just
+  # as wrong in the other direction -- it would silently upgrade a genuine, deliberately uncertain
+  # hedge to a false, over-confident subspecies match.
+  #
+  # The fix is to not guess at all: let a real, resource-verified exact match win first, using the same
+  # *untruncated* field match_11a/match_11b use (`ignore_bracketed_words`, built straight from
+  # `original_name`, never touched by the "aff." abbreviation). This deliberately does NOT just rely on
+  # running after match_09/match_10 (trinomial/binomial exact matching) instead -- confirmed via a real
+  # APC-equivalence-test failure that those blocks aren't safe evidence for this specific ambiguity:
+  # `binomial`/`trinomial` are truncated to the first 2-3 words of the *already-abbreviated*
+  # `stripped_name2`, and real reference data can have its own informally-named placeholder entries
+  # using the same "sp. aff. X" convention (a real APC entry, "Acacia sp. aff. rigens (Gerang Gerung)",
+  # reduces to the same truncated "acacia aff" binomial as *any* fabricated "Acacia aff. <anything>"
+  # query once stripped) -- so a truncated exact "match" there is coincidence, not evidence the query
+  # is a real, listed name. The untruncated `ignore_bracketed_words` field doesn't have this problem
+  # (the whole string has to match, not just a truncated prefix), so it's the only field trusted here.
+  if (intergrades_affinis) {
+    not_before_rank_marker <- "(?!\\s+(?:subsp|ssp|subvar|var|forma|form|ser|series|cv|f)\\.?(?:\\s|$))"
+    affinis_qualifier <- paste0(" affinis", not_before_rank_marker, "\\s")
+
+    is_affinis <- function(cleaned_name) {
+      stringr::str_detect(cleaned_name, "[Aa]ff[\\.\\s]") |
+        stringr::str_detect(cleaned_name, affinis_qualifier) |
+        stringr::str_detect(cleaned_name, " cf[\\.\\s]")
+    }
+
+    # match_04e: exact match (ignoring brackets) to an accepted species/infraspecific name
+    i <- is_affinis(taxa$tocheck$cleaned_name) &
+      taxa$tocheck$ignore_bracketed_words %in% resources$species$accepted$canonical_name
+    ii <- match(taxa$tocheck[i, ]$ignore_bracketed_words, resources$species$accepted$canonical_name)
+    taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+      dplyr::mutate(
+        taxonomic_dataset = resources$species$accepted$taxonomic_dataset[ii],
+        taxon_rank = resources$species$accepted$taxon_rank[ii],
+        taxonomic_status = resources$species$accepted$taxonomic_status[ii],
+        taxon_ID = resources$species$accepted$taxon_ID[ii],
+        accepted_name_usage_ID = resources$species$accepted$accepted_name_usage_ID[ii],
+        aligned_name = resources$species$accepted$canonical_name[ii],
+        aligned_reason = paste0(
+          "Taxon name suggests a graded/\"affinis\"/\"cf.\" identification, but exactly matches a real, ",
+          "accepted name (ignoring brackets) in ", taxonomic_dataset, " -- resolved to that name rather ",
+          "than treated as an uncertain identification (", Sys.Date(), ")"
+        ),
+        known = TRUE,
+        checked = TRUE,
+        alignment_code = "match_04e_affinis_exact_species_accepted"
+      )
+    taxa <- redistribute_progress(taxa, pb)
+
+    if (nrow(taxa$tocheck) > 0) {
+      # match_04f: exact match (ignoring brackets) to a synonymous species/infraspecific name
+      i <- is_affinis(taxa$tocheck$cleaned_name) &
+        taxa$tocheck$ignore_bracketed_words %in% resources$species$synonym$canonical_name
+      ii <- match(taxa$tocheck[i, ]$ignore_bracketed_words, resources$species$synonym$canonical_name)
+      taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+        dplyr::mutate(
+          taxonomic_dataset = resources$species$synonym$taxonomic_dataset[ii],
+          taxon_rank = resources$species$synonym$taxon_rank[ii],
+          taxonomic_status = resources$species$synonym$taxonomic_status[ii],
+          taxon_ID = resources$species$synonym$taxon_ID[ii],
+          accepted_name_usage_ID = resources$species$synonym$accepted_name_usage_ID[ii],
+          aligned_name = resources$species$synonym$canonical_name[ii],
+          aligned_reason = paste0(
+            "Taxon name suggests a graded/\"affinis\"/\"cf.\" identification, but exactly matches a real, ",
+            "synonymous name (ignoring brackets) in ", taxonomic_dataset, " -- resolved to that name ",
+            "rather than treated as an uncertain identification (", Sys.Date(), ")"
+          ),
+          known = TRUE,
+          checked = TRUE,
+          alignment_code = "match_04f_affinis_exact_species_synonym"
+        )
+      taxa <- redistribute_progress(taxa, pb)
+    }
+
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+
+    # match_04g-j: anything still matching the affinis/cf. pattern here has no exact species-level
+    # match, so it really is an uncertain identification -- fall back to genus rank via the shared
+    # helper, exactly as intergrade/indecision above.
+    taxa <- match_special_case_to_genus(
+      taxa, resources,
+      detect_fn = is_affinis,
+      bracket_sep = " sp. [",
+      reason_text = paste(
+        "Taxon name suggests a graded/\"affinis\"/\"cf.\" identification (and isn't an exact match to a",
+        "real, listed name); can only be aligned to genus rank."
+      ),
+      alignment_code_exact = "match_04g_affinis_exact_genus",
+      alignment_code_fuzzy = "match_04h_affinis_fuzzy_genus",
+      alignment_code_unresolved = "match_04i_affinis_unresolved",
+      alignment_code_no_resource = "match_04j_affinis_no_genus_resource",
       fuzzy_match_genera = fuzzy_match_genera,
       pb = pb
     )
