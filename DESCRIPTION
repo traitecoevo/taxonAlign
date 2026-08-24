@@ -5,9 +5,9 @@ Authors@R: c(
     person("Elizabeth", "Wenk", role = c("aut", "ctb", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
     person(given = "Fonti", family = "Kar", role = c("aut", "cre"), email = "f.kar@unsw.edu.au", comment = c(ORCID = "0000-0002-2760-3974"))
     )
-Description: This package provides functions that enables users to: 
+Description: This package provides functions that enable users to:
   1) create their own taxonomic resource by flexibly combining distinct taxonomic references together
-  and 2) to match taxonomic lists to the user's specified taxonomic resource to maxinise alignment coverage. 
+  and 2) to match taxonomic lists to the user's specified taxonomic resource to maximise alignment coverage.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

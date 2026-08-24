@@ -1143,9 +1143,14 @@ reproducible data-raw script.
 
 `vignettes/get-started.qmd`, by contrast, **is** self-contained and does actually build -- a
 user-facing "getting started" walkthrough covering every exported function (`prepare_taxonomic_resources()`,
-`generate_GBIF_taxonomic_reference_list()`, `load_taxonomic_resources()`, `align_taxa()`, `update_taxa()`,
-`create_taxonomic_update_lookup()`) in the order you'd actually use them, ending in a realistic
-"update a list of raw field names" workflow. Deliberately **not** registered as a formal R/knitr
+`generate_GBIF_taxonomic_reference_list()`, `generate_taxadb_taxonomic_reference_list()`,
+`load_taxonomic_resources()`, `align_taxa()`, `update_taxa()`, `create_taxonomic_update_lookup()`) in
+the order you'd actually use them, ending in a realistic "update a list of raw field names" workflow
+(issue #22 -- keep this list, and the vignette's own worked examples, current as further functions/
+parameters are exported; `library(taxonAlign)` in a real render uses the *installed* package, not
+`devtools::load_all()`'s in-session version, so re-run `devtools::install()` before re-rendering if
+you've made source changes this session and the render doesn't reflect them). Deliberately **not**
+registered as a formal R/knitr
 vignette (no `%\VignetteIndexEntry`/`%\VignetteEngine` comments) -- it's meant to be rendered directly
 via `quarto render vignettes/get-started.qmd` and published as a static page (e.g. GitHub Pages), not
 built via `R CMD build`/`devtools::build_vignettes()`; `DESCRIPTION`'s `VignetteBuilder: knitr` is

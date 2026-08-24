@@ -16,8 +16,9 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 `taxonAlign` helps with two related jobs:
 
 1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference tables --
-   your own data, a list built from the GBIF backbone taxonomy, a known source like the Australian
-   Faunal Directory (AFD) or the Australian Plant Census (APC), or any mix of these.
+   your own data, a list built live from the GBIF backbone taxonomy, a cached snapshot from
+   [taxadb](https://docs.ropensci.org/taxadb/) (GBIF, ITIS, and others), a known source like the
+   Australian Faunal Directory (AFD) or the Australian Plant Census (APC), or any mix of these.
 2. **Align and update a list of raw taxon names** against that reference -- matching misspellings,
    synonyms, and names only identifiable to a higher rank (`genus sp.`), then resolving each match
    forward to its current accepted name.
@@ -130,6 +131,31 @@ apc <- load_taxonomic_resources("APC")   # wraps APCalign::load_taxonomic_resour
 `load_taxonomic_resources()` always returns a named list, even for one dataset, so both pieces above
 can be combined directly.
 
+### From taxadb (a pre-cached snapshot of GBIF, ITIS, and others)
+
+`generate_GBIF_taxonomic_reference_list()` fetches live from GBIF's API -- practical for a small
+clade, but slow for a genuinely large one (a phylum, a large class). For a large group,
+`generate_taxadb_taxonomic_reference_list()` instead sources from
+[taxadb](https://docs.ropensci.org/taxadb/)'s own pre-built, locally-cached snapshot -- fast
+regardless of size, at the cost of the snapshot possibly being out of date (check
+`taxadb:::available_versions()` to see how current it is before relying on it for anything
+time-sensitive):
+
+```{r}
+#| eval: false
+# every taxon in the class Insecta that taxadb's GBIF snapshot has
+insecta <- generate_taxadb_taxonomic_reference_list("Insecta", rank = "class", provider = "gbif")
+
+# the same, restricted to taxa with an Australian GBIF occurrence record
+insecta_au <- generate_taxadb_taxonomic_reference_list(
+  "Insecta", rank = "class", provider = "gbif", country = "AU"
+)
+```
+
+Unlike the two functions above, `rank` here is required -- it tells the function which column
+(`kingdom`/`phylum`/`class`/`order`/`family`/`genus`) to filter on, since taxadb has no single
+"fetch below this name" concept the way a live GBIF/API-backed fetch does.
+
 ### Combining multiple reference tables
 
 `prepare_taxonomic_resources()` also accepts a list of tables, combining them with a priority order:
@@ -219,8 +245,27 @@ align_taxa("Aporocera aff. viridipennis", resources, intergrades_affinis = TRUE)
 (`--`), a collector's indecision between two taxa (`/`), and graded/uncertain identifications
 (`aff.`/`cf.`). Both default to `FALSE`.
 
+A third opt-in parameter, `consider_english_name_endings`, recognises an informal vernacular ending
+(e.g. `"Coccinellid"` for family Coccinellidae, `"Curculionoid"` for superfamily Curculionoidea) and
+tries an exact match on the formal Latin equivalent before falling back to fuzzy matching -- useful
+for the kind of morphospecies/voucher code that names a broader group this way rather than a genus:
+
+```{r}
+align_taxa("Chrysomelid sp. 1", resources, consider_english_name_endings = TRUE) |>
+  select(original_name, aligned_name, taxon_rank)
+```
+
 For a large list, `progress = TRUE` prints a text progress bar tracking how many names have been
 resolved so far.
+
+Every result also includes `chars_changed` -- how many characters differed between the name and
+whatever it matched: `0` for an exact match, the actual edit distance for a fuzzy one, `NA` if nothing
+matched:
+
+```{r}
+align_taxa("Aporocera viridipenis", resources) |> # one letter missing
+  select(original_name, aligned_name, chars_changed)
+```
 
 ## Resolving to current names: `update_taxa()`
 

@@ -20,9 +20,9 @@ knitr::opts_chunk$set(
 `taxonAlign` helps you:
 
 1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference
-   tables -- your own, one built from the GBIF backbone taxonomy with
-   `generate_GBIF_taxonomic_reference_list()`, a known source like the Australian Faunal Directory
-   or the Australian Plant Census via `load_taxonomic_resources()`, or any mix of these.
+   tables -- your own, one built live from the GBIF backbone taxonomy or from a cached
+   [taxadb](https://docs.ropensci.org/taxadb/) snapshot, a known source like the Australian Faunal
+   Directory or the Australian Plant Census via `load_taxonomic_resources()`, or any mix of these.
 2. **Fuzzy-match a list of raw taxon names** against that reference, resolving misspellings,
    synonyms, and names only identifiable to a higher rank (`genus sp.`), to maximise how many of
    your names align successfully.
@@ -47,7 +47,8 @@ pak::pak("traitecoevo/taxonAlign")
 
 | Function | What it does |
 |---|---|
-| `generate_GBIF_taxonomic_reference_list()` | Build a reference table from the GBIF backbone taxonomy for a taxon (optionally filtered by country and/or minimum rank). |
+| `generate_GBIF_taxonomic_reference_list()` | Build a reference table from the *live* GBIF backbone taxonomy for a taxon (optionally filtered by country and/or minimum rank) -- best for a small clade. |
+| `generate_taxadb_taxonomic_reference_list()` | Build a reference table from [taxadb](https://docs.ropensci.org/taxadb/)'s pre-cached snapshot of GBIF, ITIS, or another supported authority -- fast for a large clade, at the cost of the snapshot possibly being out of date. |
 | `load_taxonomic_resources()` | Fetch/reshape a known reference dataset into the same flat schema -- currently the Australian Faunal Directory (`"AFD"`) and the Australian Plant Census (`"APC"`, via `APCalign`). |
 | `prepare_taxonomic_resources()` | Combine one or more reference tables (yours, GBIF's, a known source, or any mix) into the structure the matching functions need. |
 | `align_taxa()` | Match a list of raw taxon names against a prepared reference, via exact and fuzzy matching. |
