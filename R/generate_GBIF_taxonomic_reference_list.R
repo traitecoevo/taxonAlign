@@ -4,38 +4,29 @@
 # checklists GBIF indexes.
 gbif_backbone_dataset_key <- "d7dddbf4-2cf0-4f39-9b2a-bb099caae36c"
 
-# GBIF's species/name_lookup search endpoint refuses to serve pages past this offset -- confirmed via a
-# direct call against the raw GBIF REST API (not just rgbif's wrapper): `"Max offset of 100000
-# exceeded."`. This is a hard server-side limit (a common deep-pagination guard on search-style APIs),
-# not something more retries or more parallel requests can work around -- a clade with more descendants
-# than this (e.g. Arthropoda: ~3.1M, Mollusca: ~484k) has to be split into its immediate children and
-# fetched recursively instead (see fetch_gbif_taxon_tree_by_children()), each piece small enough to page
+# GBIF's species/name_lookup search endpoint refuses to serve pages past this offset ("Max offset of
+# 100000 exceeded.") -- a hard server-side limit (a common deep-pagination guard on search-style APIs),
+# not something more retries or more parallel requests can work around. A clade with more descendants
+# than this (e.g. Arthropoda, Mollusca) has to be split into its immediate children and fetched
+# recursively instead (see fetch_gbif_taxon_tree_by_children()), each piece small enough to page
 # directly. A bulk full-backbone download exists as an alternative
 # (https://hosted-datasets.gbif.org/datasets/backbone/current/backbone.zip) but was deliberately not
-# used: it's a ~1GB, infrequently-updated (checked: last modified over a year ago) snapshot covering
-# every kingdom, and using it for just the huge clades would leave the combined reference with silently
-# inconsistent currency (some phyla live/current, others years stale) -- worse than being slower but
-# uniformly live.
+# used: it's a large, infrequently-updated snapshot covering every kingdom, and using it for just the
+# huge clades would leave the combined reference with silently inconsistent currency (some phyla
+# live/current, others years stale) -- worse than being slower but uniformly live.
 gbif_max_lookup_offset <- 100000
 
-# Every rgbif call in this file passes this explicitly, rather than relying on rgbif's own default
-# (`list(http_version = 2)`, no timeout at all) -- found necessary in practice on a long, many-thousand-
-# request fetch (Arthropoda's recursive split): a request occasionally hangs indefinitely rather than
-# erroring or timing out on its own (observed directly -- worker processes sitting at ~0% CPU for 30+
-# minutes with no error, no data, and no further log output), which blocks the entire fetch forever
-# with no chance for fetch_page_with_retry() to ever kick in, since a retry can only happen after a
-# request actually fails. An explicit `timeout` (in seconds, via libcurl's CURLOPT_TIMEOUT) turns a hang
-# into an ordinary, retry-able error instead.
+# Every rgbif call in this file passes this explicitly, rather than relying on rgbif's own default (no
+# timeout at all) -- a request can occasionally hang indefinitely rather than erroring or timing out on
+# its own, which would block the entire fetch forever with no chance for fetch_page_with_retry() to
+# ever kick in (a retry can only happen after a request actually fails). An explicit `timeout` (in
+# seconds, via libcurl's CURLOPT_TIMEOUT) turns a hang into an ordinary, retry-able error instead.
 #
-# `timeout = 120`, not something shorter, based on a direct measurement, not a guess: GBIF's own deep-
-# pagination genuinely gets slower as the requested offset grows within a single higherTaxonKey query
-# (normal for an Elasticsearch-backed search API -- each page costs more to compute the further in it
-# is), confirmed by fetching all 29 pages of one persistently-timing-out large clade (GBIF key 542,
-# Sarcoptiformes, one at a time with no concurrency) and finding legitimate response times up to 78s at
-# high offsets, vs. 5-8s at low ones. An initial `timeout = 60` was hitting exactly this: individually
-# borderline-slow-but-real pages, pushed over the edge by `parallel_requests`' own concurrent load
-# (multiple pages competing for bandwidth at once) -- a self-inflicted contention issue, not GBIF
-# actually failing. 120s gives real margin above the measured worst case.
+# `timeout = 120`: GBIF's own deep-pagination genuinely gets slower as the requested offset grows
+# within a single higherTaxonKey query (normal for an Elasticsearch-backed search API -- each page
+# costs more to compute the further in it is), with legitimate response times measured up to ~78s at
+# high offsets under concurrent load (`parallel_requests`), vs. 5-8s at low ones. 120s gives real
+# margin above that measured worst case.
 gbif_curlopts <- list(http_version = 2, timeout = 120)
 
 # Retries `thunk()` (a zero-argument function, so each attempt genuinely re-executes the call rather
@@ -43,8 +34,7 @@ gbif_curlopts <- list(http_version = 2, timeout = 120)
 # every rgbif call in this file other than the paginated tree-page path, which has its own variant
 # (fetch_page_with_retry(), below) since it needs to hand a try-error back to its caller for cross-page
 # aggregation rather than stopping immediately. Used for name resolution, root usage lookups, children
-# pages and the occurrence facet -- any of which can hit the same transient network/TLS/timeout issue
-# found in practice on a very large, long-running fetch (see gbif_curlopts's own comment).
+# pages and the occurrence facet -- any of which can hit a transient network/TLS/timeout issue.
 with_gbif_retry <- function(thunk, max_attempts = 3) {
   for (attempt in seq_len(max_attempts)) {
     result <- try(thunk(), silent = TRUE)
@@ -384,9 +374,9 @@ fetch_gbif_taxon_tree <- function(root_key, cache_dir, refresh_cache, max_cache_
   }
 
   page_limit <- 1000
-  # unlike every other rgbif call in this file, this one had no retry wrapper at all until a real
-  # failure here (deep inside a large recursive split -- ~5,400 children into fetching Insecta's own
-  # breakdown) took down the entire branch on a single transient failure, with no chance to recover.
+  # wrapped in with_gbif_retry() like every other rgbif call in this file -- a transient failure here,
+  # deep inside a large recursive split, would otherwise take down the entire branch with no chance to
+  # recover.
   first_page <- with_gbif_retry(function() {
     rgbif::name_lookup(
       higherTaxonKey = root_key,
@@ -449,14 +439,13 @@ fetch_gbif_taxon_tree <- function(root_key, cache_dir, refresh_cache, max_cache_
     )$data
   }
 
-  # a single page occasionally fails with a transient network/TLS error (observed in practice on a
-  # large, thousands-of-pages fetch -- e.g. "LibreSSL SSL_read... bad decrypt") rather than anything
-  # wrong with the request itself; retrying a couple of times with a short backoff resolves it almost
-  # always. Without this, one flaky page would fail the *entire* tree fetch (see the "no silent partial
-  # data" check below) even after every other page of a very large, slow fetch already succeeded --
-  # wasteful for a clade with thousands of pages, where redoing the whole fetch from scratch is
-  # expensive. Retried inside fetch_page() itself (not at the mclapply()/lapply() call site) so it
-  # applies identically whichever of those two actually runs it.
+  # a single page occasionally fails with a transient network/TLS error rather than anything wrong with
+  # the request itself; retrying a couple of times with a short backoff resolves it almost always.
+  # Without this, one flaky page would fail the *entire* tree fetch (see the "no silent partial data"
+  # check below) even after every other page of a very large, slow fetch already succeeded -- wasteful
+  # for a clade with thousands of pages, where redoing the whole fetch from scratch is expensive.
+  # Retried inside fetch_page() itself (not at the mclapply()/lapply() call site) so it applies
+  # identically whichever of those two actually runs it.
   fetch_page_with_retry <- function(start, max_attempts = 3) {
     for (attempt in seq_len(max_attempts)) {
       result <- try(fetch_page(start), silent = TRUE)

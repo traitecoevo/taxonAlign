@@ -1,23 +1,14 @@
-# Shared implementation for the hybrid/intergrade/indecision/affinis match blocks in match_taxa()
-# below. Real APCalign's internal match_taxa() implements these as ~20 separate, near-identical
-# blocks (5 sub-blocks each for 4 pattern families: try an exact match against accepted genera, a
-# fuzzy match against accepted genera, a fuzzy match against synonym genera, an APNI-only variant,
-# and an "unknown genus" fallback) because APC/APNI's resources keep accepted/synonym/APNI genera in
-# three separate tables. taxonAlign's `resources$genus` is already one combined table (both statuses
-# together -- only `species` gets split by taxonomic_status in prepare_taxonomic_resources()), so
-# that split doesn't apply here -- one generic function suffices for both callers.
+# Shared implementation for the hybrid/intergrade/indecision/affinis match blocks below: try an
+# exact genus match, then a fuzzy genus match, then mark unresolved -- these naming conventions can
+# only ever specify a genus, never a species. One generic function suffices for every caller because
+# `resources$genus` is a single combined (accepted + synonym) table.
 #
-# `detect_fn` is a function of a `cleaned_name` character vector returning a logical vector (not a
-# pre-computed logical vector) because `taxa$tocheck` shrinks after each `redistribute()` call below
-# -- recomputing detect_fn(taxa$tocheck$cleaned_name) fresh each time keeps it aligned with whatever
-# rows are still actually in `tocheck`, rather than relying on stale positions/length from before
-# rows were removed.
+# `detect_fn` takes `cleaned_name` and returns a logical vector, recomputed fresh each call rather
+# than passed in pre-computed, since `taxa$tocheck` shrinks after each `redistribute()` call below.
 #
-# `alignment_code_*` are the four fully-formed codes for this match family's sub-cases (exact/fuzzy/
-# unresolved/no-genus-resource) rather than a single prefix the helper appends suffixes to -- this
-# keeps each match family's codes numbered sequentially (`match_03a`..`match_03d`, `match_04a`..
-# `match_04d`, ...) in execution order, the same convention the numbered match_NNx blocks elsewhere in
-# `match_taxa()` use, so sorting a result by `alignment_code` reproduces the order taxa were matched in.
+# `alignment_code_*` are the four full codes for this match family's sub-cases (exact/fuzzy/
+# unresolved/no-genus-resource), keeping each family's codes numbered sequentially in execution order
+# so sorting a result by `alignment_code` reproduces match order.
 match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep, reason_text,
                                          alignment_code_exact, alignment_code_fuzzy,
                                          alignment_code_unresolved, alignment_code_no_resource,
@@ -172,20 +163,16 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #' @param intergrades_affinis Logical; if `TRUE`, a name suggesting an intergrade between two taxa
 #'  (a double dash, `--`), a collector's indecision between two taxa (a slash, `/`), or a graded/
 #'  "affinis"/"cf." identification (`"aff."`, `"affinis"`, `"cf."`) is resolved to genus rank, unless
-#'  it's actually an exact match to a real, listed name -- see match_11c below (issue #16): a bare
-#'  "affinis" is genuinely ambiguous between the qualifier reading and a real specific epithet (e.g.
-#'  a tautonymous subspecies like "Genus affinis affinis"), and `APCalign::standardise_names()`
-#'  abbreviates it the same way either way, so the two are indistinguishable by text shape alone -- a
-#'  real, resource-verified exact match is given priority over the heuristic rather than guessing.
-#'  Defaults to `FALSE`.
+#'  it's actually an exact match to a real, listed name (a bare "affinis" is ambiguous between the
+#'  qualifier reading and a real specific epithet, e.g. a tautonymous subspecies like "Genus affinis
+#'  affinis" -- a real, resource-verified exact match takes priority over the heuristic). Defaults to
+#'  `FALSE`.
 #' @param consider_english_name_endings Logical; if `TRUE`, before any fuzzy matching, try substituting
 #'  a recognised informal English vernacular name ending for its formal Latin equivalent (`"-id"` ->
 #'  `"-idae"` for family, `"-ine"` -> `"-inae"` for subfamily, `"-oid"` -> `"-oidea"` for superfamily)
-#'  and attempt an *exact* match on the corrected name. Real invertebrate morphospecies/voucher codes
-#'  commonly use these informal forms to signal a broader taxonomic group without specifying an exact
-#'  genus (e.g. `"Coccinellid BF01"` meaning family Coccinellidae) -- left to ordinary fuzzy matching,
-#'  these very often resolved to a coincidentally-similar but unrelated genus instead (see issue #12).
-#'  Defaults to `FALSE`.
+#'  and attempt an *exact* match on the corrected name -- useful for a morphospecies/voucher code that
+#'  signals a broader taxonomic group this way (e.g. `"Coccinellid BF01"` meaning family Coccinellidae)
+#'  rather than a specific genus. Defaults to `FALSE`.
 #' @param identifier A dataset, location or other identifier,
 #'  which defaults to NA.
 #' @param include_bracketed_info Logical; controls the `"<rank name> sp. [<original name>; <identifier>]"`
@@ -227,25 +214,15 @@ match_taxa <- function(
     taxon_ranks_to_check <- setdiff(names(resources), c("species", "subgenus_v2"))
   }
 
-  # `taxon_ranks_to_check` is most-specific-first (see taxonAlign_taxon_rank_specificity in
-  # prepare_taxonomic_resources.R), which is the right default for *exact* higher-rank matching
-  # (match_02b/match_12b) -- an exact string collision across unrelated ranks is rare, and when it does
-  # happen (a genus and its own nominotypical subgenus sharing a name) it's already handled by that
-  # ordering's own deliberate genus-before-subgenus exception. Fuzzy matching (match_02c/match_12c) is a
-  # different story: checked in practice against a real, large, combined AFD+GBIF reference and the
-  # full real AusInvertTraits name list, 52% of names resolved via a fuzzy higher-rank match *also*
-  # fuzzy-matched a real candidate at a different rank -- overwhelmingly not coincidence, but a
-  # systematic pattern (see issue #12): informal English vernacular adjective forms derived from a
-  # family/subfamily/tribe root (e.g. "Melolonthine BF01 Heteronyx", "Coccinellid BF01", "Dynastine
-  # BF01") are, by convention, meant to signal the broader group they're derived from, not a specific
-  # genus -- but most-specific-first ordering was resolving nearly all of them to a coincidentally
-  # similar *genus* instead of the intended tribe/subfamily/family. `taxon_ranks_to_check_fuzzy` is the
-  # broadest-first reverse of `taxon_ranks_to_check`, used only by the fuzzy blocks -- broader is no
-  # worse than narrower for the genuinely coincidental collisions (a minority of the 52%, e.g. genus
-  # "Adotela" vs unrelated order "Acoela"), and a real improvement for the systematic vernacular-suffix
-  # majority. Genus-before-subgenus is preserved even under this reversal -- that exception is a
-  # guaranteed nomenclatural convention, not a coincidental fuzzy collision, so it should stay put
-  # regardless of which direction the rest of the order runs.
+  # `taxon_ranks_to_check` (most-specific-first -- see taxonAlign_taxon_rank_specificity in
+  # prepare_taxonomic_resources.R) is the right order for *exact* higher-rank matching
+  # (match_02b/match_12b), but fuzzy matching (match_02c/match_12c) uses the broadest-first reverse,
+  # `taxon_ranks_to_check_fuzzy`: an informal vernacular adjective (e.g. "Coccinellid BF01") signals
+  # the broader group it derives from, and checking narrowest-first tends to fuzzy-match a
+  # coincidentally similar genus instead of the intended family/subfamily/tribe. Genus-before-subgenus
+  # is preserved even under this reversal, since that ordering is a guaranteed nomenclatural
+  # convention (a nominotypical subgenus sharing its genus's name), not a coincidental fuzzy
+  # collision.
   taxon_ranks_to_check_fuzzy <- rev(taxon_ranks_to_check)
   genus_pos <- which(taxon_ranks_to_check_fuzzy == "genus")
   subgenus_pos <- which(taxon_ranks_to_check_fuzzy == "subgenus")
@@ -517,37 +494,23 @@ match_taxa <- function(
 
   # match_02y: quarantine a *bare* "Genus (Subgenus)" input -- exactly two whitespace-delimited tokens,
   # nothing beyond the bracketed subgenus itself -- before it can reach later, generic
-  # species/genus-level matching. This has to run this early (right after match_02a, well before
-  # match_05's species-level blocks), not only as a late fallback the way the old match_12a used to.
-  #
-  # Found via a real comparison of the same AusInvertTraits name list against two different resource
-  # combinations (AFD+iNat vs AFD+GBIF): "Lasioglossum (Parasphecodes)" resolved correctly to subgenus
-  # rank against one, but silently mis-resolved to an unrelated real SPECIES
-  # ("Lasioglossum parasphecodum") against the other. Root cause: `cleaned_name` (computed from
-  # `APCalign::standardise_names()` alone, before any stripping) keeps the "(Subgenus)" bracket intact
-  # -- match_02a and this block correctly use it -- but `stripped_name`/`stripped_name2` (and hence
-  # `binomial`/`trinomial`/`word_one_stripped`, which every earlier species-level block works off) only
-  # strip the *parenthesis characters*, not the bracketed word itself: `APCalign::strip_names(
-  # "Lasioglossum (Parasphecodes)")` returns `"lasioglossum parasphecodes"`, not `"lasioglossum"`. For a
-  # *bare* bracketed name (no real species epithet at all), the subgenus name then sits exactly where a
-  # species epithet would, and ordinary exact/fuzzy species-level matching can genuinely find a real,
-  # unrelated species that happens to be a close spelling match to it.
+  # species/genus-level matching. Must run early (right after match_02a, well before match_05's
+  # species-level blocks): `cleaned_name` keeps the bracket intact, but `stripped_name`/`stripped_name2`
+  # (and hence `binomial`/`trinomial`/`word_one_stripped`, which every species-level block works off)
+  # only strip the parenthesis *characters*, not the bracketed word itself
+  # (`APCalign::strip_names("Genus (Subgenus)")` returns `"genus subgenus"`, not `"genus"`) -- so for a
+  # bare bracketed name, the subgenus word sits exactly where a species epithet would, and ordinary
+  # species-level matching can find a real, unrelated species that happens to be a close spelling match.
   #
   # Deliberately scoped to *only* the bare, two-token case -- a genuine `"Genus (Subgenus) species"`
-  # trinomial (a real species epithet actually present, e.g. the nominotypical-subgenus convention
-  # `"Aporocera (Aporocera) t-viride"`, see test-match_taxa_typos.R) is already handled correctly and
-  # safely further down by match_11a/match_11b's `ignore_bracketed_words` (computed from
-  # `original_name` directly via `stringr::str_remove(original_name, " \\(.*\\)")`, which drops the
-  # *entire* "(...)" -- parens and contents both -- rather than just the parenthesis characters, so it
-  # never suffers the same false-epithet problem). Quarantining every bracketed name regardless of
-  # length here would pre-empt that correct, later mechanism for no benefit -- confirmed by this
-  # actually breaking that exact test when first tried.
+  # trinomial (e.g. the nominotypical-subgenus convention `"Aporocera (Aporocera) t-viride"`) is already
+  # handled correctly further down by match_11a/match_11b's `ignore_bracketed_words` (built from
+  # `original_name` directly, which drops the entire `"(...)"` rather than just the parenthesis
+  # characters, so it doesn't suffer the same false-epithet problem).
   #
-  # Detection is purely shape-based (a parenthesised second word, and nothing after it), not
-  # membership-based, precisely so a pair *absent* from resources$subgenus_v2 (or resources with no
-  # subgenus_v2 table at all) is still caught and safely quarantined rather than leaking through --
-  # membership is only checked inside each resolution step below, the same detect_fn/resolution split
-  # match_special_case_to_genus() uses.
+  # Detection is purely shape-based (a parenthesised second word, nothing after it), not
+  # membership-based, so a pair absent from `resources$subgenus_v2` (or no `subgenus_v2` table at all)
+  # is still caught and quarantined rather than leaking through.
   is_bracketed_subgenus <-
     stringr::str_count(taxa$tocheck$cleaned_name, " ") == 1 &
     stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(.*\\)$")
@@ -596,13 +559,10 @@ match_taxa <- function(
 
       if (nrow(taxa$tocheck) > 0) {
 
-        # fuzzy match against the bracketed "Genus (Subgenus)" pair -- new; the old match_12a had no
-        # fuzzy step at all, so a merely-misspelled subgenus bracket fell straight through into the
-        # same species-level mis-parsing this whole block exists to prevent. Reuses the already-built
-        # `fuzzy_match_genera()` closure (genus-level tolerance, and a no-op when `fuzzy_matches =
-        # FALSE`) rather than inventing separate tolerance parameters for this one case.
-        # recomputed against the current (post-exact-match, shrunk) taxa$tocheck, not the
-        # outer-scope is_bracketed_subgenus from before that redistribute()
+        # fuzzy match against the bracketed "Genus (Subgenus)" pair, so a merely-misspelled subgenus
+        # bracket doesn't fall through to species-level mis-parsing. Reuses `fuzzy_match_genera()`
+        # (genus-level tolerance; a no-op when `fuzzy_matches = FALSE`). Recomputed against the current
+        # (post-exact-match, shrunk) taxa$tocheck, not the outer-scope `is_bracketed_subgenus`.
         is_bracketed_subgenus2 <-
           stringr::str_count(taxa$tocheck$cleaned_name, " ") == 1 &
           stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(.*\\)$")
@@ -727,22 +687,14 @@ match_taxa <- function(
 
   }
 
-  # match_02z: English vernacular name-ending substitution (issue #12; opt-in via
-  # `consider_english_name_endings`, default FALSE). Real invertebrate morphospecies/voucher codes
-  # commonly use an informal English adjective form derived from a family/subfamily/superfamily root,
-  # which by convention is meant to signal that broader group, not any specific genus -- e.g.
-  # "Coccinellid BF01" (family Coccinellidae), "Melolonthine BF01 Heteronyx" (subfamily Melolonthinae),
-  # "Curculionoid sp." (superfamily Curculionoidea). Left to ordinary fuzzy matching, names like these
-  # almost always resolved to a coincidentally-similar but unrelated *genus* instead -- confirmed
-  # empirically, not theoretically: checked against a real, large combined reference and the full real
-  # AusInvertTraits name list, 52% of names resolved via a fuzzy higher-rank match *also* fuzzy-matched
-  # a real candidate at a different rank, and the large majority of those were this exact systematic
-  # pattern. Tried here, before any fuzzy matching, as an *exact* match on the corrected name -- safer
-  # than fuzzy matching or reordering alone, since it only ever succeeds when the corrected name is a
-  # real, present taxon, and costs nothing (falls through to ordinary fuzzy matching unchanged) when it
-  # isn't. Placed after match_02b (so a name that's already an exact match to something real never
-  # reaches this substitution logic at all) and before match_02c/match_12c (so it gets first refusal,
-  # covering both the "ends in sp." and generic fuzzy-fallback cases in one place).
+  # match_02z: English vernacular name-ending substitution (opt-in via `consider_english_name_endings`,
+  # default FALSE). A morphospecies/voucher code can use an informal English adjective form derived
+  # from a family/subfamily/superfamily root to signal that broader group rather than a specific genus
+  # (e.g. "Coccinellid BF01" for family Coccinellidae). Tried here as an *exact* match on the
+  # substituted name, before any fuzzy matching -- safer than fuzzy matching alone, since it only
+  # succeeds when the substituted name is a real, present taxon, and costs nothing otherwise. Placed
+  # after match_02b (an already-exact match never reaches this) and before match_02c/match_12c (so it
+  # gets first refusal on both the "ends in sp." and generic fuzzy-fallback cases).
   if (consider_english_name_endings) {
     # (vernacular ending, formal Latin ending, target rank) -- tribe ("-ini") and subtribe ("-ina")
     # endings are already the formal Latin form, so no vernacular variant is needed for those.
@@ -882,7 +834,7 @@ match_taxa <- function(
   # "/") can ever appear inside a real species epithet, so there's no ambiguity and no benefit to
   # delaying them. (The third pattern family this toggle also covers -- a graded/"affinis"/"cf."
   # identification -- is handled separately, right below, since it needs its own explicit exact-match
-  # step first rather than just relying on this early placement. Issue #16.)
+  # step first rather than just relying on this early placement.)
   if (intergrades_affinis) {
     is_intergrade_indecision <- function(cleaned_name) {
       is_intergrade <- stringr::str_detect(cleaned_name, "\\ -- |\\--")
@@ -910,35 +862,24 @@ match_taxa <- function(
       return(taxa)
   }
 
-  # match_04e-j: a graded/"affinis"/"cf." identification -- also placed early (same position as
-  # match_04's intergrade/indecision above), but unlike those two patterns, this one performs its own
-  # explicit, untruncated exact-match check first, before ever falling back to genus. (Issue #16.)
+  # match_04e-j: a graded/"affinis"/"cf." identification -- placed early like match_04 above, but this
+  # one performs its own explicit, untruncated exact-match check first, before ever falling back to
+  # genus.
   #
   # "affinis" is genuinely ambiguous in a way "--" and "/" are not: it's both an affinity qualifier
   # ("Acacia affinis dealbata" = "resembles A. dealbata, not confidently identified") *and* a
-  # legitimate specific epithet in its own right ("Gomphrena affinis subsp. pilbarensis" is a real,
-  # accepted name) -- and critically, a *repeated* bare epithet ("Themognatha affinis affinis", the
-  # zoological tautonym convention for a nominotypical subspecies) is genuinely indistinguishable from
-  # the qualifier reading by text shape alone, since "affinis" is also just a common, real epithet.
-  # `APCalign::standardise_names()` unconditionally abbreviates a bare "affinis" (not immediately
-  # followed by an infraspecific rank marker) to "aff." -- so "Themognatha affinis affinis" becomes
-  # "Themognatha aff. affinis" in `cleaned_name` regardless of this toggle, indistinguishable from a
-  # genuine hedge by text shape alone. Guessing "a repeated word must mean the tautonym" would be just
-  # as wrong in the other direction -- it would silently upgrade a genuine, deliberately uncertain
-  # hedge to a false, over-confident subspecies match.
+  # legitimate specific epithet in its own right -- and a *repeated* bare epithet (the zoological
+  # tautonym convention for a nominotypical subspecies, e.g. "Themognatha affinis affinis") is
+  # genuinely indistinguishable from the qualifier reading by text shape alone, since
+  # `APCalign::standardise_names()` abbreviates a bare "affinis" to "aff." regardless. Guessing "a
+  # repeated word must mean the tautonym" would be just as wrong in the other direction -- silently
+  # upgrading a genuine, deliberately uncertain hedge to a false, over-confident subspecies match.
   #
-  # The fix is to not guess at all: let a real, resource-verified exact match win first, using the same
-  # *untruncated* field match_11a/match_11b use (`ignore_bracketed_words`, built straight from
-  # `original_name`, never touched by the "aff." abbreviation). This deliberately does NOT just rely on
-  # running after match_09/match_10 (trinomial/binomial exact matching) instead -- confirmed via a real
-  # APC-equivalence-test failure that those blocks aren't safe evidence for this specific ambiguity:
-  # `binomial`/`trinomial` are truncated to the first 2-3 words of the *already-abbreviated*
-  # `stripped_name2`, and real reference data can have its own informally-named placeholder entries
-  # using the same "sp. aff. X" convention (a real APC entry, "Acacia sp. aff. rigens (Gerang Gerung)",
-  # reduces to the same truncated "acacia aff" binomial as *any* fabricated "Acacia aff. <anything>"
-  # query once stripped) -- so a truncated exact "match" there is coincidence, not evidence the query
-  # is a real, listed name. The untruncated `ignore_bracketed_words` field doesn't have this problem
-  # (the whole string has to match, not just a truncated prefix), so it's the only field trusted here.
+  # Resolved by letting a real, resource-verified exact match win first, using the same *untruncated*
+  # field match_11a/match_11b use (`ignore_bracketed_words`, built from `original_name`, never touched
+  # by the "aff." abbreviation) rather than `binomial`/`trinomial` -- those are truncated to the first
+  # 2-3 words of the already-abbreviated `stripped_name2`, so a genuinely different real name can
+  # coincidentally truncate to the same string as a fabricated "aff." query and falsely appear to match.
   if (intergrades_affinis) {
     not_before_rank_marker <- "(?!\\s+(?:subsp|ssp|subvar|var|forma|form|ser|series|cv|f)\\.?(?:\\s|$))"
     affinis_qualifier <- paste0(" affinis", not_before_rank_marker, "\\s")
@@ -1329,13 +1270,10 @@ match_taxa <- function(
   # Toward the end of the alignment function, see if the first two words of an unmatched taxon are a
   # "Genus (Subgenus)" pair in one of the taxonomic references. Unlike match_02y above (which only
   # quarantines a *bare* two-token "Genus (Subgenus)" early, before species-level matching gets a
-  # chance), this block deliberately has NO restriction on what follows the bracket -- it's what's left
-  # once every species-level exact block (match_05/09/10/11) has already had first refusal and failed,
-  # so recognising the genus/subgenus pair here is strictly better than falling through further to
-  # match_12b's genus-only fallback and silently losing subgenus-level specificity. Needed for e.g. a
-  # real "Genus (Subgenus) unmatched_epithet" query where the epithet genuinely isn't in the reference
-  # (so no species block can ever succeed) but the subgenus pair itself is -- see
-  # test-load_taxonomic_resources.R's "namespaces taxon_ID by rank..." test.
+  # chance), this block has NO restriction on what follows the bracket -- it's what's left once every
+  # species-level exact block (match_05/09/10/11) has already failed, so a "Genus (Subgenus)
+  # unmatched_epithet" query still resolves to subgenus rank rather than falling through to match_12b's
+  # genus-only fallback and losing that specificity.
 
   if (!is.null(resources$subgenus_v2)) {
 
@@ -1445,13 +1383,9 @@ match_taxa <- function(
   # Broadest-first (taxon_ranks_to_check_fuzzy, not taxon_ranks_to_check) -- see that variable's own
   # comment above.
   for (ranks in taxon_ranks_to_check_fuzzy) {
-    # `fuzzy_match_genus` must be recomputed fresh against *this* rank's word_one_stripped on every
-    # iteration -- reusing whatever match_02c's loop last left it as (whichever rank happened to be
-    # last in taxon_ranks_to_check, not necessarily this one) meant this block only ever fuzzy-matched
-    # correctly by coincidence. Found via real AusInvertTraits data: morphospecies "voucher code" names
-    # like "Aderid BF05" should fuzzy-match the tribe "Aderini" (distance 2, well within tolerance) but
-    # didn't, because fuzzy_match_genus held a stale result against an unrelated, usually near-empty
-    # rank instead.
+    # `fuzzy_match_genus` is recomputed fresh against *this* rank's word_one_stripped on every
+    # iteration -- it must be, since a stale result from a previous rank would only ever fuzzy-match
+    # correctly by coincidence.
     taxa$tocheck <- taxa$tocheck |>
       dplyr::mutate(
         fuzzy_match_genus = fuzzy_match_genera(word_one_stripped, resources[[ranks]]$word_one_stripped)
@@ -1460,11 +1394,9 @@ match_taxa <- function(
     i <-
       taxa$tocheck$fuzzy_match_genus %in% resources[[ranks]]$word_one_stripped
 
-    # `ii` must look up the *fuzzy match result* (fuzzy_match_genus), not the original query's own
-    # word_one_stripped -- the original word is (by definition, since this is the fuzzy fallback) not
-    # itself present in resources[[ranks]], so looking it up here always returned NA, silently
-    # corrupting every match this block did find via `i` with entirely blank taxonomic_dataset/
-    # taxon_ID/etc. columns.
+    # `ii` looks up the *fuzzy match result* (fuzzy_match_genus), not the original query's own
+    # word_one_stripped -- the original word is, by definition, not itself present in
+    # resources[[ranks]] (this is the fuzzy fallback), so looking it up directly would always be NA.
     ii <-
       match(
         taxa$tocheck[i,]$fuzzy_match_genus,

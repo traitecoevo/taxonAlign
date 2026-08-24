@@ -33,14 +33,11 @@ taxonAlign_required_cols <- c(
 
 # Column names known, with certainty, to never hold a hierarchy value -- excluded from the implied-
 # higher-rank-row synthesis scan below regardless of the "scan any extra column" default, since these
-# specifically are metadata columns taxonAlign's own loaders always produce, not something a user's own
-# data happens to include. `scientific_name_authorship` is `generate_GBIF_taxonomic_reference_list()`'s
-# own output column -- confirmed in practice against a real, large (358k-row) GBIF-derived reference:
-# every distinct author-citation string in it (e.g. "Plisko, 1965") was being synthesised into its own
-# bogus "taxon" at a fictional rank literally named "scientific_name_authorship" (66,564 such rows, ~10%
-# of the combined resource) -- a real, large-scale version of the "genuinely non-taxonomic extra column"
-# risk that feature's own design comment already flags, not just a theoretical one. Extend this vector
-# as further known-metadata columns turn up, the same "extend, don't guess" convention
+# are metadata columns taxonAlign's own loaders always produce, not part of a user's own data.
+# `scientific_name_authorship` (`generate_GBIF_taxonomic_reference_list()`'s own output column) is the
+# motivating case: an author-citation string like "Plisko, 1965" would otherwise be synthesised into
+# its own bogus taxon at a rank literally named "scientific_name_authorship". Extend this vector as
+# further known-metadata columns turn up, the same "extend, don't guess" convention
 # `taxonAlign_taxon_rank_specificity`/`taxonAlign_taxonomic_status_priority` already use -- a user's own
 # arbitrary extra column is still scanned as before; this list only ever grows with columns taxonAlign
 # itself is responsible for producing.
@@ -52,17 +49,14 @@ taxonAlign_non_hierarchy_cols <- c("scientific_name_authorship")
 # before any rank/status splitting happens (see prepare_taxonomic_resources() below), ensuring the
 # highest-priority (most reliable) row wins regardless of the order the data happened to arrive in.
 #
-# Ported and extended from APCalign's own `relevel_taxonomic_status_preferred_order()`
-# (`R/update_taxonomy.R`) -- the same disambiguation APCalign applies internally when resolving a
-# genus/family-level match, generalised here to every rank/status lookup taxonAlign performs (not just
-# genus/family). Extended with two terms GBIF's vocabulary uses that APC/APNI's doesn't: "homotypic
-# synonym" (shares the accepted name's type specimen -- as reliable as a nomenclatural/basionym
-# relationship, so placed right after the generic "taxonomic synonym") and "heterotypic synonym" (a
-# different type judged to represent the same taxon -- placed right after "basionym", before the
-# narrower "nomenclatural synonym"/"isonym" terms). A status not in this vector sorts after every known
-# term (via `factor()`'s NA-for-unmatched-level behaviour, which `dplyr::arrange()` places last by
-# default) rather than being dropped or erroring -- extend this vector as further status vocabularies
-# turn up, rather than guessing at their rank.
+# Generalises APCalign's own `relevel_taxonomic_status_preferred_order()` (which only disambiguates
+# genus/family-level matches) to every rank/status lookup taxonAlign performs, and adds two terms
+# GBIF's vocabulary uses that APC/APNI's doesn't: "homotypic synonym" (shares the accepted name's type
+# specimen -- as reliable as a nomenclatural/basionym relationship) and "heterotypic synonym" (a
+# different type judged to represent the same taxon). A status not in this vector sorts after every
+# known term (via `factor()`'s NA-for-unmatched-level behaviour, which `dplyr::arrange()` places last
+# by default) rather than being dropped or erroring -- extend this vector as further status
+# vocabularies turn up, rather than guessing at their rank.
 taxonAlign_taxonomic_status_priority <- c(
   "accepted",
   "taxonomic synonym",
@@ -91,16 +85,11 @@ taxonAlign_taxonomic_status_priority <- c(
 # than one taxonomic rank, which rank wins -- both when `resources`' rank sublists are flattened back
 # into one table (`update_taxa()`'s `taxon_ID`-keyed lookup, `match()`, first-hit semantics) and when
 # `match_taxa()`'s generic higher-rank loops (`match_02b`/`match_02c`/`match_12b`/`match_12c`) walk
-# `taxon_ranks_to_check` one rank at a time, stopping at the first rank a row matches. Previously,
-# `prepare_taxonomic_resources()` derived rank order from a plain `split()` on the raw rank string,
-# which orders alphabetically -- arbitrary, and actively wrong whenever two ranks' rows can carry the
-# same taxon_ID or name: real AFD data guarantees this for genus/subgenus (every genus split into
-# subgenera has a *nominotypical* subgenus sharing the genus's own name), which is what surfaced this in
-# the first place (see the AFD `taxon_ID` namespacing fix in `load_taxonomic_resources.R`) -- but even
-# with that fixed, *any* other coincidental cross-rank name collision (a handful turn up in real AFD
-# data at family/order/subfamily/suborder/subtribe/superfamily/superorder/class too) would otherwise
-# still resolve to whichever rank happened to sort first alphabetically, rather than a deliberately
-# chosen one -- the more specific rank in general, except genus-vs-subgenus specifically (see below).
+# `taxon_ranks_to_check` one rank at a time, stopping at the first rank a row matches. A plain
+# alphabetical rank order would be arbitrary here, and actively wrong whenever two ranks' rows can
+# carry the same `taxon_ID` or name -- which real data does: every genus split into subgenera has a
+# *nominotypical* subgenus sharing the genus's own name, and a handful of other cross-rank name
+# collisions turn up too.
 #
 # Species/infraspecific ranks aren't listed here -- `taxon_rank2` (below) buckets them into their own
 # `"species"` entry before this ordering is ever applied, and that bucket is always the most specific of
@@ -113,23 +102,19 @@ taxonAlign_taxonomic_status_priority <- c(
 # grouping, not the narrower subgenus one -- genus names are what people actually write and expect to
 # resolve to; the bracketed `Genus (Subgenus)` convention (`resources$subgenus_v2`) and the plain
 # subgenus-alone convention (`resources$subgenus`) both exist for when a subgenus is genuinely intended.
-# No other pair of ranks in this vector shares this same-name ambiguity (subgenus/genus is the one
-# taxonomic level where an identical, nominotypical name is guaranteed to occur), so this is the only
-# swap needed.
+# No other pair of ranks in this vector shares this same-name ambiguity, so this is the only swap needed.
 #
-# Extends (and is ordered by reversing the sense of) `gbif_rank_order`
-# (`generate_GBIF_taxonomic_reference_list.R`, broadest-to-narrowest, driving GBIF `rank`-filtering) --
-# not reused directly, since that vector's own trailing "cultivar"/"other"/"unranked" placeholders exist
-# for GBIF-filtering purposes specific to that file and aren't meaningful specificity-order entries here.
-# Adds a few rank names real AFD/iNat/APCalign-standardised data actually uses that GBIF's own enum
-# doesn't: "supertribe", "epifamily", "subterclass" (AFD/iNat), and "complex"/"hybrid" (informal,
-# species-adjacent identification concepts, ranked just below subgenus). Also includes the doubled-`n`
-# spellings ("sectionn", "subsectionn", "zoosectionn", "zoosubsectionn") that
-# `APCalign::standardise_taxon_rank()` actually produces for "section"/"subsection"/"zoosection"/
-# "zoosubsection" input (its Latin-to-English substring replacement, `gsub("sectio", "section", ...,
-# fixed = TRUE)`, matches "sectio" as a *substring* of the already-English "section", appending a
-# spurious extra "n" -- an upstream APCalign quirk, not a taxonAlign bug, but real values this vector
-# needs to rank correctly since they're what actually reaches `prepare_taxonomic_resources()`).
+# Extends (and reverses the sense of) `gbif_rank_order` (`generate_GBIF_taxonomic_reference_list.R`,
+# broadest-to-narrowest, driving GBIF `rank`-filtering) -- not reused directly, since that vector's own
+# trailing "cultivar"/"other"/"unranked" placeholders are specific to GBIF-filtering and aren't
+# meaningful specificity-order entries here. Adds rank names real AFD/iNat/APCalign-standardised data
+# uses that GBIF's own enum doesn't: "supertribe", "epifamily", "subterclass" (AFD/iNat), and
+# "complex"/"hybrid" (informal, species-adjacent identification concepts, ranked just below subgenus).
+# Also includes the doubled-`n` spellings ("sectionn", "subsectionn", "zoosectionn", "zoosubsectionn")
+# that `APCalign::standardise_taxon_rank()` produces for "section"/"subsection"/"zoosection"/
+# "zoosubsection" input (an upstream APCalign quirk in its Latin-to-English substring replacement, not
+# a taxonAlign bug -- but real values this vector needs to rank correctly since they're what actually
+# reaches `prepare_taxonomic_resources()`).
 #
 # A rank not in this vector isn't dropped or misplaced -- the call site builds the actual `factor()`
 # levels as `union(taxonAlign_taxon_rank_specificity, unique(taxon_rank2))`, so an unrecognised rank
@@ -298,11 +283,10 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
 
   # normalise taxon_ID/accepted_name_usage_ID to character on each table *before* combining --
   # bind_rows() below errors outright ("Can't combine ..$taxon_ID <character> and ..$taxon_ID <integer>")
-  # rather than coercing, whenever two supplied tables disagree on this column's type (a real,
-  # easy-to-hit case: generate_GBIF_taxonomic_reference_list()'s own taxon_ID is integer, while AFD/APC
-  # data uses character URI/UUID strings -- combining a GBIF-derived table with an AFD/APC-derived one
-  # hits this immediately). The later, single-table normalisation below (kept for the interactive-input
-  # path, which doesn't reach here) is too late to prevent this specific crash.
+  # rather than coercing, whenever two supplied tables disagree on this column's type (e.g.
+  # generate_GBIF_taxonomic_reference_list()'s integer taxon_ID vs. AFD/APC's character URI/UUID
+  # strings). The later, single-table normalisation below (kept for the interactive-input path, which
+  # doesn't reach here) is too late to prevent this crash.
   resolved <- purrr::map(resolved, function(tbl) {
     tbl |> dplyr::mutate(
       taxon_ID = as.character(taxon_ID),
@@ -335,12 +319,12 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     )
 
   # A row with no usable name (canonical_name is NA -- real data occasionally has this, e.g. some GBIF
-  # records genuinely lack a canonicalName) can never be matched *against* anyway, so it's dropped
-  # here rather than kept around as a resource-table row. This isn't just tidying: leaving it in is an
-  # active hazard downstream, because `NA %in% x` is TRUE whenever `x` itself contains an NA -- so a
+  # records genuinely lack a canonicalName) can never be matched *against* anyway, so it's dropped here
+  # rather than kept around as a resource-table row. This isn't just tidying: leaving it in is an active
+  # hazard downstream, because `NA %in% x` is TRUE whenever `x` itself contains an NA -- so a
   # fuzzy_match() call that legitimately finds no match (returning NA) would otherwise spuriously
-  # "match" this row's NA canonical_name instead of correctly matching nothing, in every match block
-  # that does `i <- some_value %in% resources$...$canonical_name`-style lookups.
+  # "match" this row's NA canonical_name, in every match block that does
+  # `i <- some_value %in% resources$...$canonical_name`-style lookups.
   n_before <- nrow(taxonomic_resources)
   taxonomic_resources <- taxonomic_resources |> dplyr::filter(!is.na(canonical_name))
   n_dropped <- n_before - nrow(taxonomic_resources)
@@ -354,17 +338,16 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
 
   # A row whose canonical_name is literally the bare name of its own rank (e.g. canonical_name =
   # "Genus" on a taxon_rank = "genus" row) is just as unmatchable-in-any-useful-sense as an NA one, and
-  # actively hazardous the same way -- found in practice in real GBIF data: a real, if unusual,
-  # taxonomic convention for an undescribed genus/family/etc. is a placeholder scientific name like
-  # "Genus B JS" or "Genus ANIC A" (ANIC = Australian National Insect Collection), and GBIF's own name
-  # parsing strips the placeholder code when extracting canonicalName, leaving just the bare rank word
-  # "Genus". This collides with a *completely unrelated* real-world convention on the *query* side --
-  # morphospecies voucher codes like "Genus 1 sp.01 Corinnidae" also use the literal word "Genus" as a
-  # placeholder for "unidentified genus" -- so match_taxa()'s generic higher-rank matching would
-  # confidently but wrongly resolve such a query to whichever unrelated GBIF placeholder genus happened
-  # to be named just "Genus", rather than correctly failing to match at all. Dropped the same way as the
-  # NA-canonical_name case above, generically for any rank (not just "genus" specifically) since the
-  # same GBIF placeholder-naming convention was also confirmed for "Family"/"Order"/"Tribe"/"Subfamily".
+  # actively hazardous the same way. GBIF has a real, if unusual, taxonomic convention for an
+  # undescribed genus/family/etc. -- a placeholder scientific name like "Genus B JS" -- and its name
+  # parsing strips the placeholder code when extracting canonicalName, leaving just the bare rank word.
+  # This collides with an unrelated convention on the *query* side: a morphospecies voucher code like
+  # "Genus 1 sp.01 Corinnidae" also uses the literal word "Genus" as a placeholder for "unidentified
+  # genus", so match_taxa()'s generic higher-rank matching would confidently but wrongly resolve such a
+  # query to whichever unrelated placeholder genus happened to be named just "Genus", rather than
+  # correctly failing to match at all. Dropped the same way as the NA-canonical_name case above,
+  # generically for any rank (not just "genus"), since the same placeholder-naming convention is used
+  # for other ranks too (e.g. "Family"/"Order"/"Tribe"/"Subfamily").
   n_before <- nrow(taxonomic_resources)
   taxonomic_resources <- taxonomic_resources |>
     dplyr::filter(tolower(canonical_name) != tolower(taxon_rank))
@@ -384,19 +367,18 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # already have an explicit row of its own -- generalising what load_AFD() already does for AFD's own
   # raw export (see afd_higher_rank_rows()) to *any* input table that happens to carry this kind of
   # column, so someone assembling their own reference doesn't have to remember to add an explicit row
-  # for every genus/family/etc. their species rows already imply (a real, easy mistake to make -- found
-  # by making it in this package's own get-started.qmd vignette example). Any column beyond the
-  # required 8 is scanned this way, not just the standard Linnaean kingdom/phylum/class/order/family
-  # set, since real taxonomic data often has ranks beyond those (tribe, subfamily, superfamily, ...);
-  # the tradeoff is that a genuinely non-taxonomic extra column (e.g. "locality", "collector") would
-  # also be treated as an implied rank and generate rows from it -- if that's not wanted, simply don't
-  # include such a column in `taxonomic_resources` in the first place. `genus` is part of the required
-  # 8, but is *also* itself a hierarchy column implying its own rank's rows, so it's included here too.
-  # Only character columns can plausibly hold a taxon name -- an extra numeric/logical/date column
-  # (e.g. a collection year, a record count) isn't a hierarchy column at all, and treating it as one
-  # doesn't just produce silly rows, it can crash outright (e.g. `values != ""` on a POSIXct column).
-  # `taxonAlign_non_hierarchy_cols` (see its own comment above) excludes specific columns known with
-  # certainty to never be hierarchy columns, regardless of type.
+  # for every genus/family/etc. their species rows already imply. Any column beyond the required 8 is
+  # scanned this way, not just the standard Linnaean kingdom/phylum/class/order/family set, since real
+  # taxonomic data often has ranks beyond those (tribe, subfamily, superfamily, ...); the tradeoff is
+  # that a genuinely non-taxonomic extra column (e.g. "locality", "collector") would also be treated as
+  # an implied rank and generate rows from it -- if that's not wanted, simply don't include such a
+  # column in `taxonomic_resources` in the first place. `genus` is part of the required 8, but is
+  # *also* itself a hierarchy column implying its own rank's rows, so it's included here too. Only
+  # character columns can plausibly hold a taxon name -- an extra numeric/logical/date column isn't a
+  # hierarchy column at all, and treating it as one doesn't just produce silly rows, it can crash
+  # outright (e.g. `values != ""` on a POSIXct column). `taxonAlign_non_hierarchy_cols` (see its own
+  # comment above) excludes specific columns known with certainty to never be hierarchy columns,
+  # regardless of type.
   extra_cols <- setdiff(names(taxonomic_resources), c(taxonAlign_required_cols, taxonAlign_non_hierarchy_cols))
   extra_cols <- extra_cols[purrr::map_lgl(taxonomic_resources[extra_cols], is.character)]
   implied_rank_cols <- union("genus", extra_cols)
@@ -481,31 +463,25 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   }
 
   # for species, split further into "accepted" vs everything else -- not a literal split() by the raw
-  # taxonomic_status string. Real-world data uses many distinct non-accepted status labels (real APC
-  # data alone has ~18: "basionym", "nomenclatural synonym", "taxonomic synonym", "orthographic
-  # variant", "misapplied", "excluded", ...), so a literal split() only ever created a
-  # resources$species$synonym bucket for rows whose status was the exact string "synonym" -- every
-  # other non-accepted row (the vast majority of real APC synonym-like rows) ended up in its own
-  # orphaned resources$species$<status> list element that match_taxa() never references, silently
-  # invisible to every synonym-matching block. Each row's *own* taxonomic_status is preserved in the
-  # `synonym` bucket regardless (match_taxa() pulls it from the row, not from the bucket name), so
-  # output still correctly reports e.g. "basionym" rather than a lossy relabel to generic "synonym" --
-  # this only changes which bucket a row is a match *candidate* in.
+  # taxonomic_status string. Real-world data uses many distinct non-accepted status labels ("basionym",
+  # "nomenclatural synonym", "taxonomic synonym", "orthographic variant", "misapplied", "excluded",
+  # ...), and match_taxa() only ever references a `resources$species$synonym` bucket, not one per raw
+  # status string. Each row's *own* taxonomic_status is preserved in the `synonym` bucket regardless
+  # (match_taxa() pulls it from the row, not from the bucket name), so output still correctly reports
+  # e.g. "basionym" rather than a lossy relabel to generic "synonym" -- this only changes which bucket a
+  # row is a match *candidate* in.
   species_table <- resources$species
   species_status <- ifelse(species_table$taxonomic_status == "accepted", "accepted", "synonym")
   resources$species <- split(species_table, species_status)
 
   # A status entirely absent from the input (e.g. a reference built from accepted names only, with no
-  # synonyms at all -- a real, valid shape, not just a fixture gap) would otherwise leave
-  # resources$species$synonym (or $accepted) missing (NULL) rather than an empty tibble.
-  # match_taxa()'s match_01a/01b/01c/01d/05a/05b/09a/09b/10a/10b/11a/11b blocks reference
-  # resources$species$accepted/synonym$<column> unconditionally (unlike higher ranks, which are only
-  # ever looped over if actually present in `names(resources)`); `NULL$<column>` is NULL, and
-  # `dplyr::mutate(x = NULL)` *drops* that column rather than leaving it NA. Since every input name
-  # then legitimately selects zero rows for that block, the mutated result ends up with fewer columns
-  # than the slice it's replacing, and `taxa$tocheck[i, ] <- ...` errors ("Can't recycle input of size N
-  # to size M") even though `i` selects nothing. Backfilling with a 0-row tibble (same columns) instead
-  # keeps every match block's `resources$species$<status>$<column>` reference a real, if empty, vector.
+  # synonyms at all -- a real, valid shape) would otherwise leave resources$species$synonym (or
+  # $accepted) missing (NULL) rather than an empty tibble. match_taxa()'s species-level blocks
+  # reference resources$species$accepted/synonym$<column> unconditionally (unlike higher ranks, which
+  # are only looped over if actually present in `names(resources)`), and `NULL$<column>` being dropped
+  # rather than NA would make the mutated result end up with fewer columns than the slice it's
+  # replacing. Backfilling with a 0-row tibble (same columns) instead keeps every match block's
+  # `resources$species$<status>$<column>` reference a real, if empty, vector.
   for (status in c("accepted", "synonym")) {
     if (is.null(resources$species[[status]])) {
       resources$species[[status]] <- species_table[0, ]

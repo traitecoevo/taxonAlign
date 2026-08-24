@@ -24,15 +24,13 @@ strip_taxadb_gbif_prefix <- function(x) {
 #'
 #' **This currency trade-off is much larger in practice than taxadb's own documentation suggests, so
 #' verify it yourself before relying on it.** taxadb's `data-sources` vignette describes "semi-annual"
-#' snapshots, but as measured directly at the time this function was written, `taxadb:::available_versions()`
-#' returns the same single version (`"22.12"`, December 2022) for *every* provider it lists -- the
-#' underlying data pipeline appears to have stopped publishing new snapshots years ago, not months.
-#' Comparing an independently-fetched, live GBIF reference against this function's output for the same
-#' 28 invertebrate phyla found only 85.2% agreement on exact GBIF usageKeys overall (93.0% restricted
-#' to accepted names) -- consistent with several years of missed backbone updates for an
-#' actively-studied group, not a modest staleness gap. Re-check `taxadb:::available_versions()`
-#' yourself before trusting this function for anything where currency matters; this package can't
-#' control whether taxadb's maintainers resume publishing.
+#' snapshots, but `taxadb:::available_versions()` currently returns the same single version
+#' (`"22.12"`, December 2022) for *every* provider it lists -- the underlying data pipeline appears to
+#' have stopped publishing new snapshots years ago, not months. A raw usageKey-level comparison against
+#' a live GBIF fetch for the same clade found meaningfully lower agreement than a few years' staleness
+#' alone would suggest, though real end-to-end name-alignment tasks were affected far less. Re-check
+#' `taxadb:::available_versions()` yourself before trusting this function for anything where currency
+#' matters; this package can't control whether taxadb's maintainers resume publishing.
 #'
 #' This function is deliberately narrower than `generate_GBIF_taxonomic_reference_list()`: it has no
 #' concept of "a minimum rank to include below `taxon_name`" (every row taxadb has for the requested
