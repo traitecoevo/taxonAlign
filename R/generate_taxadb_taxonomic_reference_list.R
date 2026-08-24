@@ -19,16 +19,20 @@ strip_taxadb_gbif_prefix <- function(x) {
 #' a genuinely large one (GBIF's taxonomy-browsing endpoint refuses to serve pages past a 100,000-row
 #' offset at all, forcing a large clade to be split recursively into smaller pieces; see that function's
 #' own documentation). `taxadb` sidesteps this: it downloads and locally caches a small number of large,
-#' pre-built snapshot files per provider (semi-annual releases, not live), then answers a taxon-group
-#' filter as an ordinary local database query -- fast and reliable regardless of how large the group is,
-#' at the cost of the snapshot being up to a few months old rather than live. Measured directly (not
-#' just theorised) for the `"gbif"` provider by comparing an independently-fetched, live reference
-#' against this function's output for the same 28 invertebrate phyla: 85.2% of GBIF usageKeys agreed
-#' overall, rising to 93.0% when restricted to accepted names only -- the remaining gap is
-#' concentrated in *synonym* coverage specifically, not just newly-described accepted species. Worth
-#' weighing for an alignment tool: this function is a strong choice for accepted-name coverage of a
-#' large clade, but don't assume it's a complete substitute for a live fetch when synonym resolution
-#' matters. See `CLAUDE.md`'s Architecture #1b for the full breakdown.
+#' pre-built snapshot files per provider, then answers a taxon-group filter as an ordinary local
+#' database query -- fast and reliable regardless of how large the group is.
+#'
+#' **This currency trade-off is much larger in practice than taxadb's own documentation suggests, so
+#' verify it yourself before relying on it.** taxadb's `data-sources` vignette describes "semi-annual"
+#' snapshots, but as measured directly at the time this function was written, `taxadb:::available_versions()`
+#' returns the same single version (`"22.12"`, December 2022) for *every* provider it lists -- the
+#' underlying data pipeline appears to have stopped publishing new snapshots years ago, not months.
+#' Comparing an independently-fetched, live GBIF reference against this function's output for the same
+#' 28 invertebrate phyla found only 85.2% agreement on exact GBIF usageKeys overall (93.0% restricted
+#' to accepted names) -- consistent with several years of missed backbone updates for an
+#' actively-studied group, not a modest staleness gap. Re-check `taxadb:::available_versions()`
+#' yourself before trusting this function for anything where currency matters; this package can't
+#' control whether taxadb's maintainers resume publishing.
 #'
 #' This function is deliberately narrower than `generate_GBIF_taxonomic_reference_list()`: it has no
 #' concept of "a minimum rank to include below `taxon_name`" (every row taxadb has for the requested
