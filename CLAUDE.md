@@ -1015,26 +1015,39 @@ reimplementing `reproduce-EH-workflow.Rmd`'s underlying idea (align the real Aus
 against AFD+iNat and check the result against a real historical answer key) against the *finished*
 package's exported functions, rather than fixing the original prototype vignette's broken external
 paths. Framed explicitly as a historical record, not a tutorial (`get-started.qmd` is that) --
-narrates why the package exists (real, messy invertebrate names AusInvertTraits actually contains:
-morphospecies/voucher codes, the zoological `Genus (Subgenus)` bracket convention, tautonymous
-subspecies, species groups), walks through building the AFD+iNat reference and aligning the real
-5,154-name list, quantifies agreement against the historical `taxon_name` answer key (2,861/2,873 of
-the names it actually resolved to species, before the issue #16 fix; 2,862/2,873 after), individually
-characterises all 12 disagreements (6 real coverage gaps, 2 fuzzy-matching imprecision within
-*Euastacus* -- a large genus of very similarly-epithet-ed crayfish species, newly filed as
+narrates why the package exists (real, messy invertebrate names, generically attributed to "an
+Australian invertebrates trait database" throughout rather than naming AusInvertTraits or its sibling
+`ausinvertraits`/`ausinvertraits.addons` repos directly -- **those are private repos**, so this
+published-facing vignette (unlike CLAUDE.md, which is internal and keeps the specific names) never
+names or links them), walks through building the AFD+iNat reference (noting AFD's own real limitation
+-- incomplete coverage across invertebrate phyla, comprehensive for some groups like insects but not
+others -- and iNat's: `taxonomic_status` hardcoded to `"accepted"`, so it carries no synonym
+information and can only widen coverage, never resolve a synonym) and aligning the real 5,154-name
+list, quantifies agreement against the historical answer key at **both** species level (`taxon_name`:
+2,861/2,873, 99.6%) **and** higher-rank level (the historical `aligned_name` column, matched against
+`include_bracketed_info = TRUE`'s identical bracketed format: 1,911/2,281, 87.1% -- a stricter,
+format-sensitive comparison, with the same two resource combinations still agreeing with *each other*
+on 98.5% of that higher-rank subset), individually characterises all 12 species-level disagreements (6
+real coverage gaps, 2 fuzzy-matching imprecision within *Euastacus* -- a large genus of very
+similarly-epithet-ed crayfish species, newly filed as
 [issue #17](https://github.com/traitecoevo/taxonAlign/issues/17) -- 2 that are the *historical* file's
 own inconsistency rather than a disagreement this package introduced, 1 a human-context-vs-string-match
 limitation, and 1 the real tautonym bug issue #16 fixed), demonstrates swapping AFD+iNat for AFD+GBIF
-(99.1% agreement against the *other* pipeline, per the earlier AFD+iNat/AFD+GBIF diff analysis in this
-file), and closes with the GBIF-scale-fetch engineering story (Architecture #1 above) and some
-retrospective lessons. Every code chunk is `#| eval: false` (set once, document-wide, via the YAML
-frontmatter's `execute: eval: false`) since it depends on files that aren't part of the package (the
-real ~89MB AFD export, a personal iNat export, the real AusInvertTraits name list) -- confirmed this
-still renders cleanly end to end (`quarto render vignettes/development-history.qmd`, cleaning up the
-same `*_files/`/`.knit.md`/`.html` leftovers as `get-started.qmd` afterward) despite none of its code
-actually executing, the same "not a formal knitr vignette, rendered directly" treatment as
-`get-started.qmd` -- for the same reason: it isn't self-contained enough for `R CMD build` to knit it,
-same as `reproduce-EH-workflow.Rmd`, so it's kept out of the formal vignette-build path entirely rather
+(99.1% agreement against the *other* pipeline overall, per the earlier AFD+iNat/AFD+GBIF diff analysis
+in this file), and closes with the GBIF-scale-fetch engineering story (Architecture #1 above) and some
+retrospective lessons. Trimmed materially after user review for length and general-audience readability
+(the opening and "why this package exists" section especially -- fewer example names, a shorter
+disclaimer). Every code chunk is `#| eval: false` (set once, document-wide, via the YAML frontmatter's
+`execute: eval: false`) -- most of it (the AFD/iNat/GBIF loading calls) is now genuinely runnable once
+those three exports land in `inst/extdata/` as planned, but the database's own raw name list still
+isn't this package's data to ship, and the whole multi-minute alignment plus live GBIF fetch still
+isn't something to run on every render regardless. Confirmed this still renders cleanly end to end
+(`quarto render vignettes/development-history.qmd`, cleaning up the same `*_files/`/`.knit.md`/`.html`
+leftovers as `get-started.qmd` afterward) despite none of its code actually executing, the same "not a
+formal knitr vignette, rendered directly" treatment as `get-started.qmd` -- for the same reason: it
+isn't (yet, pending those three files landing in `inst/extdata/`) self-contained enough for
+`R CMD build` to knit it, same as `reproduce-EH-workflow.Rmd`, so it's kept out of the formal
+vignette-build path entirely rather
 than left to fail it.
 
 **A real bug found while building this vignette's live GBIF example**: `generate_GBIF_taxonomic_reference_list()`
