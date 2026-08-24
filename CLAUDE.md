@@ -27,6 +27,11 @@ see Architecture #2). `load_taxonomic_resources(taxonomic_dataset = ...)` (issue
 `APCalign::load_taxonomic_resources()` wrapper (`"APC"`) so far -- into the flat schema
 `prepare_taxonomic_resources()` expects, complementing it the same way
 `generate_GBIF_taxonomic_reference_list()` does for GBIF.
+`generate_taxadb_taxonomic_reference_list()` (issue #19, see Architecture #1b) is a third way to build
+a reference table -- sourced from [taxadb](https://docs.ropensci.org/taxadb/)'s own pre-cached,
+versioned snapshots of GBIF/ITIS/COL/etc., a better fit than `generate_GBIF_taxonomic_reference_list()`
+for a genuinely large taxon group (no live pagination, no 100,000-row offset ceiling), with `country`
+filtering (still GBIF-only) reusing that function's own internal helpers rather than duplicating them.
 
 ## Commands
 
@@ -74,6 +79,15 @@ and its internal helpers (`resolve_gbif_taxon()`, `fetch_gbif_taxon_tree()`, `fe
 `testthat::local_mocked_bindings(..., .package = "rgbif")`, with fixture builders in
 `tests/testthat/helper-gbif-fixtures.R`.
 
+`tests/testthat/test-generate_taxadb_taxonomic_reference_list.R` covers
+`generate_taxadb_taxonomic_reference_list()`, also entirely offline -- the core reshape/filter tests
+run against real data via `taxadb`'s own tiny bundled `"itis_test"` fixture (no mocking needed, since
+it's a small subset of ITIS shipped inside the `taxadb` package itself purely for testing purposes),
+and the one `country`-filtering test (`provider = "gbif"`) mocks `taxadb::td_create()`/
+`taxadb::taxa_tbl()` alongside `rgbif::name_backbone()`/`rgbif::occ_search()` (reusing
+`helper-gbif-fixtures.R`'s existing builders for the latter two). Skipped (not counted below) if
+`taxadb` isn't installed, since it's a `Suggests`, not an `Imports`, dependency.
+
 `tests/testthat/test-prepare_taxonomic_resources.R`, `test-prepare_taxonomic_resources_interactive.R`,
 `test-align_taxa.R`, `test-match_taxa.R`, `test-update_taxa.R`, `test-create_taxonomic_update_lookup.R`
 and `test-match_taxa_helpers.R` cover the matching/alignment engine end to end against a small
@@ -105,14 +119,14 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-382 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+402 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
 #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 382) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 402) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (389 total, as of the last online run that succeeded). This has also failed
+passing expectations on top (409 total, as of the last online run that succeeded). This has also failed
 intermittently across several local runs (`load_APC()` → `dplyr::mutate()` on a `NULL`
 `APC$family_accepted`, i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning
 that element) -- looks like a real, if intermittent, upstream issue (rate limiting or a partial
@@ -271,6 +285,64 @@ Key design points worth knowing before touching this file:
     slower but uniformly live. Also a materially bigger architectural change (a new file-based ingestion
     path covering every kingdom, not a fetch scoped to one taxon) rather than a fix to the existing
     fetch. Worth reconsidering only if GBIF's API limits become more restrictive still.
+
+### 1b. taxadb-backed reference list builder — `R/generate_taxadb_taxonomic_reference_list.R` (active, exported)
+
+Companion to the function above, for the case that function's own docs now explicitly say it's *not*
+suited to: a genuinely large clade (a phylum, a large class). Sources from
+[taxadb](https://docs.ropensci.org/taxadb/) (rOpenSci) — a package that already downloads and locally
+caches versioned, pre-built snapshots of several major taxonomic authorities (`gbif`, `itis`, `col`,
+`ncbi`, `ott`, `iucn`, and some less-actively-maintained ones — see `taxadb::td_create()`'s own docs
+for the current list), backed by DuckDB + parquet. Filtering to a taxon group (`generate_taxadb_taxonomic_reference_list(taxon_name, rank, provider)`)
+is then an ordinary local database query regardless of how large the group is — no pagination limit,
+no recursive splitting, no retry/timeout engineering needed, at the cost of the snapshot being up to a
+few months stale rather than live (taxadb's own docs: snapshots are semi-annual). Investigated and
+implemented per [issue #19](https://github.com/traitecoevo/taxonAlign/issues/19).
+
+- **`country` filtering is still GBIF-API-only**, not something `taxadb` can supply for *any*
+  provider — `taxadb` has no occurrence data at all, only taxonomic backbone data. So `country` is
+  only accepted when `provider = "gbif"`, and even then it's answered by reusing
+  `resolve_gbif_taxon()`/`fetch_gbif_country_keys()` (the exact same internal helpers
+  `generate_GBIF_taxonomic_reference_list()` already uses for its own `country` argument) rather than
+  duplicating that logic — one small, live GBIF API call to resolve `taxon_name`'s key and one
+  occurrence-facet query, on top of the otherwise-fully-local taxadb query.
+- **A real bug found in `taxadb::filter_rank()` while investigating this (confirmed directly, not
+  assumed from docs)**: `rank = "order"` throws a genuine DuckDB parser error
+  (`"Parser Error: syntax error at or near \"order\""`) — `order` is a reserved SQL keyword, and
+  `filter_rank()`'s internals build a raw `WHERE` clause without quoting the column name. Every other
+  rank (`kingdom`/`phylum`/`class`/`family`/`genus`) works fine; only `order` collides. Not reported
+  upstream yet. Worked around here by not depending on `filter_rank()` at all — this function queries
+  `taxadb::taxa_tbl(provider)` directly via an ordinary `dplyr::filter()`, which goes through
+  `dbplyr`'s own identifier-quoting and doesn't hit the bug, confirmed working for `"order"` too.
+- **taxadb's schema has no separate authorship field** — confirmed against its own `taxonID`/
+  `scientificName`/`acceptedNameUsageID`/... Darwin Core schema (identical across every provider,
+  the whole point of `taxadb`'s normalisation) and directly against real data (`taxadb`'s own tiny
+  bundled `itis_test` fixture, used for this package's own offline tests). `scientific_name` and
+  `canonical_name` are therefore identical in this function's output, unlike
+  `generate_GBIF_taxonomic_reference_list()`'s, where `scientific_name` includes authorship.
+- **`taxonID`/`acceptedNameUsageID` are `"<PROVIDER>:<integer>"`-prefixed strings** (e.g.
+  `"GBIF:2440935"`), confirmed against `taxadb`'s `data-sources` vignette and real `itis_test` data --
+  `strip_taxadb_gbif_prefix()` strips this specifically for the `country`-filtering step, which needs
+  the bare GBIF usageKey to compare against `fetch_gbif_country_keys()`'s result and to pass to
+  `resolve_gbif_taxon()`'s underlying `rgbif` calls. The final output keeps the prefixed string form
+  as `taxon_ID` (consistent with `taxadb`'s own convention, and harmless for combining with other
+  sources since `prepare_taxonomic_resources()` already normalises `taxon_ID` to character regardless
+  of the source column's type).
+- **Investigated, and deliberately not (yet) used, as a way to shrink or replace this package's own
+  bespoke GBIF pagination engineering**: `taxadb`'s own `gbif` snapshot could in principle make much of
+  `fetch_gbif_taxon_tree_by_children()`'s recursive-splitting logic unnecessary for large clades, since
+  the whole point is that `taxadb` already did that heavy lifting once, centrally, rather than every
+  user re-paginating GBIF's live API themselves. This is *why* `generate_taxadb_taxonomic_reference_list()`
+  exists as a genuine alternative, not a niche extra option — but `generate_GBIF_taxonomic_reference_list()`
+  itself is deliberately left as-is (not rewritten to use `taxadb` internally) since it's still the
+  right tool for a small clade needing a live, up-to-the-moment fetch, and this session's own real,
+  independently-fetched worldwide GBIF invertebrate reference (Architecture #1's own numbers) remains
+  useful precisely *because* it was fetched independently — a live cross-check against `taxadb`'s
+  snapshot, not a redundant duplicate of it.
+- **`taxadb` is a `Suggests`, not an `Imports`, dependency** — this function is the only thing in the
+  package that needs it, guarded by an explicit `requireNamespace()` check with an install hint, so a
+  user who never calls this function never needs to install `taxadb` (and its own heavier dependency,
+  DuckDB) at all.
 
 ### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/prepare_taxonomic_resources_interactive.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/update_taxa.R`, `R/create_taxonomic_update_lookup.R`, `R/match_taxa_helpers.R` (active; everything but `match_taxa()` and the helpers is exported)
 

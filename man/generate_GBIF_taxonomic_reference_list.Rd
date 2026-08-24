@@ -100,6 +100,16 @@ optionally restricted to taxa recorded as occurring in a given country and/or to
 minimum taxonomic rank.
 }
 \details{
+\strong{This function is best suited to a small taxon grouping} -- a genus, a family, a small order.
+It fetches directly from GBIF's live API, and a genuinely large clade (a phylum, a large class or
+order) means paginating through hundreds or thousands of pages, hitting GBIF's hard 100,000-row
+pagination ceiling (forcing a slower, more fragile recursive split into smaller pieces -- see
+\code{fetch_gbif_taxon_tree_by_children()}), and a real risk of individual pages timing out even after
+retries. For a large clade, use \code{\link[=generate_taxadb_taxonomic_reference_list]{generate_taxadb_taxonomic_reference_list()}} instead: it sources
+from \href{https://docs.ropensci.org/taxadb/}{taxadb}'s own pre-built, versioned snapshot of the GBIF
+backbone (semi-annual, not live) rather than paginating GBIF's API directly, and answers a
+large-clade request as a fast local database query regardless of how large the clade is.
+
 The whole taxonomic tree below \code{taxon_name} is fetched once (in large, paginated
 batches, rather than one API call per name) and cached to disk, so repeat calls --
 including calls that filter by a different \code{country} or \code{rank} -- are served from

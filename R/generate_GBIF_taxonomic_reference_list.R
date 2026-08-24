@@ -77,6 +77,16 @@ gbif_rank_order <- c(
 #' optionally restricted to taxa recorded as occurring in a given country and/or to a
 #' minimum taxonomic rank.
 #'
+#' **This function is best suited to a small taxon grouping** -- a genus, a family, a small order.
+#' It fetches directly from GBIF's live API, and a genuinely large clade (a phylum, a large class or
+#' order) means paginating through hundreds or thousands of pages, hitting GBIF's hard 100,000-row
+#' pagination ceiling (forcing a slower, more fragile recursive split into smaller pieces -- see
+#' `fetch_gbif_taxon_tree_by_children()`), and a real risk of individual pages timing out even after
+#' retries. For a large clade, use [generate_taxadb_taxonomic_reference_list()] instead: it sources
+#' from [taxadb](https://docs.ropensci.org/taxadb/)'s own pre-built, versioned snapshot of the GBIF
+#' backbone (semi-annual, not live) rather than paginating GBIF's API directly, and answers a
+#' large-clade request as a fast local database query regardless of how large the clade is.
+#'
 #' The whole taxonomic tree below `taxon_name` is fetched once (in large, paginated
 #' batches, rather than one API call per name) and cached to disk, so repeat calls --
 #' including calls that filter by a different `country` or `rank` -- are served from
@@ -399,8 +409,11 @@ fetch_gbif_taxon_tree <- function(root_key, cache_dir, refresh_cache, max_cache_
     stop(
       "GBIF key ", root_key, " has ", total, " descendant taxa, which is more than `max_taxa` (",
       max_taxa, "). This is either intentional (a very large clade) or a sign `taxon_name` resolved ",
-      "more broadly than expected. Re-run with `force_large_fetch = TRUE` (and expect ",
-      ceiling(total / page_limit), " GBIF API calls) if this is the taxon you meant."
+      "more broadly than expected. If it's intentional, consider ",
+      "generate_taxadb_taxonomic_reference_list() instead -- it sources from taxadb's own pre-cached ",
+      "GBIF snapshot rather than paginating GBIF's live API, and is a better fit at this scale. ",
+      "Otherwise, re-run this function with `force_large_fetch = TRUE` (and expect ",
+      ceiling(total / page_limit), " GBIF API calls) if you do want to fetch it live."
     )
   }
 
