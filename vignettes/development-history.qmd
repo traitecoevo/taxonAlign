@@ -167,6 +167,20 @@ noted during test runs with the invertebrate dataset, but not anticipated in adv
   fuzzy-matched a real candidate at a different rank, mostly not coincidence but a systematic pattern --
   an informal vernacular adjective (`"Coccinellid"`) must be assumed to signal the broadest group the name might refer to, not a
   specific genus ([issue #12](https://github.com/traitecoevo/taxonAlign/issues/12)), unless additional information is available.
+- **`consider_english_name_endings`** (the other half of issue #12) recognises that same vernacular
+  adjective pattern directly and substitutes the formal Latin ending (`-id` -> `-idae`, `-ine` ->
+  `-inae`, `-oid` -> `-oidea`) before ever falling back to fuzzy matching -- an *exact* match on real
+  data, not a guess. Two real examples from the name list, with the setting off vs. on:
+
+  | Original name | Without `consider_english_name_endings` | With it |
+  |---|---|---|
+  | `Staphylinine BF01` | `Staphylinidae sp. [...]` (family -- too broad) | `Staphylininae sp. [...]` (subfamily -- correct) |
+  | `Dermestid Indet. BF01` | `Dermestini sp. [...]` (tribe -- a coincidental, wrong fuzzy match) | `Dermestidae sp. [...]` (family -- correct) |
+
+  The second row matters as much as the first: without the exact-match check, broadest-first fuzzy
+  matching had already found *a* real candidate for `"Dermestid"` (the tribe Dermestini) -- just the
+  wrong one. The ending substitution doesn't just add precision, it can also correct a fuzzy match
+  that was confidently wrong.
 - **Hybrid, intergrade, indecision, and graded/"affinis" identifications** all needed to resolve to
   genus rank only, since none of them can specify a genuine species -- and the "affinis" case
   specifically needed to check for a real exact match first, for the tautonym reason above
@@ -198,6 +212,27 @@ The two combinations agree on 99.1% of all 5,154 names (98.5% on just the higher
 Where they disagree, it's overwhelmingly explained by which resource happens to contain the specific
 name -- good evidence that the reference and the matching engine really are two separable concerns, the
 way the package's design intends.
+
+Worth spelling out: since AFD is checked first in *both* combinations, every one of these disagreements
+is, by construction, a name AFD itself has no answer for -- these are exactly the cases the AFD
+supplement was for, and iNaturalist and GBIF genuinely disagree about which of them they cover. A few
+real examples (leaving out the small number that turned out to be fuzzy-matching imprecision rather
+than a real coverage difference -- that's a limitation of taxonomic matching in general, not something
+this comparison is about):
+
+| Original name | AFD + iNaturalist | AFD + GBIF |
+|---|---|---|
+| `Atalophlebioides sp.` | not resolved | `Atalophlebioides sp. [...]` (genus) |
+| `Eurhopalus riguus` | not resolved | `Eurhopalus sp. [...]` (genus) |
+| `Cardiodontulus BF01` | `Cardiodontulus sp. [...]` (genus) | not resolved |
+| `Scotocryptini spp.` | `Scotocryptini sp. [...]` (tribe) | not resolved |
+| `Microsilpha BF01` | `Microscapha sp. [...]` (genus, fuzzy-guessed) | `Microsilpha sp. [...]` (genus, exact) |
+
+The last row is its own small lesson: iNaturalist doesn't have the genus *Microsilpha* at all, so it
+fuzzy-matches to the coincidentally similar *Microscapha* instead -- correctly resolving to genus rank
+by convention, but the wrong genus. GBIF happens to have the real name, so it matches it exactly. Same
+matching engine, same input name, different answer purely because of what each reference happens to
+contain.
 
 ## The GBIF chapter
 
