@@ -33,8 +33,10 @@ also accepted directly -- see \code{align_taxa()}'s \code{resources} documentati
 \item{full}{Logical; if \code{TRUE}, return every intermediate column \code{\link[=align_taxa]{align_taxa()}}/\code{\link[=update_taxa]{update_taxa()}}
 compute. If \code{FALSE} (the default), return just the key output columns: \code{original_name},
 \code{aligned_name}, \code{accepted_name}, \code{suggested_name}, \code{genus}, \code{family}, \code{taxon_rank},
-\code{taxonomic_dataset}, \code{taxonomic_status}, \code{taxonomic_status_aligned}, \code{aligned_reason} and
-\code{update_reason}.}
+\code{taxonomic_dataset}, \code{taxonomic_status}, \code{taxonomic_status_aligned}, \code{aligned_reason},
+\code{update_reason} and \code{chars_changed} (the number of characters that differed between the name being
+matched and the reference name it matched -- \code{0} for an exact match, the edit distance for a fuzzy
+match, \code{NA} when nothing matched).}
 }
 \value{
 A tibble with one row per element of \code{original_name}; see \code{\link[=update_taxa]{update_taxa()}} for column

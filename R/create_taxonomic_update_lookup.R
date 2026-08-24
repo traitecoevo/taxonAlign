@@ -12,8 +12,10 @@
 #' @param full Logical; if `TRUE`, return every intermediate column [align_taxa()]/[update_taxa()]
 #'  compute. If `FALSE` (the default), return just the key output columns: `original_name`,
 #'  `aligned_name`, `accepted_name`, `suggested_name`, `genus`, `family`, `taxon_rank`,
-#'  `taxonomic_dataset`, `taxonomic_status`, `taxonomic_status_aligned`, `aligned_reason` and
-#'  `update_reason`.
+#'  `taxonomic_dataset`, `taxonomic_status`, `taxonomic_status_aligned`, `aligned_reason`,
+#'  `update_reason` and `chars_changed` (the number of characters that differed between the name being
+#'  matched and the reference name it matched -- `0` for an exact match, the edit distance for a fuzzy
+#'  match, `NA` when nothing matched).
 #'
 #' @return A tibble with one row per element of `original_name`; see [update_taxa()] for column
 #'  details.
@@ -70,7 +72,7 @@ create_taxonomic_update_lookup <- function(original_name,
       dplyr::select(
         original_name, aligned_name, accepted_name, suggested_name, genus, family, taxon_rank,
         taxonomic_dataset, taxonomic_status, taxonomic_status_aligned, aligned_reason, update_reason,
-        identifier
+        chars_changed, identifier
       )
   }
 

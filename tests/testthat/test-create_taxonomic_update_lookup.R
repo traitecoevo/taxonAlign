@@ -11,6 +11,13 @@ test_that("create_taxonomic_update_lookup runs align_taxa + update_taxa end to e
   expect_equal(out$taxonomic_status, c("accepted", "accepted", "accepted", "unknown"))
 })
 
+test_that("create_taxonomic_update_lookup retains chars_changed (issue #20)", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- create_taxonomic_update_lookup(c("Boronia serulata", "Boronia serrulata Sm."), resources)
+
+  expect_equal(out$chars_changed, c(1L, 0L))
+})
+
 test_that("create_taxonomic_update_lookup's default output has the documented slim column set", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- create_taxonomic_update_lookup("Boronia serrulata Sm.", resources)
@@ -19,7 +26,7 @@ test_that("create_taxonomic_update_lookup's default output has the documented sl
     names(out),
     c("original_name", "aligned_name", "accepted_name", "suggested_name", "genus", "family",
       "taxon_rank", "taxonomic_dataset", "taxonomic_status", "taxonomic_status_aligned",
-      "aligned_reason", "update_reason", "identifier")
+      "aligned_reason", "update_reason", "chars_changed", "identifier")
   )
 })
 

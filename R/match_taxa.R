@@ -38,6 +38,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
         aligned_reason = paste0(
           reason_text, " No genus-rank reference is available to check it against (", Sys.Date(), ")."
         ),
+        chars_changed = NA_integer_,
         known = TRUE,
         checked = TRUE,
         alignment_code = alignment_code_no_resource
@@ -60,6 +61,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
                             paste0(aligned_name_tmp, "]"),
                             paste0(aligned_name_tmp, identifier_string2, "]")),
       aligned_reason = paste0(reason_text, " Exact match to a genus in ", taxonomic_dataset, " (", Sys.Date(), ")."),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = alignment_code_exact
@@ -85,6 +87,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
                             paste0(aligned_name_tmp, "]"),
                             paste0(aligned_name_tmp, identifier_string2, "]")),
       aligned_reason = paste0(reason_text, " Fuzzy match to a genus in ", taxonomic_dataset, " (", Sys.Date(), ")."),
+      chars_changed = as.integer(stringdist::stringdist(word_one_stripped, fuzzy_match_genus, method = "dl")),
       known = TRUE,
       checked = TRUE,
       alignment_code = alignment_code_fuzzy
@@ -107,6 +110,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
       aligned_reason = paste0(
         reason_text, " Exact and fuzzy matches failed to resolve a genus (", Sys.Date(), ")."
       ),
+      chars_changed = NA_integer_,
       known = TRUE,
       checked = TRUE,
       alignment_code = alignment_code_unresolved
@@ -343,6 +347,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_01a_accepted_scientific_name_with_authorship"
@@ -378,6 +383,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_01b_synonym_scientific_name_with_authorship"
@@ -411,6 +417,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_01c_accepted_canonical_name"
@@ -444,6 +451,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_01d_synonym_canonical_name"
@@ -495,6 +503,7 @@ match_taxa <- function(
           Sys.Date(),
           ")"
         ),
+        chars_changed = 0L,
         checked = TRUE,
         known = TRUE,
         alignment_code = "match_02a_exact_higher_level_accepted_or_synonym"
@@ -578,6 +587,7 @@ match_taxa <- function(
             "Exact match of a bracketed genus (subgenus) to a ", taxonomic_status, " ", taxon_rank,
             " in ", taxonomic_dataset, " (", Sys.Date(), ")"
           ),
+          chars_changed = 0L,
           checked = TRUE,
           known = TRUE,
           alignment_code = "match_02y_bracket_exact_subgenus"
@@ -627,6 +637,9 @@ match_taxa <- function(
               "Fuzzy match of a bracketed genus (subgenus) to a ", taxonomic_status, " ", taxon_rank,
               " in ", taxonomic_dataset, " (", Sys.Date(), ")"
             ),
+            chars_changed = as.integer(stringdist::stringdist(
+              stringr::word(cleaned_name, start = 1, end = 2), fuzzy_bracket[i], method = "dl"
+            )),
             checked = TRUE,
             known = TRUE,
             alignment_code = "match_02y_bracket_fuzzy_subgenus"
@@ -701,6 +714,7 @@ match_taxa <- function(
           Sys.Date(),
           ")"
         ),
+        chars_changed = 0L,
         checked = TRUE,
         known = TRUE,
         alignment_code = "match_02b_exact_higher_level_accepted_or_synonym"
@@ -773,6 +787,7 @@ match_taxa <- function(
             word_one_stripped, "\" -> \"", candidate[i], "\") to a ", taxonomic_status, " ", taxon_rank,
             " in ", taxonomic_dataset, " (", Sys.Date(), ")"
           ),
+          chars_changed = 0L,
           known = TRUE,
           checked = TRUE,
           alignment_code = "match_02z_english_ending_accepted"
@@ -827,6 +842,7 @@ match_taxa <- function(
           Sys.Date(),
           ")"
         ),
+        chars_changed = as.integer(stringdist::stringdist(word_one_stripped, fuzzy_match_genus, method = "dl")),
         known = TRUE,
         checked = TRUE,
         alignment_code = "match_02c_fuzzy_genus_accepted"
@@ -950,6 +966,7 @@ match_taxa <- function(
           "accepted name (ignoring brackets) in ", taxonomic_dataset, " -- resolved to that name rather ",
           "than treated as an uncertain identification (", Sys.Date(), ")"
         ),
+        chars_changed = 0L,
         known = TRUE,
         checked = TRUE,
         alignment_code = "match_04e_affinis_exact_species_accepted"
@@ -974,6 +991,7 @@ match_taxa <- function(
             "synonymous name (ignoring brackets) in ", taxonomic_dataset, " -- resolved to that name ",
             "rather than treated as an uncertain identification (", Sys.Date(), ")"
           ),
+          chars_changed = 0L,
           known = TRUE,
           checked = TRUE,
           alignment_code = "match_04f_affinis_exact_species_synonym"
@@ -1037,6 +1055,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = as.integer(stringdist::stringdist(stripped_name, fuzzy_match_cleaned, method = "dl")),
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_05a_fuzzy_accepted_canonical_name"
@@ -1077,6 +1096,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = as.integer(stringdist::stringdist(stripped_name, fuzzy_match_cleaned_synonym, method = "dl")),
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_05b_fuzzy_synonym_canonical_name"
@@ -1113,6 +1133,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_09a_trinomial_exact_accepted"
@@ -1146,6 +1167,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_09b_trinomial_exact_synonym"
@@ -1186,6 +1208,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_10a_binomial_exact_accepted"
@@ -1223,6 +1246,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_10b_binomial_exact_synonym"
@@ -1256,6 +1280,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_11a_no_brackets_accepted"
@@ -1290,6 +1315,7 @@ match_taxa <- function(
         Sys.Date(),
         ")"
       ),
+      chars_changed = 0L,
       known = TRUE,
       checked = TRUE,
       alignment_code = "match_11b_no_brackets_synonym"
@@ -1350,6 +1376,7 @@ match_taxa <- function(
           Sys.Date(),
           ")"
         ),
+        chars_changed = 0L,
         checked = TRUE,
         known = TRUE,
         alignment_code = "match_12a_exact_subgenus_accepted_or_synonym"
@@ -1400,6 +1427,7 @@ match_taxa <- function(
           Sys.Date(),
           ")"
         ),
+        chars_changed = 0L,
         known = TRUE,
         checked = TRUE,
         alignment_code = "match_12b_higher_rank_exact_accepted"
@@ -1466,6 +1494,7 @@ match_taxa <- function(
           Sys.Date(),
           ")"
         ),
+        chars_changed = as.integer(stringdist::stringdist(word_one_stripped, fuzzy_match_genus, method = "dl")),
         known = TRUE,
         checked = TRUE,
         alignment_code = "match_12c_higher_rank_fuzzy_accepted"

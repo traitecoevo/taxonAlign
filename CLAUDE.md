@@ -119,14 +119,14 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-402 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+416 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
 #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 402) unless `APCalign` is installed, network access is
+against, so it's skipped (not counted in the 416) unless `APCalign` is installed, network access is
 available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (409 total, as of the last online run that succeeded). This has also failed
+passing expectations on top (423 total, as of the last online run that succeeded). This has also failed
 intermittently across several local runs (`load_APC()` → `dplyr::mutate()` on a `NULL`
 `APC$family_accepted`, i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning
 that element) -- looks like a real, if intermittent, upstream issue (rate limiting or a partial
@@ -1004,6 +1004,28 @@ Architecture of the matching engine itself:
     default, regardless of whether the tie resolved to genus or subgenus rank underneath -- the
     ambiguity between the two is still resolved via `taxon_rank`/`taxon_ID` as before, just no longer
     rendered as a redundant `"Aporocera sp. [Aporocera]"` string.
+- **`chars_changed` (issue #20, user-requested)**: every one of `match_taxa()`'s ~27 match
+  blocks/sub-cases (the 23 numbered blocks plus the four sub-cases inside the shared
+  `match_special_case_to_genus()` helper) now also sets `chars_changed` -- `0L` for every exact-match
+  block, the real edit distance for every fuzzy-match block, and `NA_integer_` for the
+  unresolved/no-resource fallbacks and for a row nothing ever matched. Threaded through
+  `align_taxa()`'s initial tibble and both its and `create_taxonomic_update_lookup()`'s `full = FALSE`
+  (slim) output column lists, matching the issue's explicit ask that it be retained by both, not just
+  present in `full = TRUE`. `update_taxa()` needed no change at all -- it operates via
+  `aligned_data |> dplyr::mutate(...)`, which preserves whatever columns `aligned_data` already has,
+  so `chars_changed` flows through it automatically as long as `align_taxa()` supplied it (which it
+  now unconditionally does).
+  - For a fuzzy block, the distance is recomputed via `stringdist::stringdist(query, matched, method =
+    "dl")` on the *exact same two strings* that block's own `fuzzy_match()`/`fuzzy_match_column()` call
+    already computed a distance for internally (e.g. `stripped_name` vs. `fuzzy_match_cleaned` for
+    match_05a, `word_one_stripped` vs. `fuzzy_match_genus` for the genus-level fuzzy blocks) -- not
+    reconstructed from some other pair of fields, since `fuzzy_match()` itself only returns the
+    matched *string*, not the distance value it internally computed to find it.
+  - `match_02z` (the opt-in English-vernacular-ending substitution, e.g. `"Coccinellid"` ->
+    `"Coccinellidae"`) reports `0`, not the substitution's own character difference -- it's
+    implemented as a deterministic rule-based substitution followed by an *exact* lookup, not a
+    `stringdist`-based fuzzy comparison, so `0` is the correct answer under the same "exact vs. fuzzy"
+    dichotomy every other block uses, even though the substituted and original strings visibly differ.
 
 ### 3. Known-source reference loader — `R/load_taxonomic_resources.R` (active, exported; internal helpers `@noRd`)
 

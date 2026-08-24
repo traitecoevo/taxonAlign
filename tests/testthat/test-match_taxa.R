@@ -27,11 +27,15 @@ test_that("hybrids = TRUE fuzzy-matches a misspelled genus, respecting fuzzy_mat
   out_fuzzy <- align_taxa("Boronai x hybrida", resources, hybrids = TRUE) # fuzzy_matches defaults TRUE
   expect_equal(out_fuzzy$alignment_code, "match_03b_hybrid_fuzzy_genus")
   expect_true(grepl("^Boronia x \\[", out_fuzzy$aligned_name))
+  # "Boronai" vs "Boronia" -- a single adjacent transposition, distance 1 under
+  # Damerau-Levenshtein (confirmed directly, not assumed)
+  expect_equal(out_fuzzy$chars_changed, 1L)
 
   # confirm fuzzy matching genuinely was disabled, not just coincidentally unnecessary
   out_nofuzzy <- align_taxa("Boronai x hybrida", resources, hybrids = TRUE, fuzzy_matches = FALSE)
   expect_equal(out_nofuzzy$alignment_code, "match_03c_hybrid_unresolved")
   expect_true(is.na(out_nofuzzy$aligned_name))
+  expect_true(is.na(out_nofuzzy$chars_changed))
 })
 
 test_that("hybrids = TRUE degrades gracefully when the genus isn't in the reference at all", {

@@ -80,6 +80,57 @@ test_that("align_taxa leaves an unmatchable name unresolved rather than erroring
   expect_true(is.na(out$aligned_name))
 })
 
+# chars_changed (issue #20): the number of characters that differed between the name being matched
+# and the reference name it matched -- 0 for an exact match, the actual edit distance for a fuzzy
+# match, NA when nothing matched. Retained by align_taxa() and create_taxonomic_update_lookup()
+# (tested separately in test-create_taxonomic_update_lookup.R) as well as full = TRUE.
+test_that("chars_changed is 0 for an exact match", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia serrulata", resources)
+
+  expect_equal(out$alignment_code, "match_01c_accepted_canonical_name")
+  expect_equal(out$chars_changed, 0L)
+})
+
+test_that("chars_changed is the real edit distance for a fuzzy species-level match", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia serulata", resources) # missing one 'r' -- distance 1
+
+  expect_equal(out$alignment_code, "match_05a_fuzzy_accepted_canonical_name")
+  expect_equal(out$chars_changed, 1L)
+})
+
+test_that("chars_changed is the real edit distance for a fuzzy genus-level match", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boroni", resources) # missing the trailing 'a' -- distance 1
+
+  expect_equal(out$alignment_code, "match_12c_higher_rank_fuzzy_accepted")
+  expect_equal(out$chars_changed, 1L)
+})
+
+test_that("chars_changed is NA when nothing matched at all", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Completely unrelated nonsense taxon", resources)
+
+  expect_true(is.na(out$aligned_name))
+  expect_true(is.na(out$chars_changed))
+})
+
+test_that("chars_changed is 0 for an exact genus match via the hybrid/intergrade shared helper", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia x hybrida", resources, hybrids = TRUE)
+
+  expect_equal(out$alignment_code, "match_03a_hybrid_exact_genus")
+  expect_equal(out$chars_changed, 0L)
+})
+
+test_that("chars_changed is present (and NA by default) in align_taxa's default, slim output", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia serrulata", resources)
+
+  expect_true("chars_changed" %in% names(out))
+})
+
 test_that("taxon_ranks_to_check restricts which higher ranks align_taxa will use", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Zanthoxyleae sp.", resources, taxon_ranks_to_check = c("genus", "family"))

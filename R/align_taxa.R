@@ -52,10 +52,13 @@
 #' @return A tibble with one row per element of `original_name` (preserving its length, order and any
 #'  duplicates/`NA`s), with columns `original_name`, `cleaned_name`, `aligned_name`,
 #'  `taxonomic_dataset`, `taxon_rank`, `taxonomic_status`, `taxon_ID`, `accepted_name_usage_ID`,
-#'  `aligned_reason`, `alignment_code` and `identifier` (or, if `full = TRUE`, every column
-#'  `match_taxa()` computes along the way). `taxon_ID`/`accepted_name_usage_ID` identify which row of
-#'  `resources` a name matched to, and are what `update_taxa()` uses to resolve a matched synonym
-#'  forward to its current accepted name.
+#'  `aligned_reason`, `alignment_code`, `chars_changed` and `identifier` (or, if `full = TRUE`, every
+#'  column `match_taxa()` computes along the way). `taxon_ID`/`accepted_name_usage_ID` identify which
+#'  row of `resources` a name matched to, and are what `update_taxa()` uses to resolve a matched
+#'  synonym forward to its current accepted name. `chars_changed` is the number of characters that
+#'  differed between the name being matched and the reference name it matched -- `0` for every exact
+#'  match, the actual edit distance (Damerau-Levenshtein) for a fuzzy match, and `NA` when nothing
+#'  matched at all.
 #'
 #' @export
 align_taxa <- function(original_name,
@@ -127,6 +130,7 @@ align_taxa <- function(original_name,
       taxon_ID = NA_character_,
       accepted_name_usage_ID = NA_character_,
       alignment_code = NA_character_,
+      chars_changed = NA_integer_,
       checked = FALSE,
       known = FALSE
     ) |>
@@ -162,7 +166,8 @@ align_taxa <- function(original_name,
     out <- out |>
       dplyr::select(
         original_name, cleaned_name, aligned_name, taxonomic_dataset, taxon_rank,
-        taxonomic_status, taxon_ID, accepted_name_usage_ID, aligned_reason, alignment_code, identifier
+        taxonomic_status, taxon_ID, accepted_name_usage_ID, aligned_reason, alignment_code,
+        chars_changed, identifier
       )
   }
 
