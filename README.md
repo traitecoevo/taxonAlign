@@ -107,6 +107,9 @@ See [`vignettes/get-started.qmd`](vignettes/get-started.qmd) for a full
 walkthrough of every function, including building your own reference
 table by hand, combining several sources, matching names of every rank
 (not just species), and an end-to-end “update a list of raw field names”
-workflow.
+workflow. See
+[`vignettes/development-history.qmd`](vignettes/development-history.qmd)
+for why this package exists and the real, messy invertebrate names that
+shaped its design.
 
 <!-- You'll still need to render `README.qmd` regularly, to keep `README.md` up-to-date.  -->
