@@ -339,6 +339,20 @@ implemented per [issue #19](https://github.com/traitecoevo/taxonAlign/issues/19)
     not "up to a few months" -- say so plainly wherever this function is recommended, and don't soften
     it into a smaller-sounding caveat next time real numbers look wrong. Worth periodically re-checking
     `taxadb:::available_versions()` in case this changes.
+  - **The raw ~15% dataset-level gap and the *practical* impact on a real alignment are two different
+    numbers, and both are worth reporting together.** Ran the real, full AusInvertTraits name list
+    (5,154 names) through `create_taxonomic_update_lookup()` twice -- `AFD + our own live-fetched
+    GBIF` vs. `AFD + the taxadb-sourced equivalent`, same 28 phyla -- and compared `aligned_name`
+    directly, not just raw usageKeys. Result: **5,143/5,154 (99.79%) identical; only 11 names
+    differ**, and all 11 are cleanly explained by the same staleness cause, never the reverse (taxadb
+    never resolved something the live fetch didn't): two species (`"Onthophagus bulga"`,
+    `"Trioza melaleucae"`) and two genera (`"Austrocardiophorus"`, `"Trachytetra"`, the latter across
+    6 rows) that the live fetch has and taxadb's snapshot doesn't. This isn't a contradiction of the
+    85.2%/93.0% figures above -- it reconciles cleanly: AFD is checked first and resolves the large
+    majority of names on its own, so only a small residual set of names ever reaches GBIF at all, and
+    only a fraction of *that* residual happens to fall inside taxadb's specific staleness gap. Don't
+    report the raw dataset-level comparison alone as "how bad is taxadb" without also checking what it
+    actually costs on a real alignment task -- they can (and here do) tell very different stories.
 
 - **`country` filtering is still GBIF-API-only**, not something `taxadb` can supply for *any*
   provider — `taxadb` has no occurrence data at all, only taxonomic backbone data. So `country` is
