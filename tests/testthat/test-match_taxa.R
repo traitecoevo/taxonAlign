@@ -166,3 +166,126 @@ test_that("include_bracketed_info = TRUE always uses the bracketed format, match
   expect_equal(out_genus$aligned_name, "Boronia sp. [Boronia]")
   expect_equal(out_subgenus_bracket$aligned_name, "Boronia (Valvatae) sp. [Boronia (Valvatae)]")
 })
+
+# Fuzzy higher-rank matching defaults to broadest-first, the reverse of exact matching (issue #12) --
+# found via a real, large validation that 52% of fuzzy higher-rank matches were also fuzzy-matching a
+# real candidate at a *different* rank, overwhelmingly not coincidence but a systematic pattern
+# (informal English vernacular name endings meant to signal a broader group, not a specific genus).
+
+test_that("fuzzy higher-rank matching defaults to broadest-first, unlike exact matching", {
+  # deliberately engineered so the same query fuzzy-matches both a genus and an unrelated order within
+  # tolerance -- confirms the *fuzzy* order is broadest-first (order wins), the reverse of exact
+  # matching's most-specific-first default.
+  resources <- prepare_taxonomic_resources(tibble::tribble(
+    ~scientific_name, ~canonical_name, ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Zelia alpha Sm.", "Zelia alpha", "species", "accepted", "TEST", "Zelia", "sp1", "sp1",
+    "Zelia Sm.", "Zelia", "genus", "accepted", "TEST", NA_character_, "g1", "g1",
+    "Zelda Sm.", "Zelda", "order", "accepted", "TEST", NA_character_, "o1", "o1"
+  ))
+
+  out <- align_taxa("Zelca sp.", resources, full = TRUE)
+
+  expect_equal(out$taxon_rank, "order")
+})
+
+test_that("genus still resolves before subgenus under the broadest-first fuzzy order", {
+  # the genus-before-subgenus exception is a guaranteed nomenclatural convention (a nominotypical
+  # subgenus sharing its genus's own name), not a coincidental fuzzy collision -- it must survive the
+  # broadest-first reversal above, not get flipped along with everything else.
+  resources <- prepare_taxonomic_resources(sample_invert_taxonomic_resources())
+  out <- align_taxa("Aporocera zzzzzzzzzz", resources, full = TRUE)
+
+  expect_equal(out$taxon_rank, "genus")
+})
+
+# consider_english_name_endings (issue #12): before any fuzzy matching, try substituting a recognised
+# informal English vernacular name ending for its formal Latin equivalent, and attempt an exact match
+# on the corrected name.
+
+test_that("consider_english_name_endings = FALSE (default) leaves vernacular endings to ordinary fuzzy matching", {
+  resources <- prepare_taxonomic_resources(tibble::tribble(
+    ~scientific_name, ~canonical_name, ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Testus alpha Sm.", "Testus alpha", "species", "accepted", "TEST", "Testus", "sp1", "sp1",
+    "Testidae Sm.", "Testidae", "family", "accepted", "TEST", NA_character_, "f1", "f1",
+    "Testinae Sm.", "Testinae", "subfamily", "accepted", "TEST", NA_character_, "sf1", "sf1"
+  ))
+
+  # "Testine" is within ordinary fuzzy tolerance of both "Testidae" (family) and "Testinae" (subfamily)
+  # -- with the toggle off, broadest-first fuzzy matching (not the exact-substitution logic) resolves
+  # it, landing on the broader of the two (family), not necessarily the rank the "-ine" ending would
+  # conventionally suggest (subfamily)
+  out <- align_taxa("Testine sp.", resources, full = TRUE)
+
+  expect_equal(out$taxon_rank, "family")
+  expect_false(isTRUE(out$alignment_code == "match_02z_english_ending_accepted"))
+})
+
+test_that("consider_english_name_endings = TRUE resolves a vernacular '-ine' ending to the correct subfamily", {
+  resources <- prepare_taxonomic_resources(tibble::tribble(
+    ~scientific_name, ~canonical_name, ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Testus alpha Sm.", "Testus alpha", "species", "accepted", "TEST", "Testus", "sp1", "sp1",
+    "Testidae Sm.", "Testidae", "family", "accepted", "TEST", NA_character_, "f1", "f1",
+    "Testinae Sm.", "Testinae", "subfamily", "accepted", "TEST", NA_character_, "sf1", "sf1"
+  ))
+
+  out <- align_taxa("Testine sp.", resources, consider_english_name_endings = TRUE, full = TRUE)
+
+  # the exact substitution ("Testine" -> "Testinae") correctly lands on subfamily specifically, unlike
+  # the broadest-first fuzzy fallback above, which only ever finds "the broadest thing within tolerance"
+  expect_equal(out$taxon_rank, "subfamily")
+  expect_equal(out$alignment_code, "match_02z_english_ending_accepted")
+  expect_true(grepl("^Testinae sp\\. \\[Testine sp\\.\\]$", out$aligned_name))
+})
+
+test_that("consider_english_name_endings = TRUE resolves a vernacular '-id' ending to family", {
+  resources <- prepare_taxonomic_resources(tibble::tribble(
+    ~scientific_name, ~canonical_name, ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Quixus alpha Sm.", "Quixus alpha", "species", "accepted", "TEST", "Quixus", "sp1", "sp1",
+    "Quixidae Sm.", "Quixidae", "family", "accepted", "TEST", NA_character_, "f1", "f1"
+  ))
+
+  out <- align_taxa("Quixid BF01", resources, consider_english_name_endings = TRUE, full = TRUE)
+
+  expect_equal(out$taxon_rank, "family")
+  expect_equal(out$alignment_code, "match_02z_english_ending_accepted")
+})
+
+test_that("consider_english_name_endings = TRUE resolves a vernacular '-oid' ending to superfamily", {
+  resources <- prepare_taxonomic_resources(tibble::tribble(
+    ~scientific_name, ~canonical_name, ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Yorbus alpha Sm.", "Yorbus alpha", "species", "accepted", "TEST", "Yorbus", "sp1", "sp1",
+    "Yorboidea Sm.", "Yorboidea", "superfamily", "accepted", "TEST", NA_character_, "sup1", "sup1"
+  ))
+
+  out <- align_taxa("Yorboid sp.", resources, consider_english_name_endings = TRUE, full = TRUE)
+
+  expect_equal(out$taxon_rank, "superfamily")
+  expect_equal(out$alignment_code, "match_02z_english_ending_accepted")
+})
+
+test_that("consider_english_name_endings = TRUE falls through harmlessly when the corrected name isn't real", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+
+  # "Boroniid" has a recognised vernacular ending, but "Boroniidae" doesn't exist anywhere in this
+  # fixture -- the substitution should cost nothing and fall through to ordinary handling, not error
+  # or spuriously match anything
+  expect_no_error(
+    out <- align_taxa("Boroniid BF01", resources, consider_english_name_endings = TRUE, full = TRUE)
+  )
+  expect_false(isTRUE(out$alignment_code == "match_02z_english_ending_accepted"))
+})
+
+test_that("consider_english_name_endings = TRUE doesn't fire on a name that's already an exact match", {
+  # match_02z runs after match_02b (exact higher-level matches), so a name that's already an exact
+  # match to something real should never reach the substitution logic at all
+  resources <- prepare_taxonomic_resources(tibble::tribble(
+    ~scientific_name, ~canonical_name, ~taxon_rank, ~taxonomic_status, ~taxonomic_dataset, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Wexus alpha Sm.", "Wexus alpha", "species", "accepted", "TEST", "Wexus", "sp1", "sp1",
+    "Wexid Sm.", "Wexid", "genus", "accepted", "TEST", NA_character_, "g1", "g1"
+  ))
+
+  out <- align_taxa("Wexid sp.", resources, consider_english_name_endings = TRUE, full = TRUE)
+
+  expect_equal(out$taxon_rank, "genus")
+  expect_false(isTRUE(out$alignment_code == "match_02z_english_ending_accepted"))
+})

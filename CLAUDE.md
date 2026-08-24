@@ -710,6 +710,39 @@ Architecture of the matching engine itself:
     APCalign's `align_taxa()` has no `hybrids`/`intergrades_affinis` toggle (it always attempts these
     match families), taxonAlign is called with both turned on to compare fairly.
 
+- **Fuzzy higher-rank matching defaults to broadest-first, unlike exact matching (issue #12)** --
+  found via a real, large validation (AFD + a real GBIF-derived AU-invertebrate reference, against the
+  full real AusInvertTraits name list): 52% of names resolved via a fuzzy higher-rank match
+  (`match_02c`/`match_12c`) *also* fuzzy-matched a real candidate at a *different* rank than the one
+  actually resolved to. The large majority of these weren't coincidence: real invertebrate
+  morphospecies/voucher codes commonly use an informal English vernacular adjective form derived from a
+  family/subfamily/superfamily root (e.g. `"Melolonthine BF01 Heteronyx"`, `"Coccinellid BF01"`,
+  `"Dynastine BF01"`), which by convention signals that broader group, not any specific genus --
+  but most-specific-first ordering (the same order used for *exact* matching, where cross-rank
+  collisions are rare) was resolving nearly all of them to a coincidentally-similar but unrelated
+  **genus** instead. `taxon_ranks_to_check_fuzzy` (`match_taxa.R`) is the broadest-first reverse of
+  `taxon_ranks_to_check`, used only by `match_02c`/`match_12c` -- `match_02b`/`match_12b` (exact
+  matching) keep the original most-specific-first order, since there's no evidence exact matching has
+  the same problem. Genus-before-subgenus is preserved even under this reversal (swapped back into
+  place after the `rev()`) -- that exception is a guaranteed nomenclatural convention (a nominotypical
+  subgenus sharing its genus's own name), not a coincidental fuzzy collision, so it stays put
+  regardless of which direction the rest of the order runs.
+- **`consider_english_name_endings` (issue #12, opt-in, default `FALSE`)** -- a further refinement on
+  top of the broadest-first fuzzy reordering above. Broadest-first alone isn't always the *most
+  precise* fix: for a name like `"Melolonthine BF01 Heteronyx"`, broadest-first fuzzy matching finds
+  *some* real candidate within tolerance, but that might land on family when the "-ine" ending
+  specifically signals subfamily, if both happen to exist and family is checked first for being
+  broader. `match_02z` (new block, placed after `match_02b` so an already-exact-matching name never
+  reaches it, and before `match_02c`/`match_12c` so it gets first refusal on both the "ends in `sp.`"
+  and generic fuzzy-fallback cases in one place) tries substituting a recognised informal ending for
+  its formal Latin equivalent -- `"-id"` -> `"-idae"` (family), `"-ine"` -> `"-inae"` (subfamily),
+  `"-oid"` -> `"-oidea"` (superfamily); tribe (`-ini`) and subtribe (`-ina`) endings are already the
+  formal Latin form, so no vernacular variant is needed there -- and attempts an **exact** match on the
+  corrected name. This is safer than fuzzy matching or reordering alone: it only ever succeeds when the
+  corrected name is a real, present taxon (not just textually close to one), and costs nothing when no
+  substitution produces a real match -- falls through to ordinary fuzzy matching unchanged. Off by
+  default since it's a deliberate, opinionated transformation of the input rather than a pure matching
+  refinement.
 - **Progress bar** (issue #5): `match_taxa()`/`align_taxa()`/`create_taxonomic_update_lookup()` all gain
   a `progress = FALSE` parameter; `TRUE` prints a `utils::txtProgressBar()` (no new dependency). Tracks
   *rows resolved so far* (`nrow(taxa$checked)` against the total `match_taxa()` started with), not which

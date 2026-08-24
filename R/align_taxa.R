@@ -30,6 +30,10 @@
 #' @param intergrades_affinis Logical; if `TRUE`, resolve names suggesting an intergrade, an
 #'  indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
 #'  Defaults to `FALSE`. See `?match_taxa`.
+#' @param consider_english_name_endings Logical; if `TRUE`, before any fuzzy matching, try substituting
+#'  a recognised informal English vernacular name ending (e.g. `"-id"`, `"-ine"`, `"-oid"`) for its
+#'  formal Latin equivalent and attempt an exact match on the corrected name. Defaults to `FALSE`. See
+#'  `?match_taxa`.
 #' @param include_bracketed_info Logical; controls the `"<rank name> sp. [<original name>;
 #'  <identifier>]"` formatting used for a higher-rank-only match. When `FALSE` (the default) and the
 #'  name being matched is nothing more than the matched rank's own name (a bare single word, or a bare
@@ -64,6 +68,7 @@ align_taxa <- function(original_name,
                         taxon_ranks_to_check = NULL,
                         hybrids = FALSE,
                         intergrades_affinis = FALSE,
+                        consider_english_name_endings = FALSE,
                         include_bracketed_info = FALSE,
                         progress = FALSE,
                         full = FALSE) {
@@ -143,6 +148,7 @@ align_taxa <- function(original_name,
       taxon_ranks_to_check = taxon_ranks_to_check,
       hybrids = hybrids,
       intergrades_affinis = intergrades_affinis,
+      consider_english_name_endings = consider_english_name_endings,
       identifier = identifier,
       include_bracketed_info = include_bracketed_info,
       progress = progress

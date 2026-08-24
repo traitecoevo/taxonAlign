@@ -15,6 +15,7 @@ align_taxa(
   taxon_ranks_to_check = NULL,
   hybrids = FALSE,
   intergrades_affinis = FALSE,
+  consider_english_name_endings = FALSE,
   include_bracketed_info = FALSE,
   progress = FALSE,
   full = FALSE
@@ -54,6 +55,11 @@ than leaving them for later, inappropriate match attempts. Defaults to \code{FAL
 \item{intergrades_affinis}{Logical; if \code{TRUE}, resolve names suggesting an intergrade, an
 indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
 Defaults to \code{FALSE}. See \code{?match_taxa}.}
+
+\item{consider_english_name_endings}{Logical; if \code{TRUE}, before any fuzzy matching, try substituting
+a recognised informal English vernacular name ending (e.g. \code{"-id"}, \code{"-ine"}, \code{"-oid"}) for its
+formal Latin equivalent and attempt an exact match on the corrected name. Defaults to \code{FALSE}. See
+\code{?match_taxa}.}
 
 \item{include_bracketed_info}{Logical; controls the \code{"<rank name> sp. [<original name>; <identifier>]"} formatting used for a higher-rank-only match. When \code{FALSE} (the default) and the
 name being matched is nothing more than the matched rank's own name (a bare single word, or a bare

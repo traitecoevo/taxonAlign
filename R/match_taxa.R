@@ -169,6 +169,14 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #'  (a double dash, `--`), a collector's indecision between two taxa (a slash, `/`), or a graded/
 #'  "affinis"/"cf." identification (`"aff."`, `"affinis"`, `"cf."`) is resolved to genus rank the same
 #'  way. Defaults to `FALSE`.
+#' @param consider_english_name_endings Logical; if `TRUE`, before any fuzzy matching, try substituting
+#'  a recognised informal English vernacular name ending for its formal Latin equivalent (`"-id"` ->
+#'  `"-idae"` for family, `"-ine"` -> `"-inae"` for subfamily, `"-oid"` -> `"-oidea"` for superfamily)
+#'  and attempt an *exact* match on the corrected name. Real invertebrate morphospecies/voucher codes
+#'  commonly use these informal forms to signal a broader taxonomic group without specifying an exact
+#'  genus (e.g. `"Coccinellid BF01"` meaning family Coccinellidae) -- left to ordinary fuzzy matching,
+#'  these very often resolved to a coincidentally-similar but unrelated genus instead (see issue #12).
+#'  Defaults to `FALSE`.
 #' @param identifier A dataset, location or other identifier,
 #'  which defaults to NA.
 #' @param include_bracketed_info Logical; controls the `"<rank name> sp. [<original name>; <identifier>]"`
@@ -200,6 +208,7 @@ match_taxa <- function(
     taxon_ranks_to_check = NULL,
     hybrids = FALSE,
     intergrades_affinis = FALSE,
+    consider_english_name_endings = FALSE,
     identifier = NA_character_,
     include_bracketed_info = FALSE,
     progress = FALSE
@@ -207,6 +216,32 @@ match_taxa <- function(
 
   if (is.null(taxon_ranks_to_check)) {
     taxon_ranks_to_check <- setdiff(names(resources), c("species", "subgenus_v2"))
+  }
+
+  # `taxon_ranks_to_check` is most-specific-first (see taxonAlign_taxon_rank_specificity in
+  # prepare_taxonomic_resources.R), which is the right default for *exact* higher-rank matching
+  # (match_02b/match_12b) -- an exact string collision across unrelated ranks is rare, and when it does
+  # happen (a genus and its own nominotypical subgenus sharing a name) it's already handled by that
+  # ordering's own deliberate genus-before-subgenus exception. Fuzzy matching (match_02c/match_12c) is a
+  # different story: checked in practice against a real, large, combined AFD+GBIF reference and the
+  # full real AusInvertTraits name list, 52% of names resolved via a fuzzy higher-rank match *also*
+  # fuzzy-matched a real candidate at a different rank -- overwhelmingly not coincidence, but a
+  # systematic pattern (see issue #12): informal English vernacular adjective forms derived from a
+  # family/subfamily/tribe root (e.g. "Melolonthine BF01 Heteronyx", "Coccinellid BF01", "Dynastine
+  # BF01") are, by convention, meant to signal the broader group they're derived from, not a specific
+  # genus -- but most-specific-first ordering was resolving nearly all of them to a coincidentally
+  # similar *genus* instead of the intended tribe/subfamily/family. `taxon_ranks_to_check_fuzzy` is the
+  # broadest-first reverse of `taxon_ranks_to_check`, used only by the fuzzy blocks -- broader is no
+  # worse than narrower for the genuinely coincidental collisions (a minority of the 52%, e.g. genus
+  # "Adotela" vs unrelated order "Acoela"), and a real improvement for the systematic vernacular-suffix
+  # majority. Genus-before-subgenus is preserved even under this reversal -- that exception is a
+  # guaranteed nomenclatural convention, not a coincidental fuzzy collision, so it should stay put
+  # regardless of which direction the rest of the order runs.
+  taxon_ranks_to_check_fuzzy <- rev(taxon_ranks_to_check)
+  genus_pos <- which(taxon_ranks_to_check_fuzzy == "genus")
+  subgenus_pos <- which(taxon_ranks_to_check_fuzzy == "subgenus")
+  if (length(genus_pos) == 1 && length(subgenus_pos) == 1 && subgenus_pos < genus_pos) {
+    taxon_ranks_to_check_fuzzy[c(subgenus_pos, genus_pos)] <- taxon_ranks_to_check_fuzzy[c(genus_pos, subgenus_pos)]
   }
 
   # `pb` (NULL unless `progress = TRUE`) is threaded through every match block below via
@@ -515,13 +550,84 @@ match_taxa <- function(
 
   }
 
+  # match_02z: English vernacular name-ending substitution (issue #12; opt-in via
+  # `consider_english_name_endings`, default FALSE). Real invertebrate morphospecies/voucher codes
+  # commonly use an informal English adjective form derived from a family/subfamily/superfamily root,
+  # which by convention is meant to signal that broader group, not any specific genus -- e.g.
+  # "Coccinellid BF01" (family Coccinellidae), "Melolonthine BF01 Heteronyx" (subfamily Melolonthinae),
+  # "Curculionoid sp." (superfamily Curculionoidea). Left to ordinary fuzzy matching, names like these
+  # almost always resolved to a coincidentally-similar but unrelated *genus* instead -- confirmed
+  # empirically, not theoretically: checked against a real, large combined reference and the full real
+  # AusInvertTraits name list, 52% of names resolved via a fuzzy higher-rank match *also* fuzzy-matched
+  # a real candidate at a different rank, and the large majority of those were this exact systematic
+  # pattern. Tried here, before any fuzzy matching, as an *exact* match on the corrected name -- safer
+  # than fuzzy matching or reordering alone, since it only ever succeeds when the corrected name is a
+  # real, present taxon, and costs nothing (falls through to ordinary fuzzy matching unchanged) when it
+  # isn't. Placed after match_02b (so a name that's already an exact match to something real never
+  # reaches this substitution logic at all) and before match_02c/match_12c (so it gets first refusal,
+  # covering both the "ends in sp." and generic fuzzy-fallback cases in one place).
+  if (consider_english_name_endings) {
+    # (vernacular ending, formal Latin ending, target rank) -- tribe ("-ini") and subtribe ("-ina")
+    # endings are already the formal Latin form, so no vernacular variant is needed for those.
+    english_ending_substitutions <- list(
+      list(vernacular = "id$", formal = "idae", rank = "family"),
+      list(vernacular = "ine$", formal = "inae", rank = "subfamily"),
+      list(vernacular = "oid$", formal = "oidea", rank = "superfamily")
+    )
+
+    for (sub in english_ending_substitutions) {
+      if (!sub$rank %in% names(resources)) next
+
+      candidate <- stringr::str_replace(
+        taxa$tocheck$word_one_stripped, stringr::regex(sub$vernacular, ignore_case = TRUE), sub$formal
+      )
+
+      i <- !is.na(candidate) & candidate != taxa$tocheck$word_one_stripped &
+        candidate %in% resources[[sub$rank]]$canonical_name
+
+      ii <- match(candidate[i], resources[[sub$rank]]$canonical_name)
+
+      # see ?match_taxa's include_bracketed_info -- a bare, unbracketed rank name is used whenever the
+      # name being matched is nothing more than the single (vernacular-suffixed) token itself
+      bare_rank_name <- !include_bracketed_info &
+        stringr::str_count(stringr::str_trim(taxa$tocheck[i, ]$cleaned_name), "\\S+") == 1
+
+      taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+        dplyr::mutate(
+          taxonomic_dataset = resources[[sub$rank]]$taxonomic_dataset[ii],
+          taxon_rank = sub$rank,
+          taxonomic_status = resources[[sub$rank]]$taxonomic_status[ii],
+          taxon_ID = resources[[sub$rank]]$taxon_ID[ii],
+          accepted_name_usage_ID = resources[[sub$rank]]$accepted_name_usage_ID[ii],
+          aligned_name_tmp = paste0(candidate[i], " sp. [", cleaned_name),
+          aligned_name = dplyr::case_when(
+            bare_rank_name ~ candidate[i],
+            is.na(identifier_string2) ~ paste0(aligned_name_tmp, "]"),
+            TRUE ~ paste0(aligned_name_tmp, identifier_string2, "]")
+          ),
+          aligned_reason = paste0(
+            "Matched by substituting the English vernacular name ending for the formal one (\"",
+            word_one_stripped, "\" -> \"", candidate[i], "\") to a ", taxonomic_status, " ", taxon_rank,
+            " in ", taxonomic_dataset, " (", Sys.Date(), ")"
+          ),
+          known = TRUE,
+          checked = TRUE,
+          alignment_code = "match_02z_english_ending_accepted"
+        )
+
+      taxa <- redistribute_progress(taxa, pb)
+      if (nrow(taxa$tocheck) == 0) return(taxa)
+    }
+  }
 
   # match_02c: Higher-level resolution
   # Fuzzy matches of accepted higher-level names where the final "word" is `sp` or `spp` and
   # there isn't an exact match to an accepted higher-level name
   # Aligned name includes identifier to indicate `genus sp.` refers to a specific species (or infra-specific taxon), associated with a specific dataset/location.
+  # Broadest-first (taxon_ranks_to_check_fuzzy, not taxon_ranks_to_check) -- see that variable's own
+  # comment above.
 
-  for (ranks in taxon_ranks_to_check) {
+  for (ranks in taxon_ranks_to_check_fuzzy) {
     taxa$tocheck <- taxa$tocheck |>
       dplyr::mutate(
         fuzzy_match_genus =
@@ -1036,7 +1142,9 @@ match_taxa <- function(
   # The final alignment step is to see if a fuzzy match can be made for the first word of unmatched taxa to an
   # higher order taxon name in one of the taxonomic references.
   # The 'taxon name' is then reformatted as `genus sp.` with the original name in square brackets.
-  for (ranks in taxon_ranks_to_check) {
+  # Broadest-first (taxon_ranks_to_check_fuzzy, not taxon_ranks_to_check) -- see that variable's own
+  # comment above.
+  for (ranks in taxon_ranks_to_check_fuzzy) {
     # `fuzzy_match_genus` must be recomputed fresh against *this* rank's word_one_stripped on every
     # iteration -- reusing whatever match_02c's loop last left it as (whichever rank happened to be
     # last in taxon_ranks_to_check, not necessarily this one) meant this block only ever fuzzy-matched
