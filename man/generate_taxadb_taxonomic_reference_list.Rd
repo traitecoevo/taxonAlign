@@ -71,7 +71,14 @@ offset at all, forcing a large clade to be split recursively into smaller pieces
 own documentation). \code{taxadb} sidesteps this: it downloads and locally caches a small number of large,
 pre-built snapshot files per provider (semi-annual releases, not live), then answers a taxon-group
 filter as an ordinary local database query -- fast and reliable regardless of how large the group is,
-at the cost of the snapshot being up to a few months old rather than live.
+at the cost of the snapshot being up to a few months old rather than live. Measured directly (not
+just theorised) for the \code{"gbif"} provider by comparing an independently-fetched, live reference
+against this function's output for the same 28 invertebrate phyla: 85.2\% of GBIF usageKeys agreed
+overall, rising to 93.0\% when restricted to accepted names only -- the remaining gap is
+concentrated in \emph{synonym} coverage specifically, not just newly-described accepted species. Worth
+weighing for an alignment tool: this function is a strong choice for accepted-name coverage of a
+large clade, but don't assume it's a complete substitute for a live fetch when synonym resolution
+matters. See \code{CLAUDE.md}'s Architecture #1b for the full breakdown.
 
 This function is deliberately narrower than \code{generate_GBIF_taxonomic_reference_list()}: it has no
 concept of "a minimum rank to include below \code{taxon_name}" (every row taxadb has for the requested

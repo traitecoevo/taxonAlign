@@ -299,6 +299,36 @@ no recursive splitting, no retry/timeout engineering needed, at the cost of the 
 few months stale rather than live (taxadb's own docs: snapshots are semi-annual). Investigated and
 implemented per [issue #19](https://github.com/traitecoevo/taxonAlign/issues/19).
 
+- **Measured, not just theorised, how close taxadb's GBIF snapshot actually is to a live fetch**: ran
+  both `generate_GBIF_taxonomic_reference_list()` (this session's own, independently-fetched AU
+  invertebrate reference, 358,496 rows across 28 phyla) and `generate_taxadb_taxonomic_reference_list()`
+  (the same 28 phyla, `provider = "gbif"`, `country = "AU"`) and compared exact GBIF usageKeys (both
+  sources use the same raw key -- ours bare, taxadb's `"GBIF:<key>"`-prefixed, so this is a precise
+  key-set comparison, not just a name comparison). Result: **85.2% agreement overall (Jaccard)**, not
+  "near perfect" -- worth recording honestly rather than assuming taxadb is a drop-in replacement.
+  Breaking down *why*, rather than stopping at that one number:
+  - Checked first whether duplicate/reassigned GBIF backbone keys for the *same* name explained the
+    gap (a real, known GBIF quirk -- confirmed a handful of cases, e.g. `"Nephthyidae"`/`"Ambo"`
+    appearing on *both* "only in one side" lists under different keys) -- this turned out to be a
+    small effect (only ~2-6% of the mismatched keys), not the main driver.
+  - **Restricting to accepted names only: 93.0% agreement** (164,743 shared of 175,748 ours /
+    166,104 taxadb's) -- meaningfully better, but still a real, asymmetric gap: 11,005 accepted names
+    only in the live fetch vs. just 1,361 only in taxadb's snapshot.
+  - **The dominant driver is synonym coverage**: of the ~41k keys only in the live fetch, ~81%
+    (33,668) are genuinely absent from taxadb *by name*, not just under a different key -- and the
+    large majority of those are synonym-status records. taxadb's GBIF snapshot has meaningfully
+    thinner synonym coverage than the live API for these invertebrate groups, not just a few months'
+    worth of newly-described species.
+  - One phylum, `"Entoprocta"`, has zero rows under that exact name in taxadb's snapshot at all
+    (a real classification/flattening difference, not investigated further) -- negligible in scale
+    (78 rows in the live fetch) but a real, if minor, data-quality quirk worth knowing about.
+  - **Practical implication**: `generate_taxadb_taxonomic_reference_list()` is a strong choice for
+    accepted-name coverage of a large clade, but its synonym coverage is measurably worse than a live
+    fetch -- worth weighing for an alignment tool specifically, since resolving synonyms is much of
+    the point. Not yet filed as its own issue; revisit if this gap turns out to matter in practice for
+    a real alignment run (the same "validate against real, large, messy data" discipline used
+    throughout Architecture #2 below).
+
 - **`country` filtering is still GBIF-API-only**, not something `taxadb` can supply for *any*
   provider — `taxadb` has no occurrence data at all, only taxonomic backbone data. So `country` is
   only accepted when `provider = "gbif"`, and even then it's answered by reusing
