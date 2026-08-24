@@ -19,16 +19,12 @@ example name below is real, drawn from actually running this package against rea
 development.
 
 The AFD, iNaturalist and GBIF reference exports this document uses are bundled with the package
-(`inst/extdata/`), so most of the code below can genuinely be run. The one exception is the raw name
-list from the Australian invertebrates database this was originally built to align -- that's the
-database's own data, not this package's to redistribute, so you'd need your own copy to run that part.
-Every chunk is still marked `eval: false` so this document renders quickly without actually running a
-multi-minute alignment or a network fetch every time.
+(`inst/extdata/`), so most of the code below can genuinely be run, substituting in the invertebrate database's taxon list with one from your project.
 
 ## Why this package exists
 
-An Australian invertebrates trait database assembles trait data from hundreds of source datasets, each
-identifying its specimens in its own way -- and invertebrate taxonomy, in practice, is far messier than
+An Australian invertebrates trait database assembled trait data from hundreds of source datasets, each
+identifying its specimens in its own way -- a perfect example that invertebrate taxonomy is, in practice, far messier than
 "Genus species". Real names from that database include things like:
 
 - `"Genus 1 sp.01 Corinnidae"` -- a museum voucher/morphospecies code: unidentified to genus, with the
@@ -36,18 +32,16 @@ identifying its specimens in its own way -- and invertebrate taxonomy, in practi
 - `"Lasioglossum (Parasphecodes)"` -- the zoological `Genus (Subgenus)` bracket convention, rarely
   written by taxonomists working in plants (where `taxonAlign`'s design lineage, APCalign, comes from).
 - `"Themognatha affinis affinis"` -- a tautonymous subspecies (the nominotypical subspecies repeats its
-  species epithet), textually indistinguishable from a hedge like `"Acacia aff. dealbata"` ("resembles
-  *A. dealbata*, not confirmed").
+  species epithet)
 
 Aligning tens of thousands of names like these against an accepted taxonomy, by hand, doesn't scale.
-The tool originally built to do this was a bespoke internal script: it read one hard-coded combination
+The tool originally built to do this was a bespoke internal script, using ideas drawn from [APCalign](https://github.com/traitecoevo/APCalign): it read one hard-coded combination
 of taxonomic references (the Australian Faunal Directory, AFD, supplemented by an iNaturalist export
 for names AFD didn't cover) and ran a fixed sequence of match attempts against them.
 
 `taxonAlign` generalises that script's ideas into a reusable package: the reference is supplied by the
 user (their own table, a known source, or a live GBIF fetch -- any mix of these), and the matching
-engine handles *every* taxonomic rank present in that reference, not just genus/species/family the way
-APCalign (built for the Australian Plant Census) does.
+engine handles *every* taxonomic rank present in that reference, reflecting both the inability of researchers to identify some taxa to species -- or even genus -- and that some trait values are applicable across all species in a broader taxon grouping.
 
 ## Building the reference: AFD + iNaturalist
 
@@ -87,8 +81,8 @@ information at all, so iNaturalist can widen genus/species *coverage* beyond AFD
 resolve a name that's a synonym of something else the way AFD's own synonym data can.
 
 `prepare_taxonomic_resources()` combines the two into the single, rank-split, priority-ordered structure
-`align_taxa()`/`update_taxa()` expect. Listing AFD first means it wins whenever a name is present in
-both -- the same priority the original script gave it:
+`align_taxa()`/`update_taxa()` expect. Listing AFD first means it is listed as the taxonomic reference whenever a name is present in
+both:
 
 ```{r}
 resources <- prepare_taxonomic_resources(list(AFD = afd, iNat = inat))
@@ -99,20 +93,27 @@ names(resources)
 ## Aligning a real invertebrate name list
 
 The Australian invertebrates database keeps its own record of every raw name it has ever needed to
-align, and what it was resolved to (`taxon_name`, filled in only when resolution reached species level
--- a name resolved to a higher rank leaves this blank, an "exception flag" rather than a failure). At
-the time of writing, this list holds 5,154 distinct (name, source dataset) pairs.
+align, and what it was resolved to -- in two separate columns. `taxon_name` records the species-level
+resolution only, and is deliberately left blank whenever a name was correctly resolved to a *higher*
+rank instead ("exception flag" rather than a failure). `aligned_name` records the resolution at
+*every* rank, including the higher-rank cases `taxon_name` leaves blank, in the same bracketed
+`"Genus sp. [original; identifier]"` format used throughout this package. Both are used below --
+`taxon_name` for the species-level comparison, `aligned_name` for the higher-rank one. At the time of
+writing, this list holds 5,154 distinct (name, source dataset) pairs.
 
 ```{r}
-old <- readr::read_csv("your_own_copy_of_the_name_list.csv") # not shipped with this package
+old <- readr::read_csv("your_own_copy_of_the_name_list.csv")
 nrow(old)
 #> [1] 5154
 
 updated <- create_taxonomic_update_lookup(
   old$original_name, resources,
-  identifier = old$dataset_id,
-  hybrids = TRUE, intergrades_affinis = TRUE, consider_english_name_endings = TRUE,
-  include_bracketed_info = TRUE, progress = TRUE
+  identifier = old$dataset_id, # source dataset becomes identified in []
+  hybrids = TRUE, 
+  intergrades_affinis = TRUE,
+  consider_english_name_endings = TRUE, # automatically replace English name endings with Latin ones
+  include_bracketed_info = TRUE, # retain notes and original names in []
+  progress = TRUE # toolbar to show progress
 )
 ```
 
@@ -138,26 +139,24 @@ comparison <- old |>
 disagree, and each one is informative rather than a package bug: six are species genuinely absent from
 both AFD and iNaturalist (the pipeline conservatively stops at genus rather than guessing -- including
 one, `"Euastacus coughrani"`, absent from both); two are likely fuzzy-matching imprecision within
-*Euastacus*, a genus of dozens of very similarly-epithet-ed crayfish species, not yet fixed
-([issue #17](https://github.com/traitecoevo/taxonAlign/issues/17)); two are `"Onthophagus bulga"`
+*Euastacus*, a genus of dozens of very similarly-epithet-ed crayfish species, that reflects the limits of fuzzy matching, especially with incomplete resources and typos in submitted names; two are `"Onthophagus bulga"`
 matched identically both times but recorded inconsistently in the *historical* file itself; one,
 `"Incertae Sedis"`, resolves to AFD's own literal "position uncertain" placeholder rather than the more
 specific subfamily a human curator assigned from context; and the last, `"Themognatha affinis
 affinis"`, *was* a real bug -- a tautonymous subspecies textually indistinguishable from an affinity
-hedge, fixed in [issue #16](https://github.com/traitecoevo/taxonAlign/issues/16) by checking for a real,
+hedge, fixed by checking for a real,
 resource-verified exact match before ever falling back to the "uncertain identification" reading.
 
 **Higher-rank (the other 2,281 rows):** matching the exact bracketed string is a stricter bar here --
 format-sensitive in a way species names aren't -- and it shows: 1,911 (87.1%) match exactly. That's a
 real drop from the species-level number, but the *same* two resource combinations agree with each
 other on 98.5% of this subset, which suggests most of the gap is disagreement with the (older)
-historical file rather than the matching engine misbehaving -- the same reference-swap check the next
-section runs on the whole list.
+historical file, reflecting improvements in matching algorithms since this package was developed and the original code was upgraded.
 
 ## What real invertebrate names taught the matching engine
 
-Several of `match_taxa()`'s ~20 sequential match blocks exist specifically because of patterns first
-seen in this real data, not anticipated in advance:
+Several of `match_taxa()`'s ~20 sequential match blocks exist specifically because of patterns 
+noted during test runs with the invertebrate dataset, but not anticipated in advance:
 
 - **The bracketed subgenus convention** needed its own dedicated match blocks -- a plain string-cleaning
   pass (borrowed from APCalign, which never has to handle this convention) strips the parentheses but
@@ -166,22 +165,22 @@ seen in this real data, not anticipated in advance:
 - **Fuzzy matching a higher rank needed to search broadest-first, not most-specific-first** -- checked
   directly against the real name list: 52% of names that fuzzy-matched a higher rank *also*
   fuzzy-matched a real candidate at a different rank, mostly not coincidence but a systematic pattern --
-  an informal vernacular adjective (`"Coccinellid"`) signals the broader group it derives from, not a
-  specific genus ([issue #12](https://github.com/traitecoevo/taxonAlign/issues/12)).
+  an informal vernacular adjective (`"Coccinellid"`) must be assumed to signal the broadest group the name might refer to, not a
+  specific genus ([issue #12](https://github.com/traitecoevo/taxonAlign/issues/12)), unless additional information is available.
 - **Hybrid, intergrade, indecision, and graded/"affinis" identifications** all needed to resolve to
   genus rank only, since none of them can specify a genuine species -- and the "affinis" case
   specifically needed to check for a real exact match first, for the tautonym reason above
   ([issue #16](https://github.com/traitecoevo/taxonAlign/issues/16)).
 
-None of this generalises to APCalign's own domain the way it does here: a plant taxonomist's own name
-list essentially never contains a subgenus bracket or a hybrid marker the way an invertebrate
+The rules for aligning hybrids, intergrades, etc could be borrowed from APCalign's function, as they were already carefully calibrated. However, a plant taxonomist's reference
+list essentially never contains a subgenus bracket or the informal references to higher rank groupings the way an invertebrate
 collection's does.
 
 ## Swapping the reference: AFD + iNaturalist vs. AFD + GBIF
 
-`taxonAlign`'s reference is meant to be swappable, not just in principle. The same 5,154-name list was
-aligned a second time, against AFD combined with a GBIF-backbone-derived reference of Australian
-invertebrates instead of iNaturalist:
+`taxonAlign` is designed to allow any taxonomic reference list to be used. To demonstrate this, the same 5,154-name list of invertebrate taxa was
+aligned a second time, this time against AFD combined with a GBIF-backbone-derived reference of Australian
+invertebrates, rather than reference lists from AFD + iNaturalist:
 
 ```{r}
 gbif_au <- readRDS(system.file("extdata", "gbif_au_invertebrates.rds", package = "taxonAlign"))
@@ -215,8 +214,7 @@ needs -- was a substantially harder engineering problem than fetching one small 
 
 - GBIF's taxonomy-browsing API refuses to page past 100,000 rows into any single clade -- a clade the
   size of Arthropoda (over three million descendants) has to be split recursively into smaller children
-  and fetched piece by piece, with each piece cached independently so an interrupted multi-day fetch
-  resumes for free rather than restarting.
+  and fetched piece by piece, with each piece cached independently as this became an oft-interrupted multi-day fetch.
 - A country filter can't narrow the *fetch* itself -- GBIF's taxonomy-browsing endpoint has no country
   concept at all, only its occurrence-record endpoint does. The whole tree has to be fetched first and
   filtered to a country's occurrences afterward.
@@ -228,15 +226,17 @@ worldwide version built the same way without the country filter -- confirming th
 dataset built once could serve *any* country's alignment need, with the country filter applied locally
 and cheaply afterward.
 
+The plan is to eventually deliver the gbif taxonomic dataset together with a function that will allow it to be further filtered by taxon group or country. 
+
 ## Lessons for whoever reads this next
 
 - **A hand-built test fixture finds the bugs you anticipated; a real, large, messy dataset finds the
   ones you didn't.** Several of the real bugs referenced above were only found by running the full
   name list end to end and diffing the result against independent alignments or a real historical
   answer key -- not by unit tests alone. The tests in `tests/testthat/` exist to *keep* each fixed once
-  found, not to have found them in the first place.
-- **A plausible-sounding fix deserves the same scepticism as the bug it's fixing.** The first attempt at
-  fixing issue #16 was itself wrong, and only caught because a real, adversarial test
+  found, not to have found them in the first place. AI does a fantastic job of building tests to catch the anticipated bugs, greatly reducing the time costs of writing tests for a new package. A well-versed human curator is (currently still) required to dig deeper and deeper into the match sequence to identify additional bugs. A long list of messy taxon names is the only way these bugs are uncovered.
+- **A plausible-sounding fix deserves the same scepticism as the bug it's fixing.** The first attempt (by AI!) at
+  fixing issue #16 was itself wrong, and only caught because a real, adversarial test (initiated by a human)
   (`test-apc_equivalence.R`) existed to catch it.
 - **A reference built for one purpose tends to be useful for another.** The GBIF reference built to
   validate this package against a real name list is, unmodified, also a candidate worldwide taxonomic
