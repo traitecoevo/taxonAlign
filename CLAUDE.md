@@ -105,7 +105,7 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-321 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
+375 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
 #2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
@@ -495,6 +495,62 @@ Architecture of the matching engine itself:
     case above (dropped, with a warning, generically for any rank via
     `tolower(canonical_name) != tolower(taxon_rank)`) since such a row is equally unmatchable-in-any-
     useful-sense and equally hazardous.
+- **Two further real bugs found by directly diffing the same AusInvertTraits name list against two
+  different resource combinations (AFD+iNat vs AFD+GBIF) rather than just eyeballing one run**:
+  - (Issue #13) `fuzzy_match()` had no concept that a literal rank-category word ("genus", "species",
+    "family", "tribe", ...) is never itself a real taxon name -- so a query like
+    `"species of Salticidae"` (whose `word_one_stripped` is just the bare word `"species"`) could
+    genuinely fuzzy-match a real, unrelated genus (`"Sphecius"`) that happened to be a similarly short,
+    same-first-letter string. This is the query-side mirror of the already-existing resource-side guard
+    (a GBIF placeholder row named just `"Genus"` is dropped by `prepare_taxonomic_resources()`) --
+    fixed by adding the same check at the top of `fuzzy_match()` itself (`match_taxa_helpers.R`), reusing
+    `taxonAlign_taxon_rank_specificity` (plus `"species"`, which that vector excludes) as one shared
+    rank-word vocabulary for both sides. Scoped to only fire when the *whole* string being matched
+    equals a rank word, so ordinary two-word species-binomial fuzzy matching can never be affected.
+  - (Issue #14) A **bare** `"Genus (Subgenus)"` query (no species epithet at all) could be
+    mis-resolved to an unrelated real species -- e.g. `"Lasioglossum (Parasphecodes)"` resolved
+    correctly to subgenus rank against one resource combination, but silently mis-resolved to the real
+    species `"Lasioglossum parasphecodum"` against the other. Root cause: `cleaned_name` (from
+    `APCalign::standardise_names()` alone) correctly keeps the `"(Subgenus)"` bracket intact, and the
+    dedicated bracket-aware blocks use it correctly -- but `stripped_name`/`stripped_name2` (and hence
+    `binomial`/`trinomial`/`word_one_stripped`, which every species-level block works off) only strip
+    the *parenthesis characters* via `APCalign::strip_names()`, not the bracketed word itself
+    (`strip_names("Lasioglossum (Parasphecodes)")` returns `"lasioglossum parasphecodes"`, not
+    `"lasioglossum"`). For a bare bracketed name, the subgenus word then sits exactly where a species
+    epithet would, and species-level matching -- which used to run well before the old, sole
+    bracket-aware fallback (`match_12a`, all the way down at block 12) -- could genuinely find a real,
+    unrelated species close enough to it. Not inherited from APCalign "for no reason": `strip_names()`
+    exists to scrub *botanical* voucher/manuscript parenthetical annotations, a domain that never
+    collides with a real species epithet this way, since botany doesn't write subgenus using the
+    zoological `"Genus (Subgenus)"` bracket convention. Fixed by adding a new, early block
+    (`match_02y`, right after `match_02a`, well before any species-level block) that quarantines
+    *only* the bare, exactly-two-token `"Genus (Subgenus)"` shape -- detected by string shape, not
+    resource membership, so a pair absent from `resources$subgenus_v2` (or a resource with no
+    `subgenus_v2` table at all) is still safely caught. Tries an exact match against
+    `resources$subgenus_v2`, then a fuzzy match (new -- the old fallback had none at all), then falls
+    back to the genus part alone via the same shared helper the hybrid/intergrade matching uses
+    (`match_special_case_to_genus()`), so an unresolved bracket never reaches species-level matching as
+    a fake epithet. Deliberately scoped to *only* the bare two-token case: a genuine
+    `"Genus (Subgenus) species"` trinomial (e.g. the nominotypical-subgenus convention
+    `"Aporocera (Aporocera) t-viride"`, `test-match_taxa_typos.R`) is already resolved correctly by a
+    different, existing mechanism -- `match_11a`/`match_11b`'s `ignore_bracketed_words`, computed
+    directly from `original_name` via `stringr::str_remove(original_name, " \\(.*\\)")`, which drops
+    the entire `"(...)"` (parens and contents) rather than just the characters -- and the original,
+    unconditional-on-trailing-content `match_12a` fallback is kept (now purely as the late safety net
+    for a `"Genus (Subgenus) unmatched_epithet"` query, once every species-level block has already had,
+    and failed, first refusal), so subgenus-level specificity for that case isn't lost to a genus-only
+    fallback either. A related but fragile-not-fixed observation: even for the trinomial case,
+    `binomial`/`trinomial` reconstruction is already subtly wrong today (inflated to e.g.
+    `"lasioglossum parasphecodes turneri"` instead of the real `"lasioglossum turneri"`) -- it happens
+    to still work only because `ignore_bracketed_words` bypasses that reconstruction and goes straight
+    to `original_name`.
+  - (Issue #15, proposed, not yet implemented) A further, more ambitious idea from the same
+    investigation -- an opt-in parameter to strip recognised rank words *and* filler words ("of", "in")
+    from a query before matching (turning `"species of Salticidae"` into a match attempt on
+    `"Salticidae"` alone, with the full original string still preserved in the aligned name's `"[...]"`
+    suffix) -- deliberately deferred pending design discussion (filler-word vocabulary, where in the
+    match sequence it runs, interaction with `include_bracketed_info`'s bare-match logic once words are
+    dropped rather than bracketed).
 - **`taxonomic_status`-based disambiguation when the same lookup key repeats** -- real reference data
   (e.g. real APC data's "Genoplesium insigne", which recurs under more than one non-"accepted" status)
   can list the same `canonical_name`/`scientific_name`/binomial/trinomial more than once with different

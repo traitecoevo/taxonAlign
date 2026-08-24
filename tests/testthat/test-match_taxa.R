@@ -126,7 +126,38 @@ test_that("include_bracketed_info = FALSE (default) returns a bare name when not
   expect_equal(out_genus_synonym$aligned_name, "Boronella") # the matched (synonym) row's own name
   expect_equal(out_family$aligned_name, "Rutaceae")
   expect_equal(out_subgenus_bracket$aligned_name, "Boronia (Valvatae)")
-  expect_equal(out_subgenus_bracket$alignment_code, "match_12a_exact_subgenus_accepted_or_synonym")
+  expect_equal(out_subgenus_bracket$alignment_code, "match_02y_bracket_exact_subgenus")
+})
+
+# match_02y (issue #14): a bare "Genus (Subgenus)" query must never leak into species-level matching
+# as a fake epithet -- regardless of whether the specific subgenus pair is actually in
+# resources$subgenus_v2. Regression tests for the real bug found comparing AFD+iNat against AFD+GBIF
+# on the same name list ("Lasioglossum (Parasphecodes)" resolved to subgenus rank against one resource,
+# but silently mis-resolved to an unrelated real species against the other).
+test_that("a bare 'Genus (Subgenus)' query falls back to genus rank when the pair isn't in resources", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+
+  # "Boronia" (the genus) is real; "Nonexistentia" is not a subgenus of it anywhere in resources --
+  # this must resolve to genus rank via the shared hybrid/intergrade-style genus fallback, never to an
+  # unrelated species by treating "Nonexistentia" as a fake epithet
+  out <- align_taxa("Boronia (Nonexistentia)", resources)
+
+  expect_equal(out$taxon_rank, "genus")
+  expect_equal(out$alignment_code, "match_02y_bracket_genus_exact")
+  expect_equal(out$aligned_name, "Boronia sp. [Boronia (Nonexistentia)]")
+})
+
+test_that("a genuine 'Genus (Subgenus) species' trinomial is unaffected by the bare-bracket quarantine", {
+  # match_02y only ever fires for an exactly-two-token bracketed name -- a real trinomial (a species
+  # epithet actually present after the bracket) must still be handled by the existing, later
+  # match_11a/match_11b (ignore_bracketed_words) mechanism, not diverted to a genus-only fallback.
+  # (The nominotypical-subgenus variant of this is already covered end-to-end in
+  # test-match_taxa_typos.R; this checks a non-nominotypical bracket too.)
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia (Valvatae) serrulata", resources)
+
+  expect_equal(out$aligned_name, "Boronia serrulata")
+  expect_equal(out$taxon_rank, "species")
 })
 
 test_that("include_bracketed_info = FALSE also drops a bare match's identifier, not just the original name", {

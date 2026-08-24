@@ -26,6 +26,23 @@ test_that("fuzzy_match tolerates an accepted_list entry with no alphabetic chara
   expect_equal(result, "Chen")
 })
 
+test_that("fuzzy_match never matches a literal rank word as if it were a real taxon name", {
+  # regression test (issue #13): found via a real, full AusInvertTraits validation run -- the query
+  # "species of Salticidae" fuzzy-matched the literal word "species" (its word_one_stripped) to the
+  # real, unrelated genus "Sphecius" (both short, both start with "s", within tolerance). A bare rank
+  # word -- English or Latin, e.g. "genus"/"species"/"family"/"tribe" -- is never itself a real taxon
+  # name and should never be offered up as a fuzzy-match candidate string, mirroring the equivalent
+  # guard already applied on the *resource* side (a GBIF placeholder row named just "Genus" is dropped
+  # by prepare_taxonomic_resources()).
+  expect_true(is.na(fuzzy_match("species", c("Sphecius", "Species"), max_distance_abs = 3, max_distance_rel = 0.35)))
+  expect_true(is.na(fuzzy_match("genus", c("Genius", "Genus"), max_distance_abs = 2, max_distance_rel = 0.35)))
+
+  # an ordinary taxon name that happens to *contain* a rank word as a substring (not equal to it in its
+  # entirety) is unaffected -- the guard only fires when the whole string being matched is a rank word
+  result <- fuzzy_match("Aporcera", c("Aporocera", "Xylotoles"), max_distance_abs = 3, max_distance_rel = 0.35)
+  expect_equal(result, "Aporocera")
+})
+
 test_that("fuzzy_match returns NA (rather than erroring) for an NA query string", {
   expect_no_error(result <- fuzzy_match(NA_character_, c("Chen", "Anser"), max_distance_abs = 2, max_distance_rel = 0.35))
   expect_true(is.na(result))

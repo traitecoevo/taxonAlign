@@ -501,6 +501,164 @@ match_taxa <- function(
       return(taxa)
   }
 
+  # match_02y: quarantine a *bare* "Genus (Subgenus)" input -- exactly two whitespace-delimited tokens,
+  # nothing beyond the bracketed subgenus itself -- before it can reach later, generic
+  # species/genus-level matching. This has to run this early (right after match_02a, well before
+  # match_05's species-level blocks), not only as a late fallback the way the old match_12a used to.
+  #
+  # Found via a real comparison of the same AusInvertTraits name list against two different resource
+  # combinations (AFD+iNat vs AFD+GBIF): "Lasioglossum (Parasphecodes)" resolved correctly to subgenus
+  # rank against one, but silently mis-resolved to an unrelated real SPECIES
+  # ("Lasioglossum parasphecodum") against the other. Root cause: `cleaned_name` (computed from
+  # `APCalign::standardise_names()` alone, before any stripping) keeps the "(Subgenus)" bracket intact
+  # -- match_02a and this block correctly use it -- but `stripped_name`/`stripped_name2` (and hence
+  # `binomial`/`trinomial`/`word_one_stripped`, which every earlier species-level block works off) only
+  # strip the *parenthesis characters*, not the bracketed word itself: `APCalign::strip_names(
+  # "Lasioglossum (Parasphecodes)")` returns `"lasioglossum parasphecodes"`, not `"lasioglossum"`. For a
+  # *bare* bracketed name (no real species epithet at all), the subgenus name then sits exactly where a
+  # species epithet would, and ordinary exact/fuzzy species-level matching can genuinely find a real,
+  # unrelated species that happens to be a close spelling match to it.
+  #
+  # Deliberately scoped to *only* the bare, two-token case -- a genuine `"Genus (Subgenus) species"`
+  # trinomial (a real species epithet actually present, e.g. the nominotypical-subgenus convention
+  # `"Aporocera (Aporocera) t-viride"`, see test-match_taxa_typos.R) is already handled correctly and
+  # safely further down by match_11a/match_11b's `ignore_bracketed_words` (computed from
+  # `original_name` directly via `stringr::str_remove(original_name, " \\(.*\\)")`, which drops the
+  # *entire* "(...)" -- parens and contents both -- rather than just the parenthesis characters, so it
+  # never suffers the same false-epithet problem). Quarantining every bracketed name regardless of
+  # length here would pre-empt that correct, later mechanism for no benefit -- confirmed by this
+  # actually breaking that exact test when first tried.
+  #
+  # Detection is purely shape-based (a parenthesised second word, and nothing after it), not
+  # membership-based, precisely so a pair *absent* from resources$subgenus_v2 (or resources with no
+  # subgenus_v2 table at all) is still caught and safely quarantined rather than leaking through --
+  # membership is only checked inside each resolution step below, the same detect_fn/resolution split
+  # match_special_case_to_genus() uses.
+  is_bracketed_subgenus <-
+    stringr::str_count(taxa$tocheck$cleaned_name, " ") == 1 &
+    stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(.*\\)$")
+
+  if (any(is_bracketed_subgenus)) {
+
+    if (!is.null(resources$subgenus_v2)) {
+
+      # exact match against the bracketed "Genus (Subgenus)" pair itself
+      i <- is_bracketed_subgenus &
+        stringr::word(taxa$tocheck$cleaned_name, start = 1, end = 2) %in% resources$subgenus_v2$genus_and_subgenus
+      ii <- match(
+        stringr::word(taxa$tocheck[i, ]$cleaned_name, start = 1, end = 2),
+        resources$subgenus_v2$genus_and_subgenus
+      )
+
+      # TRUE where the name being matched is *nothing more* than "Genus (Subgenus)" itself (exactly
+      # two whitespace-delimited tokens) -- no species epithet, "sp." marker, morphospecies code, or
+      # anything else. See ?match_taxa's include_bracketed_info.
+      bare_rank_name <- !include_bracketed_info &
+        stringr::str_count(stringr::str_trim(taxa$tocheck[i, ]$cleaned_name), "\\S+") == 2
+
+      taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+        dplyr::mutate(
+          taxonomic_dataset = resources$subgenus_v2$taxonomic_dataset[ii],
+          taxon_rank = "subgenus",
+          taxonomic_status = resources$subgenus_v2$taxonomic_status[ii],
+          taxon_ID = resources$subgenus_v2$taxon_ID[ii],
+          accepted_name_usage_ID = resources$subgenus_v2$accepted_name_usage_ID[ii],
+          aligned_name_tmp = paste0(resources$subgenus_v2$genus_and_subgenus[ii], " sp. [", cleaned_name),
+          aligned_name = dplyr::case_when(
+            bare_rank_name ~ resources$subgenus_v2$genus_and_subgenus[ii],
+            is.na(identifier_string2) ~ paste0(aligned_name_tmp, "]"),
+            TRUE ~ paste0(aligned_name_tmp, identifier_string2, "]")
+          ),
+          aligned_reason = paste0(
+            "Exact match of a bracketed genus (subgenus) to a ", taxonomic_status, " ", taxon_rank,
+            " in ", taxonomic_dataset, " (", Sys.Date(), ")"
+          ),
+          checked = TRUE,
+          known = TRUE,
+          alignment_code = "match_02y_bracket_exact_subgenus"
+        )
+      taxa <- redistribute_progress(taxa, pb)
+
+      if (nrow(taxa$tocheck) > 0) {
+
+        # fuzzy match against the bracketed "Genus (Subgenus)" pair -- new; the old match_12a had no
+        # fuzzy step at all, so a merely-misspelled subgenus bracket fell straight through into the
+        # same species-level mis-parsing this whole block exists to prevent. Reuses the already-built
+        # `fuzzy_match_genera()` closure (genus-level tolerance, and a no-op when `fuzzy_matches =
+        # FALSE`) rather than inventing separate tolerance parameters for this one case.
+        # recomputed against the current (post-exact-match, shrunk) taxa$tocheck, not the
+        # outer-scope is_bracketed_subgenus from before that redistribute()
+        is_bracketed_subgenus2 <-
+          stringr::str_count(taxa$tocheck$cleaned_name, " ") == 1 &
+          stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(.*\\)$")
+
+        fuzzy_bracket <- rep(NA_character_, nrow(taxa$tocheck))
+        if (any(is_bracketed_subgenus2)) {
+          fuzzy_bracket[is_bracketed_subgenus2] <- fuzzy_match_genera(
+            stringr::word(taxa$tocheck$cleaned_name[is_bracketed_subgenus2], start = 1, end = 2),
+            resources$subgenus_v2$genus_and_subgenus
+          )
+        }
+        i <- !is.na(fuzzy_bracket) & fuzzy_bracket %in% resources$subgenus_v2$genus_and_subgenus
+        ii <- match(fuzzy_bracket[i], resources$subgenus_v2$genus_and_subgenus)
+
+        bare_rank_name <- !include_bracketed_info &
+          stringr::str_count(stringr::str_trim(taxa$tocheck[i, ]$cleaned_name), "\\S+") == 2
+
+        taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+          dplyr::mutate(
+            taxonomic_dataset = resources$subgenus_v2$taxonomic_dataset[ii],
+            taxon_rank = "subgenus",
+            taxonomic_status = resources$subgenus_v2$taxonomic_status[ii],
+            taxon_ID = resources$subgenus_v2$taxon_ID[ii],
+            accepted_name_usage_ID = resources$subgenus_v2$accepted_name_usage_ID[ii],
+            aligned_name_tmp = paste0(resources$subgenus_v2$genus_and_subgenus[ii], " sp. [", cleaned_name),
+            aligned_name = dplyr::case_when(
+              bare_rank_name ~ resources$subgenus_v2$genus_and_subgenus[ii],
+              is.na(identifier_string2) ~ paste0(aligned_name_tmp, "]"),
+              TRUE ~ paste0(aligned_name_tmp, identifier_string2, "]")
+            ),
+            aligned_reason = paste0(
+              "Fuzzy match of a bracketed genus (subgenus) to a ", taxonomic_status, " ", taxon_rank,
+              " in ", taxonomic_dataset, " (", Sys.Date(), ")"
+            ),
+            checked = TRUE,
+            known = TRUE,
+            alignment_code = "match_02y_bracket_fuzzy_subgenus"
+          )
+        taxa <- redistribute_progress(taxa, pb)
+      }
+    }
+
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+
+    # Anything still matching the bare-bracketed shape at this point has no usable subgenus match
+    # (either resources$subgenus_v2 doesn't exist at all, or this specific pair isn't in it) -- fall
+    # back to resolving just the *genus* part, via the same shared helper used for hybrids/intergrades,
+    # rather than letting the bracketed subgenus word leak into species-level matching as a fake epithet.
+    taxa <- match_special_case_to_genus(
+      taxa, resources,
+      detect_fn = function(cleaned_name) {
+        stringr::str_count(cleaned_name, " ") == 1 &
+          stringr::str_detect(stringr::word(cleaned_name, start = 2, end = 2), "^\\(.*\\)$")
+      },
+      bracket_sep = " sp. [",
+      reason_text = paste(
+        "Taxon name has a bracketed \"Genus (Subgenus)\" form whose subgenus could not be matched;",
+        "falling back to genus rank."
+      ),
+      alignment_code_exact = "match_02y_bracket_genus_exact",
+      alignment_code_fuzzy = "match_02y_bracket_genus_fuzzy",
+      alignment_code_unresolved = "match_02y_bracket_genus_unresolved",
+      alignment_code_no_resource = "match_02y_bracket_genus_no_resource",
+      fuzzy_match_genera = fuzzy_match_genera,
+      pb = pb
+    )
+
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+  }
 
   # match_02b: Higher level exact matches
   # Exact matches to higher level taxa for names where the final "word" is `sp` or `spp`
@@ -1036,10 +1194,17 @@ match_taxa <- function(
   if (nrow(taxa$tocheck) == 0)
     return(taxa)
 
-  # match_12a: subgenus alignment with bracketed subgenera
-  # Toward the end of the alignment function, see if first word of unmatched taxa is a
-  # higher order taxon name in one of the taxonomic references.
-  # The 'taxon name' is then reformatted as `genus (subgenus) sp.` with the original name in square brackets.
+  # match_12a: subgenus alignment with bracketed subgenera, unconditional on trailing content
+  # Toward the end of the alignment function, see if the first two words of an unmatched taxon are a
+  # "Genus (Subgenus)" pair in one of the taxonomic references. Unlike match_02y above (which only
+  # quarantines a *bare* two-token "Genus (Subgenus)" early, before species-level matching gets a
+  # chance), this block deliberately has NO restriction on what follows the bracket -- it's what's left
+  # once every species-level exact block (match_05/09/10/11) has already had first refusal and failed,
+  # so recognising the genus/subgenus pair here is strictly better than falling through further to
+  # match_12b's genus-only fallback and silently losing subgenus-level specificity. Needed for e.g. a
+  # real "Genus (Subgenus) unmatched_epithet" query where the epithet genuinely isn't in the reference
+  # (so no species block can ever succeed) but the subgenus pair itself is -- see
+  # test-load_taxonomic_resources.R's "namespaces taxon_ID by rank..." test.
 
   if (!is.null(resources$subgenus_v2)) {
 
@@ -1057,6 +1222,8 @@ match_taxa <- function(
     # TRUE where the name being matched is *nothing more* than "Genus (Subgenus)" itself (exactly two
     # whitespace-delimited tokens -- the bracketed part counts as its own token) -- no species epithet,
     # "sp." marker, morphospecies code, or anything else. See ?match_taxa's include_bracketed_info.
+    # In practice this case is now caught earlier by match_02y, so bare_rank_name is normally FALSE by
+    # the time a row reaches here -- kept as a defensive fallback, not relied on as the primary gate.
     bare_rank_name <- !include_bracketed_info &
       stringr::str_count(stringr::str_trim(taxa$tocheck[i,]$cleaned_name), "\\S+") == 2
 

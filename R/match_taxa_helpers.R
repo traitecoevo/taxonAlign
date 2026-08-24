@@ -51,6 +51,20 @@ fuzzy_match <- function(txt, accepted_list,
   ## in, these silently turn `min(distance_c)` into NA further down, which then blows up the
   ## `if (!(min_dist_abs_c <= ...))` check below with "missing value where TRUE/FALSE needed"
   if (is.na(txt)) return(NA)
+
+  ## A literal rank-category word ("genus", "family", "species", "tribe", ...) should never be
+  ## fuzzy-matched as if it were a real taxon name, even though it's a short, plausible-looking string
+  ## that can coincidentally land within tolerance of a real, unrelated taxon -- found in practice: the
+  ## query "species of Salticidae" fuzzy-matched the literal word "species" (its word_one_stripped) to
+  ## the real, unrelated genus "Sphecius" (both start with "s" and are similar lengths). This is the
+  ## query-side complement of the same idea `prepare_taxonomic_resources()` already applies on the
+  ## *resource* side (dropping a row whose own canonical_name is just its own rank's name, e.g. a GBIF
+  ## placeholder row named "Genus") -- reuses the exact same rank vocabulary,
+  ## `taxonAlign_taxon_rank_specificity` (prepare_taxonomic_resources.R). "species" is added explicitly
+  ## since that vector itself excludes it (species is always handled as its own, separately-prepended
+  ## bucket elsewhere in the package, not part of that higher-rank vocabulary).
+  if (tolower(txt) %in% c(taxonAlign_taxon_rank_specificity, "species")) return(NA)
+
   accepted_list <- accepted_list[!is.na(accepted_list)]
 
   ## identify number of words in the text to match
