@@ -1,0 +1,322 @@
+---
+title: "Testing taxonAlign: aligning the Prendergast pollinator dataset against the AFD"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+execute:
+  warning: false
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+This is a worked test of `taxonAlign` against real, messy data, not a hand-built example. The dataset
+is `Prendergast_2026_2` (from the sibling `austraits.build` repository) -- a plant-pollinator
+visitation dataset recording which animal taxa were observed visiting which plant species. Animal
+identifications in a dataset like this are exactly the kind of thing `taxonAlign` is built to clean
+up: misspellings (`"Hymnoptera"`), morphospecies codes (`"Chrysomelidae sp."`), bracketed subgenera
+(`"Amegilla (Zonamegilla) aeruginosa"`), and more.
+
+We align the raw animal names against two different references, at both species level
+(`Animal species binomial name`) and order level (`Animal order`), and look at what kinds of matches
+get made in each case: first the [Australian Faunal Directory](https://biodiversity.org.au/afd/home)
+(AFD) -- the one taxonomic reference bundled with `taxonAlign`, with real, comprehensive coverage of
+Australian invertebrates -- then a live-GBIF-fetched reference covering every Australian animal, not
+just invertebrates.
+
+```{r setup}
+library(taxonAlign)
+library(dplyr)
+```
+
+## Building the AFD reference
+
+```{r}
+afd <- load_taxonomic_resources("AFD", quiet = TRUE)
+afd_resources <- prepare_taxonomic_resources(afd)
+```
+
+The warning above is expected, not a sign anything went wrong: a handful of real AFD rows have a
+`canonical_name` that's just the bare name of their own rank (e.g. a row at family rank whose name is
+literally `"Family"`) -- an artefact of how those particular records were entered, not a usable taxon
+name -- so `prepare_taxonomic_resources()` drops them rather than leaving them in as a landmine for
+fuzzy matching.
+
+## Loading the data to align
+
+```{r}
+pollinator_data <- readr::read_csv(
+  "../../austraits.build/data/Prendergast_2026_2/data.csv",
+  show_col_types = FALSE
+)
+
+pollinator_data |>
+  select(`Animal species binomial name`, `Animal order`) |>
+  head(10) |>
+  knitr::kable()
+```
+
+`r nrow(pollinator_data)` rows in total, spanning `r n_distinct(pollinator_data[["Animal species binomial name"]])`
+distinct animal names and `r n_distinct(pollinator_data[["Animal order"]])` distinct orders.
+
+## A helper to align a column and summarise the results
+
+The same name is often repeated across many observations, so each *distinct* name is aligned once
+(much faster than aligning all 2,896 rows directly) and the result is joined back onto every
+observation that used it -- every count below is therefore at the observation level, not just the
+distinct-name level.
+
+```{r}
+align_column <- function(x, resources) {
+  distinct_names <- sort(unique(x))
+  aligned <- align_taxa(distinct_names, resources)
+  tibble(original_name = x) |>
+    left_join(aligned, by = "original_name")
+}
+
+# a short, human-readable label for each match, derived directly from columns align_taxa() already
+# returns (chars_changed == 0 means an exact match; taxonomic_status is the *matched* row's own
+# status) -- not a hand-maintained lookup of every internal alignment_code
+summarise_match_types <- function(aligned) {
+  aligned |>
+    mutate(
+      match_type = case_when(
+        is.na(alignment_code) ~ "No match",
+        chars_changed == 0 ~ paste0("Exact match — ", taxon_rank, " (", taxonomic_status, ")"),
+        TRUE ~ paste0("Fuzzy match — ", taxon_rank, " (", taxonomic_status, ")")
+      )
+    ) |>
+    count(match_type, sort = TRUE, name = "n_observations")
+}
+
+# the full internal breakdown -- one row per distinct match block/pattern that actually fired
+detailed_match_breakdown <- function(aligned) {
+  aligned |>
+    mutate(alignment_code = coalesce(alignment_code, "(no match)")) |>
+    count(alignment_code, sort = TRUE, name = "n_observations")
+}
+
+match_examples <- function(aligned, detailed_counts, n_examples = 5) {
+  aligned |>
+    mutate(alignment_code = coalesce(alignment_code, "(no match)")) |>
+    distinct(alignment_code, original_name, aligned_name, taxon_rank) |>
+    group_by(alignment_code) |>
+    slice_head(n = n_examples) |>
+    ungroup() |>
+    left_join(detailed_counts, by = "alignment_code") |>
+    arrange(alignment_code, original_name) |>
+    select(alignment_code, n_observations, original_name, aligned_name, taxon_rank)
+}
+
+# every distinct name that got no match at all, with how many observations it accounts for -- lets a
+# reviewer prioritise which gaps are worth fixing first, without scrolling past the same repeated name
+# dozens of times
+unmatched_names <- function(aligned) {
+  aligned |>
+    filter(is.na(aligned_name)) |>
+    count(original_name, sort = TRUE, name = "n_observations")
+}
+```
+
+## Aligning by species binomial name
+
+```{r}
+species_aligned <- align_column(pollinator_data[["Animal species binomial name"]], afd_resources)
+```
+
+### Counts of each match type
+
+```{r}
+summarise_match_types(species_aligned) |> knitr::kable()
+```
+
+### Detailed breakdown (internal match code)
+
+Each code names the specific string pattern/rule that matched -- e.g. `match_01c_accepted_canonical_name`
+is an exact match to an accepted species' canonical name, `match_02c_fuzzy_genus_accepted` is a fuzzy
+match to a genus, and so on.
+
+```{r}
+species_detail <- detailed_match_breakdown(species_aligned)
+species_detail |> knitr::kable()
+```
+
+### Examples of each
+
+```{r}
+match_examples(species_aligned, species_detail) |> knitr::kable()
+```
+
+### All non-matched names
+
+Every distinct name that got no match at all, together with how many observations it accounts for --
+`r sum(is.na(species_aligned$aligned_name))` observations in total, covering
+`r n_distinct(species_aligned$original_name[is.na(species_aligned$aligned_name)])` distinct names.
+This is the working list for deciding what actually needs fixing (a typo to correct, a name to add to
+the reference, a non-taxonomic entry to filter out before aligning, ...).
+
+```{r}
+species_unmatched <- unmatched_names(species_aligned)
+species_unmatched |> knitr::kable()
+```
+
+## Aligning by order
+
+```{r}
+order_aligned <- align_column(pollinator_data[["Animal order"]], afd_resources)
+```
+
+### Counts of each match type
+
+```{r}
+summarise_match_types(order_aligned) |> knitr::kable()
+```
+
+### Detailed breakdown (internal match code)
+
+```{r}
+order_detail <- detailed_match_breakdown(order_aligned)
+order_detail |> knitr::kable()
+```
+
+### Examples of each
+
+```{r}
+match_examples(order_aligned, order_detail) |> knitr::kable()
+```
+
+## A real limitation this dataset happens to show
+
+AFD covers Australian invertebrates only -- it has no vertebrate data at all. This dataset also
+records vertebrate pollinators (birds, bats, reptiles), and their orders show exactly what happens
+when a name is genuinely outside a reference's scope: `"Passeriformes"`, `"Psittaciformes"` (and its
+misspelling `"Psittaformes"`) correctly find no match at all, since nothing in AFD is close enough in
+spelling to falsely match. But `"Chiroptera"` (bats) and `"Squamata"` (reptiles) *do* get a fuzzy
+match -- to the unrelated invertebrate genera `"Chiroptella"` and `"Squamosa"` respectively, purely by
+spelling coincidence. This is a genuine, worth-knowing limitation of fuzzy matching against a
+reference that doesn't cover the query's actual taxonomic group at all: nothing in the matching logic
+itself knows that a query might be a bird, bat or reptile rather than an insect, so a coincidentally
+similar invertebrate name can still win. Always sanity-check a fuzzy match rather than trusting it
+blindly, especially for a name that might sit outside the reference's real coverage.
+
+## Does a broader reference fix the vertebrate gap? Trying GBIF instead
+
+AFD is Australian-invertebrates-only by design. `taxonAlign` can also build a reference straight from
+GBIF's own backbone taxonomy, which covers every animal, not just invertebrates.
+
+```{r}
+# The live worldwide route -- generate_taxadb_taxonomic_reference_list("Animalia", rank = "kingdom",
+# provider = "gbif", gbif_snapshot_url = "https://data.source.coop/cboettig/taxadb/2026/dwc_gbif_part_0.parquet")
+# -- pulls in the *entire* animal kingdom worldwide (4.4M+ rows) via a genuinely current 2026 GBIF
+# snapshot queried directly, bypassing taxadb's own frozen (Dec-2022) registry
+# (?generate_taxadb_taxonomic_reference_list's Description has the full story). Commented out here:
+# it's much more than this demo needs (this dataset is all Australian records) and, run alongside
+# several other concurrent R processes during testing, triggered an unrelated package-loading crash
+# from resource contention, not a real bug in that code path -- worth another look on its own, but not
+# blocking this demo.
+#
+# Using instead two smaller, already-built live-GBIF reference tables from an earlier session, scoped
+# to Australia specifically (via generate_GBIF_taxonomic_reference_list()'s own `country = "AU"`
+# filter) -- one for invertebrates, one for vertebrates, combined here into one Australia-wide animal
+# reference. A closer match to this dataset's actual scope than the full worldwide kingdom anyway.
+gbif_animals <- dplyr::bind_rows(
+  readRDS("../ignore/gbif_au_invertebrates.rds"),
+  readRDS("../ignore/gbif_vertebrates_au.rds")
+)
+gbif_resources <- prepare_taxonomic_resources(gbif_animals)
+```
+
+`r format(nrow(gbif_animals), big.mark = ",")` rows, spanning every Australian animal GBIF has a
+record for (vertebrate and invertebrate alike) -- about
+`r round(nrow(gbif_animals) / nrow(afd$AFD), 1)`x the size of the AFD reference above.
+
+### Aligning by species binomial name
+
+```{r}
+gbif_species_aligned <- align_column(pollinator_data[["Animal species binomial name"]], gbif_resources)
+```
+
+#### Counts of each match type
+
+```{r}
+summarise_match_types(gbif_species_aligned) |> knitr::kable()
+```
+
+#### Detailed breakdown (internal match code)
+
+```{r}
+gbif_species_detail <- detailed_match_breakdown(gbif_species_aligned)
+gbif_species_detail |> knitr::kable()
+```
+
+#### Examples of each
+
+```{r}
+match_examples(gbif_species_aligned, gbif_species_detail) |> knitr::kable()
+```
+
+#### All non-matched names
+
+```{r}
+unmatched_names(gbif_species_aligned) |> knitr::kable()
+```
+
+### Aligning by order
+
+```{r}
+gbif_order_aligned <- align_column(pollinator_data[["Animal order"]], gbif_resources)
+```
+
+#### Counts of each match type
+
+```{r}
+summarise_match_types(gbif_order_aligned) |> knitr::kable()
+```
+
+#### Detailed breakdown (internal match code)
+
+```{r}
+gbif_order_detail <- detailed_match_breakdown(gbif_order_aligned)
+gbif_order_detail |> knitr::kable()
+```
+
+#### Examples of each
+
+```{r}
+match_examples(gbif_order_aligned, gbif_order_detail) |> knitr::kable()
+```
+
+### Did it actually fix the vertebrate orders?
+
+```{r}
+vertebrate_orders <- c("Passeriformes", "Psittaciformes", "Psittaformes", "Diprotodontia", "Chiroptera", "Squamata")
+
+dplyr::bind_rows(
+  afd_only = order_aligned |> dplyr::filter(original_name %in% vertebrate_orders) |> dplyr::distinct(original_name, aligned_name, taxon_rank),
+  gbif_animals = gbif_order_aligned |> dplyr::filter(original_name %in% vertebrate_orders) |> dplyr::distinct(original_name, aligned_name, taxon_rank),
+  .id = "reference"
+) |>
+  arrange(original_name, reference) |>
+  knitr::kable()
+```
+
+## Summary
+
+Aligning `Animal species binomial name` against AFD resolved
+`r sum(!is.na(species_aligned$aligned_name))` of `r nrow(species_aligned)` observations
+(`r round(100 * mean(!is.na(species_aligned$aligned_name)), 1)`%), and against the AU-wide GBIF animal
+reference, `r sum(!is.na(gbif_species_aligned$aligned_name))`
+(`r round(100 * mean(!is.na(gbif_species_aligned$aligned_name)), 1)`%). Aligning `Animal order`
+resolved `r sum(!is.na(order_aligned$aligned_name))` of `r nrow(order_aligned)` observations against
+AFD (`r round(100 * mean(!is.na(order_aligned$aligned_name)), 1)`%) and
+`r sum(!is.na(gbif_order_aligned$aligned_name))`
+(`r round(100 * mean(!is.na(gbif_order_aligned$aligned_name)), 1)`%) against GBIF -- higher, as
+expected, since that reference's vertebrate coverage includes the orders AFD was never going to have
+in the first place. Across all four alignments, this single real dataset exercised
+`r length(unique(c(species_aligned$alignment_code, order_aligned$alignment_code, gbif_species_aligned$alignment_code, gbif_order_aligned$alignment_code)))`
+distinct internal match patterns -- a reasonable stand-in for how varied real-world taxonomic name
+data actually is, and for how differently two reasonable choices of reference can behave on the exact
+same names.

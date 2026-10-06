@@ -7,6 +7,76 @@ strip_taxadb_gbif_prefix <- function(x) {
   as.integer(sub("^GBIF:", "", x))
 }
 
+# Columns generate_taxadb_taxonomic_reference_list()'s final transmute() needs from whatever table it's
+# fed -- taxadb's own dwc schema, or (via `gbif_snapshot_url`) a directly-queried external parquet file
+# whose schema isn't guaranteed stable by taxadb itself (see that argument's own doc). Checked explicitly
+# so a schema drift in the latter surfaces as one clear, named error here, not a cryptic "object not
+# found" failure deep inside the final dplyr::transmute() call.
+taxonAlign_gbif_snapshot_required_cols <- c(
+  "taxonID", "scientificName", "taxonRank", "taxonomicStatus", "acceptedNameUsageID",
+  "kingdom", "phylum", "class", "order", "family", "genus"
+)
+
+# Queries a Darwin-Core-shaped parquet file directly (bypassing taxadb's own R-package registry
+# entirely) and returns a lazy dplyr tbl in the same shape taxadb::taxa_tbl() returns -- so every
+# downstream step in generate_taxadb_taxonomic_reference_list() (rank filtering, synonym filtering,
+# country filtering, the final transmute) works unchanged regardless of which source fed it.
+#
+# Reuses taxadb::td_connect()'s own cached duckdb connection (an *exported* function, unlike its
+# internal duckdb_view() helper -- deliberately not called via `taxadb:::`, both to avoid depending on
+# an implementation detail that could change without notice and to avoid the R CMD check NOTE a `:::`
+# call to another package triggers) rather than opening a fresh connection per call, so repeated calls
+# in the same session reuse one connection rather than accumulating several. `CREATE VIEW IF NOT EXISTS`
+# makes registering the view itself idempotent -- cheap regardless (it's metadata only; no download
+# happens until a query actually runs against it) -- keyed by a short hash of the URL so two different
+# snapshot URLs used in the same session don't collide on the same view name.
+#' @noRd
+gbif_snapshot_tbl <- function(url) {
+  if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quietly = TRUE)) {
+    stop(
+      "`duckdb`/`DBI` are required for `gbif_snapshot_url` but aren't installed. Both are dependencies ",
+      "of `taxadb` itself, so `install.packages(\"taxadb\")` should already have pulled them in -- try ",
+      "reinstalling if they're genuinely missing.",
+      call. = FALSE
+    )
+  }
+
+  con <- taxadb::td_connect()
+  view_name <- paste0("taxonAlign_gbif_snapshot_", substr(rlang::hash(url), 1, 12))
+
+  tryCatch(
+    {
+      # httpfs auto-installs/loads on first use of an http(s) path in current DuckDB, but installed
+      # explicitly and idempotently here too, rather than relying on that default remaining true.
+      DBI::dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
+      DBI::dbExecute(
+        con,
+        paste0("CREATE VIEW IF NOT EXISTS \"", view_name, "\" AS SELECT * FROM read_parquet('", url, "')")
+      )
+    },
+    error = function(e) {
+      stop(
+        "Couldn't query the GBIF snapshot at \"", url, "\" -- check the URL is reachable and points to ",
+        "a Darwin-Core-shaped parquet file. Underlying error: ", conditionMessage(e),
+        call. = FALSE
+      )
+    }
+  )
+
+  tbl <- dplyr::tbl(con, view_name)
+  missing_cols <- setdiff(taxonAlign_gbif_snapshot_required_cols, colnames(tbl))
+  if (length(missing_cols) > 0) {
+    stop(
+      "The file at `gbif_snapshot_url` (\"", url, "\") is missing expected column(s): ",
+      paste(missing_cols, collapse = ", "), ". This direct-parquet path isn't wired into taxadb's own ",
+      "schema guarantees (see `?generate_taxadb_taxonomic_reference_list`'s `gbif_snapshot_url` docs) -- ",
+      "the file's own schema may have changed.",
+      call. = FALSE
+    )
+  }
+  tbl
+}
+
 #' Generate a taxonomic reference list from a taxadb-cached authority
 #'
 #' Builds a table of taxon names for one taxon group (e.g. a phylum, a class, a family), sourced from
@@ -32,6 +102,21 @@ strip_taxadb_gbif_prefix <- function(x) {
 #' `taxadb:::available_versions()` yourself before trusting this function for anything where currency
 #' matters; this package can't control whether taxadb's maintainers resume publishing.
 #'
+#' **A genuinely current GBIF alternative exists outside taxadb's own R bindings -- `gbif_snapshot_url`
+#' (see issue #23).** The maintainer confirmed (2026) that current-year GBIF snapshots are uploaded as
+#' raw Darwin-Core parquet files to `source.coop` well before they're wired into `taxadb`'s own
+#' `td_create()`/`taxa_tbl()` registry (which is what stays frozen at `"22.12"` regardless). Passing a
+#' URL here (e.g. `"https://data.source.coop/cboettig/taxadb/2026/dwc_gbif_part_0.parquet"`) queries
+#' that file directly via DuckDB, bypassing the stale registry entirely for `provider = "gbif"`.
+#' Verified directly against a live GBIF fetch for the same real gap cases the `"22.12"` snapshot
+#' missed (`"Trachytetra"` and its species, `"Austrocardiophorus"`, `"Onthophagus bulga"`, `"Trioza
+#' melaleucae"`) -- all four now resolve. Opt-in, not the default, because the maintainer's own caveat
+#' when confirming this ("I haven't had a chance to update the taxadb bindings themselves or verify we
+#' don't have breaking changes") means schema stability here isn't a guarantee taxadb itself is making
+#' -- `gbif_snapshot_tbl()` checks the expected columns are present and errors clearly if not, rather
+#' than failing confusingly deeper in this function, but a column being *renamed* rather than dropped
+#' could still slip through undetected.
+#'
 #' This function is deliberately narrower than `generate_GBIF_taxonomic_reference_list()`: it has no
 #' concept of "a minimum rank to include below `taxon_name`" (every row taxadb has for the requested
 #' group is returned, at whatever ranks that provider records), and `country` filtering is only
@@ -53,6 +138,11 @@ strip_taxadb_gbif_prefix <- function(x) {
 #'  less-actively-maintained ones). Defaults to `"gbif"`. Only `"gbif"` supports `country` filtering.
 #' @param country Optional ISO 3166-1 alpha-2 country code (e.g. `"AU"`). Only valid when
 #'  `provider = "gbif"` -- see Description.
+#' @param gbif_snapshot_url Optional character; when supplied, queries this Darwin-Core-shaped parquet
+#'  file directly instead of `taxadb::taxa_tbl("gbif")` -- see Description. Only valid when
+#'  `provider = "gbif"` (this is a GBIF-specific workaround for `taxadb`'s own registry being stale,
+#'  not a general mechanism for other providers). Defaults to `NULL` (use `taxadb`'s own registry, as
+#'  before).
 #' @param include_synonyms Logical; if `FALSE`, only accepted names are returned. Defaults to `TRUE`.
 #' @param facet_limit Numeric; forwarded to the same occurrence-facet lookup
 #'  `generate_GBIF_taxonomic_reference_list()` uses when `country` is supplied. Defaults to `100000`.
@@ -82,6 +172,14 @@ strip_taxadb_gbif_prefix <- function(x) {
 #'
 #' # the same, restricted to taxa with an Australian GBIF occurrence record
 #' generate_taxadb_taxonomic_reference_list("Chordata", rank = "phylum", country = "AU")
+#'
+#' # bypass taxadb's own stale ("22.12") registry and query a genuinely current GBIF snapshot directly
+#' # -- see Description's `gbif_snapshot_url` paragraph before using this in anything automated, since
+#' # its schema stability isn't guaranteed by taxadb itself
+#' generate_taxadb_taxonomic_reference_list(
+#'   "Chordata", rank = "phylum",
+#'   gbif_snapshot_url = "https://data.source.coop/cboettig/taxadb/2026/dwc_gbif_part_0.parquet"
+#' )
 #' }
 #'
 #' @importFrom rlang .data
@@ -90,6 +188,7 @@ generate_taxadb_taxonomic_reference_list <- function(taxon_name,
                                                        rank,
                                                        provider = "gbif",
                                                        country = NULL,
+                                                       gbif_snapshot_url = NULL,
                                                        include_synonyms = TRUE,
                                                        facet_limit = 100000,
                                                        cache_dir = tools::R_user_dir("taxonAlign", "cache"),
@@ -116,6 +215,14 @@ generate_taxadb_taxonomic_reference_list <- function(taxon_name,
       call. = FALSE
     )
   }
+  if (!is.null(gbif_snapshot_url) && !identical(tolower(provider), "gbif")) {
+    stop(
+      "`gbif_snapshot_url` is only supported for `provider = \"gbif\"` -- it's a GBIF-specific ",
+      "workaround for `taxadb`'s own registry being stale (see Description), not a general mechanism ",
+      "for other providers.",
+      call. = FALSE
+    )
+  }
   if (!is.null(country) && !identical(tolower(provider), "gbif")) {
     stop(
       "`country` filtering is only supported for `provider = \"gbif\"` -- GBIF's own occurrence-record ",
@@ -134,19 +241,31 @@ generate_taxadb_taxonomic_reference_list <- function(taxon_name,
 
   rank_col <- tolower(rank)
 
-  # deliberately no `overwrite` argument -- taxadb's own default (leave an already-cached, current
-  # snapshot alone) is exactly the "idempotent, don't re-download unless needed" behaviour wanted here;
-  # passing `overwrite = FALSE` explicitly instead hits a deprecation warning in taxadb 0.2.1.
-  taxadb::td_create(provider)
+  if (is.null(gbif_snapshot_url)) {
+    # deliberately no `overwrite` argument -- taxadb's own default (leave an already-cached, current
+    # snapshot alone) is exactly the "idempotent, don't re-download unless needed" behaviour wanted
+    # here; passing `overwrite = FALSE` explicitly instead hits a deprecation warning in taxadb 0.2.1.
+    taxadb::td_create(provider)
+    source_tbl <- taxadb::taxa_tbl(provider)
+  } else {
+    if (!quiet) {
+      message(
+        "Querying the GBIF snapshot at \"", gbif_snapshot_url, "\" directly, bypassing taxadb's own ",
+        "(stale) registry."
+      )
+    }
+    source_tbl <- gbif_snapshot_tbl(gbif_snapshot_url)
+  }
 
-  full_table <- taxadb::taxa_tbl(provider) |>
+  full_table <- source_tbl |>
     dplyr::filter(.data[[rank_col]] == !!taxon_name) |>
     dplyr::collect()
 
   if (nrow(full_table) == 0) {
     stop(
-      "No rows found for `taxon_name` = \"", taxon_name, "\" at `rank` = \"", rank, "\" in taxadb's \"",
-      provider, "\" provider. Check the name/rank/provider are correct, and that this taxon is present ",
+      "No rows found for `taxon_name` = \"", taxon_name, "\" at `rank` = \"", rank, "\" in ",
+      if (is.null(gbif_snapshot_url)) paste0("taxadb's \"", provider, "\" provider") else "the GBIF snapshot",
+      ". Check the name/rank/provider are correct, and that this taxon is present ",
       "in this provider's data.",
       call. = FALSE
     )

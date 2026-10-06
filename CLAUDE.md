@@ -32,6 +32,12 @@ a reference table -- sourced from [taxadb](https://docs.ropensci.org/taxadb/)'s 
 versioned snapshots of GBIF/ITIS/COL/etc., a better fit than `generate_GBIF_taxonomic_reference_list()`
 for a genuinely large taxon group (no live pagination, no 100,000-row offset ceiling), with `country`
 filtering (still GBIF-only) reusing that function's own internal helpers rather than duplicating them.
+`load_Australian_NSL(taxon_group = ...)` (see Architecture #4) is a fourth: a standalone loader for the
+Australian National Species List's own per-group export pairs (`"algae"`, `"bryophytes"`, `"fungi"`,
+`"lichens"`, eventually `"animals"`), combining each group's "taxon" and "names" files with taxa always
+taking priority over names. Writing a query in that source's own `"Genus subg. Subgenusname"`
+infrageneric-name syntax is now recognised by `match_taxa()` too (`match_02x`, issue #25), alongside the
+zoological/AFD-style `"Genus (Subgenus)"` bracket convention issue #14 already added.
 
 ## Commands
 
@@ -86,7 +92,12 @@ it's a small subset of ITIS shipped inside the `taxadb` package itself purely fo
 and the one `country`-filtering test (`provider = "gbif"`) mocks `taxadb::td_create()`/
 `taxadb::taxa_tbl()` alongside `rgbif::name_backbone()`/`rgbif::occ_search()` (reusing
 `helper-gbif-fixtures.R`'s existing builders for the latter two). Skipped (not counted below) if
-`taxadb` isn't installed, since it's a `Suggests`, not an `Imports`, dependency.
+`taxadb` isn't installed, since it's a `Suggests`, not an `Imports`, dependency. `gbif_snapshot_url`
+(issue #23, see Architecture #1b) is covered both offline -- mocking the internal `gbif_snapshot_tbl()`
+directly to prove `taxadb::td_create()`/`taxa_tbl()` are never called, plus a small local parquet file
+(written via `duckdb`'s own `COPY ... TO ... (FORMAT PARQUET)`) for the missing-column schema-check
+error -- and with one real, live test against the actual source.coop URL, gated the same way
+`test-apc_equivalence.R` gates its own live external dependency (`skip_if_offline()`/`skip_on_cran()`).
 
 `tests/testthat/test-prepare_taxonomic_resources.R`, `test-prepare_taxonomic_resources_interactive.R`,
 `test-align_taxa.R`, `test-match_taxa.R`, `test-update_taxa.R`, `test-create_taxonomic_update_lookup.R`
@@ -119,14 +130,28 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-416 expectations across all offline-safe test files, all passing as of the last run. (See Architecture
-#2 below for a fuzzy-matching gotcha this fixture data has to dodge.)
+`test-load_Australian_NSL.R` covers `load_Australian_NSL()` (issue #25's underlying feature -- see
+Architecture #4 below) against a small, hand-built National Species List (NSL) taxon/names CSV pair
+(`helper-nsl-fixtures.R`) -- entirely offline, no need for the real, much larger
+`inst/extdata/Australian_*/` files. Covers the taxa-take-priority-over-names combining rule, genus
+derivation by rank, the subgenus marker-stripping fix, caching, and a full
+`prepare_taxonomic_resources()` → `create_taxonomic_update_lookup()` run including a marker-form
+subgenus query (`match_02x`, see Architecture #2 below).
 
-`test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
+463 expectations, all passing as of the last `devtools::test()` run in an environment with `taxadb`/
+`duckdb`/`APCalign` installed and network access available (this now includes both
+`test-apc_equivalence.R`'s live tests and `gbif_snapshot_url`'s one live test against the real
+source.coop file below -- neither skips under a plain `devtools::test()` run when those conditions
+hold, `skip_on_cran()` included, since `devtools::test()` sets `NOT_CRAN` itself). The offline-only
+subset (skip anything needing `taxadb`/`APCalign`/network) is smaller; re-run without those to get an
+exact count if you need one. (See Architecture #2 below for a fuzzy-matching gotcha this fixture data
+has to dodge.)
+
+`test-apc_equivalence.R` (issue #10) is one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
-against, so it's skipped (not counted in the 416) unless `APCalign` is installed, network access is
-available, and it isn't running under `R CMD check --as-cran`; when it does run, it adds a few more
-passing expectations on top (423 total, as of the last online run that succeeded). This has also failed
+against, so it's skipped unless `APCalign` is installed, network access is available, and it isn't
+running under `R CMD check --as-cran` (both true in the environment the 463 figure above came from,
+so it's already folded into that count there, not a separate add-on). This has also failed
 intermittently across several local runs (`load_APC()` → `dplyr::mutate()` on a `NULL`
 `APC$family_accepted`, i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning
 that element) -- looks like a real, if intermittent, upstream issue (rate limiting or a partial
@@ -398,6 +423,49 @@ implemented per [issue #19](https://github.com/traitecoevo/taxonAlign/issues/19)
   package that needs it, guarded by an explicit `requireNamespace()` check with an install hint, so a
   user who never calls this function never needs to install `taxadb` (and its own heavier dependency,
   DuckDB) at all.
+- **`gbif_snapshot_url` (issue #23, implemented): bypasses `taxadb`'s own frozen registry entirely for
+  `provider = "gbif"`.** Following up directly with the maintainer (`cboettig`) on
+  [ropensci/taxadb#123](https://github.com/ropensci/taxadb/issues/123) turned up something actionable:
+  current-year GBIF snapshots are uploaded as raw Darwin-Core parquet files to `source.coop` well
+  before they're wired into `taxadb`'s own `td_create()`/`taxa_tbl()` registry (which stays frozen at
+  `"22.12"`, confirmed again directly via that registry's own GitHub commit history — one commit,
+  2022-12-20, unchanged — even after the maintainer reported updating "his underlying files"; that
+  update is real, but it's the source.coop parquet, not the R package's registry). `gbif_snapshot_url`,
+  when supplied, queries that parquet URL directly instead — confirmed against real names known
+  missing from the frozen `"22.12"` snapshot (`"Trachytetra"` + 5 species, `"Onthophagus bulga"`,
+  `"Trioza melaleucae"`, `"Austrocardiophorus"`): all four now resolve via this path.
+  - `gbif_snapshot_tbl()` (`@noRd`) does the actual work: opens/reuses `taxadb::td_connect()`'s own
+    cached `duckdb` connection (an *exported* function -- deliberately not `taxadb:::duckdb_view()`,
+    to avoid depending on an internal implementation detail that could change without notice and the
+    `R CMD check` NOTE a `:::` call to another package triggers), creates a `CREATE VIEW IF NOT
+    EXISTS` over the URL via `read_parquet()` (httpfs auto-installs/loads for an http(s) path in
+    current DuckDB, but installed explicitly here too rather than relying on that default), and
+    returns an ordinary lazy `dplyr::tbl()` -- so every downstream step in
+    `generate_taxadb_taxonomic_reference_list()` (rank filtering, `include_synonyms`, `country`
+    filtering, the final `transmute()`) works completely unchanged regardless of which source fed it.
+    View names are keyed by a short hash of the URL so two different snapshot URLs used in the same
+    session don't collide.
+  - **Schema stability here isn't a guarantee `taxadb` itself is making** -- the maintainer's own
+    caveat when confirming the upload ("I haven't had a chance to update the taxadb bindings
+    themselves or verify we don't have breaking changes") -- so `gbif_snapshot_tbl()` explicitly checks
+    the expected columns (`taxonAlign_gbif_snapshot_required_cols`) are present and errors clearly,
+    naming what's missing, rather than failing confusingly deep inside the final `transmute()` if a
+    future snapshot's schema drifts. A column being *renamed* rather than dropped could still slip
+    through undetected -- not fully guarded against.
+  - Deliberately **opt-in, not the default** -- passing nothing still uses `taxadb`'s own (stale)
+    registry, unchanged from before this was added. `country` filtering, rank filtering (including the
+    `order`-reserved-keyword case, confirmed unaffected -- `rank = "order"` against the real 2026
+    snapshot returns 767,547 rows via ordinary `dplyr::filter()`), and `include_synonyms` all work
+    identically whether the source is `taxadb`'s registry or a direct snapshot URL.
+  - `duckdb`/`DBI` added to `DESCRIPTION`'s `Suggests` (both already transitive dependencies of
+    `taxadb` itself, so no new install burden for anyone who already uses this function).
+  - Test coverage: mocks `gbif_snapshot_tbl()` directly (a same-package internal function, so no
+    `.package =` needed) to prove the bypass-taxadb assertion and exercise the full reshape pipeline
+    offline; a small local parquet file written via `duckdb`'s own `COPY ... TO ... (FORMAT PARQUET)`
+    covers the missing-column schema-check error, also offline; one real, live test against the actual
+    source.coop URL (skipped unless online/not on CRAN, same gating `test-apc_equivalence.R` uses for
+    its own live external dependency) confirms `"Trachytetra"` resolves for real, not just against a
+    mock.
 
 ### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/prepare_taxonomic_resources_interactive.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/update_taxa.R`, `R/create_taxonomic_update_lookup.R`, `R/match_taxa_helpers.R` (active; everything but `match_taxa()` and the helpers is exported)
 
@@ -1026,6 +1094,60 @@ Architecture of the matching engine itself:
     implemented as a deterministic rule-based substitution followed by an *exact* lookup, not a
     `stringdist`-based fuzzy comparison, so `0` is the correct answer under the same "exact vs. fuzzy"
     dichotomy every other block uses, even though the substituted and original strings visibly differ.
+- **`match_02a` gained a fuzzy fallback (and a genus-only fallback), matching `match_02y`'s design --
+  found via the real `demo-align-Prendergast.qmd` vignette, not a fixture.** `match_02a` (the
+  `"Genus (Subgenus) sp."` shape, trailing `"sp."` retained) was, before this fix, exact-only and
+  *membership-gated* -- it only ever fired when the bracketed pair was already, verbatim, in
+  `resources$subgenus_v2$genus_and_subgenus`. Unlike `match_02y` (the bare, no-`"sp."` sibling, fixed
+  under issue #14), it had no shape-based quarantine and no fuzzy fallback, so a genuinely present but
+  *misspelled* subgenus fell straight through every remaining block down to the generic higher-rank
+  loop (`match_02b`), which strips to `word_one` and matches genus alone -- silently discarding both
+  the subgenus and the `"sp."` itself, with no trace anything unusual happened. Real case:
+  `"Hylaeus (Rhodhylaeus) sp."` (a 1-letter-missing typo for the real AFD subgenus
+  `"Rhodohylaeus"`) resolved only to `"Hylaeus sp."` via `match_02b` -- `alignment_code` gave no hint a
+  subgenus had even been attempted. Fixed by adding, right after the existing exact block (same
+  `"02a"` letter, new trailing alignment-code suffixes rather than a new letter -- matching how
+  `match_02y` itself already uses several suffixes under one letter): a shape-based quarantine (exactly
+  three tokens, ending `" sp."`, middle token a complete `"(...)"` bracket -- not membership-gated, so
+  it still catches a pair `resources$subgenus_v2` doesn't have at all) that tries an exact match (the
+  original block, unchanged), then a **fuzzy** match against the same `genus_and_subgenus` table
+  (`match_02a_fuzzy_higher_level_accepted_or_synonym`), then falls back to genus rank via the same
+  shared `match_special_case_to_genus()` helper match_02y already uses
+  (`match_02a_genus_fallback_exact`/`_fuzzy`/`_unresolved`/`_no_resource`), preserving the original
+  bracket+`"sp."` text in the aligned name rather than silently dropping it. A genuine classification
+  mismatch (not a typo) is handled correctly by the same genus-fallback path -- e.g.
+  `"Lasioglossum (Homalictus) sp."`, where AFD itself treats `"Homalictus"` as its own genus rather
+  than a `Lasioglossum` subgenus, resolves to `"Lasioglossum sp. [Lasioglossum (Homalictus) sp.]"`:
+  genus rank, with the disputed subgenus visibly preserved for a human to judge, not silently erased.
+- **`match_02x` (issue #25): a second, marker-abbreviation input syntax for the bracketed-subgenus
+  concept.** Found loading the new National Species List (NSL) reference data (`load_Australian_NSL()`,
+  see Architecture #4 below): NSL writes an infrageneric name as `"Genus subg. Subgenusname"` (e.g.
+  `"Hygrocybe subg. Cuphophyllus"`), never as the zoological/AFD-style `"Genus (Subgenus)"` bracket
+  `match_02a`/`match_02y`/`match_12a` (issue #14) already handle. Without this block, such a query fell
+  through to the generic higher-rank loop (`match_12b`), which only ever compares `word_one_stripped`
+  (just `"Hygrocybe"`) against `resources$genus$canonical_name` -- silently discarding `"subg.
+  Cuphophyllus"` and returning a plain genus-rank match instead of the correct subgenus-rank one.
+  `match_02x` is placed right after `match_02a`, before `match_02y` -- same "quarantine early, before
+  species-level matching can mis-parse it" position, mirroring `match_02y`'s shape-based (not
+  membership-based) detection: exactly three whitespace-delimited tokens, the middle one `"subg."`/
+  `"subg"` (case-insensitive). It builds a `"Genus (Subgenusname)"`-equivalent key from the query and
+  looks that up against the *same* `resources$subgenus_v2$genus_and_subgenus` table `match_02y` already
+  uses -- exact match, then fuzzy match, then the same genus-only `match_special_case_to_genus()`
+  fallback -- rather than duplicating that lookup table under a second name. This only works because
+  `load_Australian_NSL()`'s own loader fix (see Architecture #4) stores the *bare* subgenus name in
+  `canonical_name` (e.g. `"Cuphophyllus"`, not the full marker-prefixed string) -- `subgenus_v2`'s own
+  construction (`genus_and_subgenus = paste0(genus, " (", canonical_name, ")")`) assumes exactly that,
+  the same way it already does for AFD's bare subgenus names.
+  - **Scoped to subgenus only.** NSL's own infrageneric rank vocabulary uses this same
+    `"Genus <abbrev>. Name"` shape for three further ranks -- section (`sect.`), series (`ser.`, fungi
+    only), special form (`f.sp.`, fungi only) -- but none of them have an equivalent `_v2`/bracket-style
+    structure in `prepare_taxonomic_resources()` at all (they're just plain higher-rank buckets).
+    Extending this treatment to them is a materially bigger, separate change, not attempted here.
+  - **Also not attempted**: a genuine trinomial in this syntax (`"Genus subg. Subgenusname species"`,
+    an unresolved epithet actually following the marker) has no equivalent to `match_11a`/`match_11b`'s
+    `ignore_bracketed_words` mechanism (which strips a real `"(...)"` bracket, contents and all, from
+    `original_name` for exactly this purpose on the bracket convention) -- unlikely enough in practice
+    (not demonstrated against real data) that it's flagged, not fixed, here.
 
 ### 3. Known-source reference loader — `R/load_taxonomic_resources.R` (active, exported; internal helpers `@noRd`)
 
@@ -1130,6 +1252,83 @@ Errors immediately, naming the known datasets, on an unrecognised `taxonomic_dat
   inherently network-dependent (like the rest of `test-apc_equivalence.R`), so its coverage lives there
   instead, gated the same way.
 
+### 4. Australian National Species List (NSL) reference loader — `R/load_Australian_NSL.R` (active, exported; internal helpers `@noRd`)
+
+`load_Australian_NSL(taxon_group, ...)` reads/reshapes the [National Species
+List](https://www.anbg.gov.au/chah/nsl/)'s bundled per-group export pairs -- `"algae"`,
+`"bryophytes"`, `"fungi"`, `"lichens"` today, `"animals"` once its files exist -- into taxonAlign's
+flat, `prepare_taxonomic_resources()`-ready schema. Complements `load_taxonomic_resources()`/
+`generate_GBIF_taxonomic_reference_list()` the same way, for this source, but is a **standalone
+exported function**, not wired into `load_taxonomic_resources()`'s `"AFD"`/`"APC"` switch -- it takes
+one group at a time and returns a flat tibble directly (mirroring
+`generate_GBIF_taxonomic_reference_list()`'s own contract), so combining several groups is just
+`prepare_taxonomic_resources(list(load_Australian_NSL("fungi"), load_Australian_NSL("lichens")))`, the
+same pattern as combining any other two sources. Revisit folding it into `load_taxonomic_resources()`'s
+registry if that starts to feel like the wrong split in practice.
+
+- **Two files per group, taxa always taking priority over names.** Each group ships as a *pair* of
+  CSVs under `inst/extdata/Australian_<group>/`: a "taxon" file (one row per taxon concept, with real
+  synonym-to-accepted resolution via `acceptedNameUsageID`) and a "names" file (a broader name-level
+  index, including names never promoted to a full taxon concept, but carrying no
+  `acceptedNameUsageID` of its own at all). Confirmed empirically, not assumed: every taxon-file row's
+  `scientificNameID` is also present in the names file (100% overlap across all four groups checked),
+  i.e. the names file is a strict superset at the name level. `load_Australian_NSL()` combines them by
+  dropping, from the names file's contribution, every row whose `scientificNameID` already appears in
+  the taxon file, then binding taxon rows first -- so a name never enters the combined result twice,
+  and the taxon file's real synonymy always wins over the names file's self-referential (no-forward-
+  link) version of the same name. This mirrors how iNat's hardcoded `"accepted"` status is described
+  elsewhere in `development-history.qmd`: the names file can only *widen* coverage, never resolve a
+  synonym.
+  - Files are located by filename *substring*, not a fixed prefix-to-group map (`find_NSL_file()`
+    matches `"-taxon-"`/`"-names-"` in the basename) -- the raw export's own prefix varies per group
+    (`AAL`/`AFL`/`ALC`/`CAB` for taxon; `AANI`/`AFNI`/`ALNI`/`ABNI` for names) but this substring
+    doesn't, so this generalises automatically to a group not yet seen, including `"animals"`.
+- **`genus` comes from two different places depending on the file**, since only the names file has a
+  dedicated column for it: the names file's own `genericName` (blank whenever not applicable, `NA`'d
+  via `dplyr::na_if()`); the taxon file has no equivalent column at all, so `genus` is derived via the
+  existing `extract_genus()` helper (`match_taxa_helpers.R`) on the *raw* `canonicalName` -- NSL's own
+  convention always prefixes an infrageneric/infraspecific name with its governing genus (e.g. the
+  subgenus `"Agaricus subg. Homophron"`, the species `"Scutellinia badioberbis"`), so taking the first
+  word recovers it correctly for genus rank and everything narrower. `genus` is forced to `NA` for
+  family rank and broader (`taxonAlign_NSL_above_genus_ranks`, a small explicit list covering the
+  botanical `"division"`/`"subdivision"` terminology this data uses that
+  `taxonAlign_taxon_rank_specificity` doesn't, plus a real spelling quirk seen in the raw algae export,
+  `"Subphyllum"`) -- a bespoke list rather than reusing `taxonAlign_taxon_rank_specificity`, since that
+  vector is tuned to AFD/GBIF/APC's own rank vocabulary, not NSL's.
+- **Subgenus rank needs one further correction, on top of `genus`**: NSL's `canonical_name` for a
+  subgenus is the *full* `"Genus subg. Subgenusname"` string, not the bare subgenus name AFD's own
+  convention uses (bare `"Podosemum"` alongside `genus = "Boronia"`) --
+  `prepare_taxonomic_resources()`'s `subgenus_v2` construction
+  (`genus_and_subgenus = paste0(genus, " (", canonical_name, ")")`) assumes the latter, so left
+  unstripped it produces a doubled, unmatchable key (`"Hygrocybe (Hygrocybe subg. Cuphophyllus)"`).
+  `strip_NSL_subgenus_marker()` strips the `"Genus subg. "` prefix down to the bare name for
+  subgenus-rank rows specifically, in *both* files, applied after `genus` is already derived from the
+  unstripped name (order matters -- `extract_genus()` needs the genus to still be the name's own first
+  word). Recognising `"Genus subg. Subgenusname"` itself as an alternate *input* syntax when matching a
+  query (rather than just fixing the resource side) is the other half of this, `match_02x` in
+  `match_taxa.R` -- see Architecture #2 above and issue #25.
+- **`taxonomic_dataset` is read straight off each row's own `datasetName` column** (e.g. `"AFL"` for
+  fungi's taxon-file rows, `"AFNI"` for its names-file rows) rather than one hardcoded label for the
+  whole group -- lets the two files within one group still be told apart in output (e.g.
+  `align_taxa()`'s `taxonomic_dataset` column), consistent with how they're genuinely two different
+  underlying datasets even though loaded together.
+- **Caching**: keyed by *both* files' combined size/mtime (not a time-based window), the same
+  size/mtime-keying convention `load_taxonomic_resources("AFD")` uses and for the same reason -- a
+  local file lets a content change be detected directly, without the user needing to remember
+  `refresh_cache = TRUE`.
+- **Testing now vs. the planned release scheme (issue #24)**: `path` defaults to the bundled
+  `system.file("extdata", paste0("Australian_", taxon_group), package = "taxonAlign")`, which resolves
+  correctly under `devtools::load_all()` even though these folders are currently untracked in git (not
+  yet part of the release scheme issue #24 is still planning) -- override `path` once these files are
+  served from elsewhere (e.g. a downloaded, versioned GitHub release) instead of being bundled
+  in-package. No download mechanism is implemented yet; that's issue #24's own scope, not this
+  function's.
+- Test coverage: `tests/testthat/test-load_Australian_NSL.R` covers the combining rule, genus
+  derivation, the subgenus-marker fix, caching, and a full `prepare_taxonomic_resources()` →
+  `create_taxonomic_update_lookup()` run, against a small, hand-built NSL-*shaped* fixture pair
+  (`helper-nsl-fixtures.R`) -- entirely offline, no need for the real, much larger
+  `inst/extdata/Australian_*/` files.
+
 ### Vignette and data tying the two together
 
 `vignettes/reproduce-EH-workflow.Rmd` reproduces the original AusInvertAlign workflow end-to-end:
@@ -1216,3 +1415,37 @@ function goes on to reference (`acceptedKey`/`parentKey` as integer, the rest as
 missing, right after the tree is fetched -- the same "ensure a possibly-absent column exists before
 anything downstream assumes it's there" defensive pattern used elsewhere in the package (e.g.
 `update_taxa()`'s `if ("genus" %in% names(all_taxa))` check).
+
+`vignettes/demo-align-Prendergast.qmd` is a worked demo against real, messy data rather than a
+hand-built example or a historical record -- requested as "something to show people as a test" of the
+package, not a tutorial or a benchmark. Aligns the real `Prendergast_2026_2` plant-pollinator dataset
+(from the sibling `austraits.build` repo, `../../austraits.build/data/Prendergast_2026_2/data.csv` --
+**not self-contained**, same caveat as `reproduce-EH-workflow.Rmd`) at both species level (`Animal
+species binomial name`) and order level (`Animal order`), first against AFD, then against a
+live-GBIF-fetched Australia-wide animal reference (both invertebrates and vertebrates, combined from
+two already-built `generate_GBIF_taxonomic_reference_list(..., country = "AU")` tables kept outside
+the repo under `ignore/`) -- summarising match-type counts, showing examples sorted by internal match
+code, listing every non-matched name with its observation count (to drive a "what needs fixing"
+review), and directly comparing both references on the vertebrate orders AFD structurally can't cover
+(`Passeriformes`, `Chiroptera`, `Squamata`, ...). This is also the vignette that surfaced the real
+`match_02a` bug fixed above (`"Hylaeus (Rhodhylaeus) sp."` collapsing to bare genus rank) -- found by
+running real data through the package, not by constructing a fixture to probe for it.
+- The `generate_taxadb_taxonomic_reference_list(..., gbif_snapshot_url = ...)` route (see Architecture
+  #1b) can build the same kind of Australia-wide animal reference directly, combining `country = "AU"`
+  with the current 2026 snapshot in one call, without needing the pre-built `ignore/` files -- confirmed
+  working, but watch `facet_limit`: the default (100,000) is genuinely too small for a broad root like
+  `"Animalia"` (confirmed AU-occurring-taxon count under kingdom Animalia is 220,340, triggering
+  `fetch_gbif_country_keys()`'s own truncation warning) -- pass an explicit, generous `facet_limit`
+  (e.g. `2e5` or more) for any query this broad, rather than trusting the default.
+- Rendering this (or any) vignette while *also* running concurrent `devtools::install()`/background
+  test processes against the same package library is worth avoiding -- it's the suspected (not fully
+  confirmed) cause of a real, intermittently-recurring `APCalign.rdb is corrupt` /
+  `R_decompress1 ... libdeflate` error hit multiple times while this vignette was being built, including
+  once from inside `APCalign`'s own internal `apply_match()` (confirmed via `apply_match` existing only
+  in `APCalign`'s namespace, not `taxonAlign`'s) -- i.e. triggered by a call that resolved to
+  `APCalign::align_taxa()`, not `taxonAlign::align_taxa()`, a live instance of the already-known
+  shared-function-name risk. Not yet root-caused with certainty (a force-load sweep of every object in
+  `APCalign`'s namespace found no corruption moments after one such failure, suggesting something
+  transient/environmental rather than a permanently bad file on disk) -- if this recurs in a clean,
+  freshly-restarted R session with no concurrent installs running, treat it as a real, separate issue
+  worth properly diagnosing rather than assuming it's this same cause again.

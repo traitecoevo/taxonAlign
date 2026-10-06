@@ -2,7 +2,7 @@ Package: taxonAlign
 Title: Combine multiple taxonomic references to create a personalised taxonomic resource for fuzzy matching of taxonomic names
 Version: 0.0.0.9000
 Authors@R: c(
-    person("Elizabeth", "Wenk", role = c("aut", "ctb", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
+    person(given = "Elizabeth", family = "Wenk", role = c("aut", "ctb", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
     person(given = "Fonti", family = "Kar", role = c("aut", "cre"), email = "f.kar@unsw.edu.au", comment = c(ORCID = "0000-0002-2760-3974"))
     )
 Description: This package provides functions that enable users to:
@@ -24,6 +24,8 @@ Imports:
     tools,
     utils
 Suggests:
+    DBI,
+    duckdb,
     knitr,
     rmarkdown,
     taxadb,

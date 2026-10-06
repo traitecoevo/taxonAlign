@@ -492,6 +492,242 @@ match_taxa <- function(
       return(taxa)
   }
 
+  # match_02a (continued): whatever didn't exactly match above may still have a genuinely present but
+  # misspelled subgenus (or there may be no subgenus_v2 table/pair at all) -- quarantine the same
+  # "Genus (Subgenus) sp." shape here, shape-based rather than membership-based (exactly like
+  # match_02y's bare-bracket sibling below), so it can't fall through to the generic higher-rank loop
+  # (match_02b) and silently collapse to a bare genus-rank match, discarding the subgenus (and the
+  # "sp." itself) with no trace. Found via a real case: `"Hylaeus (Rhodhylaeus) sp."` -- a
+  # 1-letter-missing typo for the real AFD subgenus `"Rhodohylaeus"` -- used to resolve only to
+  # `"Hylaeus sp."` via match_02b, since the exact-only block above never got a fuzzy (or genus-only
+  # fallback) chance to run.
+  is_bracketed_subgenus_sp <-
+    stringr::str_detect(taxa$tocheck$cleaned_name, "[:space:]sp\\.$") &
+    stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(.*\\)$") &
+    stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2
+
+  if (any(is_bracketed_subgenus_sp)) {
+
+    if (!is.null(resources$subgenus_v2)) {
+      fuzzy_bracket_sp <- rep(NA_character_, nrow(taxa$tocheck))
+      fuzzy_bracket_sp[is_bracketed_subgenus_sp] <- fuzzy_match_genera(
+        stringr::word(taxa$tocheck$cleaned_name[is_bracketed_subgenus_sp], start = 1, end = 2),
+        resources$subgenus_v2$genus_and_subgenus
+      )
+      i <- !is.na(fuzzy_bracket_sp) & fuzzy_bracket_sp %in% resources$subgenus_v2$genus_and_subgenus
+      ii <- match(fuzzy_bracket_sp[i], resources$subgenus_v2$genus_and_subgenus)
+
+      taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+        dplyr::mutate(
+          taxonomic_dataset = resources$subgenus_v2$taxonomic_dataset[ii],
+          taxon_rank = "subgenus",
+          taxonomic_status = resources$subgenus_v2$taxonomic_status[ii],
+          taxon_ID = resources$subgenus_v2$taxon_ID[ii],
+          accepted_name_usage_ID = resources$subgenus_v2$accepted_name_usage_ID[ii],
+          aligned_name_tmp = paste0(resources$subgenus_v2$genus_and_subgenus[ii], " sp."),
+          aligned_name = ifelse(is.na(identifier_string),
+                                aligned_name_tmp,
+                                paste0(aligned_name_tmp, identifier_string)
+          ),
+          aligned_reason = paste0(
+            "Fuzzy match of taxon name ending with `sp.` to a ", taxonomic_status, " ", taxon_rank,
+            " in ", taxonomic_dataset, " (", Sys.Date(), ")"
+          ),
+          chars_changed = as.integer(stringdist::stringdist(
+            stringr::word(cleaned_name, start = 1, end = 2), fuzzy_bracket_sp[i], method = "dl"
+          )),
+          checked = TRUE,
+          known = TRUE,
+          alignment_code = "match_02a_fuzzy_higher_level_accepted_or_synonym"
+        )
+      taxa <- redistribute_progress(taxa, pb)
+    }
+
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+
+    # anything still matching this shape has no usable subgenus match (a typo not close enough, the
+    # subgenus genuinely absent from resources, or no subgenus_v2 table at all) -- fall back to
+    # resolving just the genus part, via the same shared helper used for hybrids/intergrades/the
+    # bare-bracket case, so the bracket+"sp." information is preserved rather than silently lost.
+    taxa <- match_special_case_to_genus(
+      taxa, resources,
+      detect_fn = function(cleaned_name) {
+        stringr::str_detect(cleaned_name, "[:space:]sp\\.$") &
+          stringr::str_detect(stringr::word(cleaned_name, start = 2, end = 2), "^\\(.*\\)$") &
+          stringr::str_count(cleaned_name, " ") == 2
+      },
+      bracket_sep = " sp. [",
+      reason_text = paste(
+        "Taxon name has a \"Genus (Subgenus) sp.\" form whose subgenus could not be matched;",
+        "falling back to genus rank."
+      ),
+      alignment_code_exact = "match_02a_genus_fallback_exact",
+      alignment_code_fuzzy = "match_02a_genus_fallback_fuzzy",
+      alignment_code_unresolved = "match_02a_genus_fallback_unresolved",
+      alignment_code_no_resource = "match_02a_genus_fallback_no_resource",
+      fuzzy_match_genera = fuzzy_match_genera,
+      pb = pb
+    )
+
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+  }
+
+  # match_02x: quarantine a *bare* "Genus subg. Subgenusname" input (issue #25) -- the National
+  # Species List's own marker-abbreviation convention for the same subgenus concept match_02a/match_02y
+  # handle via the zoological/AFD-style "Genus (Subgenus)" bracket. Exactly three whitespace-delimited
+  # tokens, middle one "subg."/"subg" (case-insensitive), nothing beyond the subgenus name itself.
+  # Built around the *same* `resources$subgenus_v2$genus_and_subgenus` lookup match_02y already uses --
+  # `load_Australian_NSL()` stores a *bare* subgenus name in `canonical_name` (via
+  # `strip_NSL_subgenus_marker()`) precisely so a "Genus subg. Name" resource row slots into that
+  # existing bracket-equivalence machinery unchanged. Without this block, such a query falls through to
+  # the generic higher-rank loop (match_12b), which only ever compares `word_one_stripped` (just
+  # "Genus") against `resources$genus$canonical_name` -- silently discarding "subg. Subgenusname" and
+  # returning a genus-rank match instead of the correct subgenus-rank one.
+  #
+  # Shape-based detection, not membership-based, exactly like match_02y -- a pair absent from
+  # `resources$subgenus_v2` (or no `subgenus_v2` table at all) is still quarantined here rather than
+  # leaking into species-level matching as a fake epithet.
+  is_marker_subgenus <-
+    stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2 &
+    stringr::str_detect(
+      stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2),
+      stringr::regex("^subg\\.?$", ignore_case = TRUE)
+    )
+
+  if (any(is_marker_subgenus)) {
+
+    marker_subgenus_key <- function(cleaned_name) {
+      paste0(
+        stringr::word(cleaned_name, start = 1, end = 1), " (",
+        stringr::word(cleaned_name, start = 3, end = 3), ")"
+      )
+    }
+
+    if (!is.null(resources$subgenus_v2)) {
+
+      # exact match against the "Genus (Subgenus)"-equivalent key built from the marker-form query
+      i <- is_marker_subgenus &
+        marker_subgenus_key(taxa$tocheck$cleaned_name) %in% resources$subgenus_v2$genus_and_subgenus
+      ii <- match(
+        marker_subgenus_key(taxa$tocheck[i, ]$cleaned_name),
+        resources$subgenus_v2$genus_and_subgenus
+      )
+
+      # TRUE where the name being matched is *nothing more* than "Genus subg. Subgenusname" itself --
+      # see ?match_taxa's include_bracketed_info.
+      bare_rank_name <- !include_bracketed_info &
+        stringr::str_count(stringr::str_trim(taxa$tocheck[i, ]$cleaned_name), "\\S+") == 3
+
+      taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+        dplyr::mutate(
+          taxonomic_dataset = resources$subgenus_v2$taxonomic_dataset[ii],
+          taxon_rank = "subgenus",
+          taxonomic_status = resources$subgenus_v2$taxonomic_status[ii],
+          taxon_ID = resources$subgenus_v2$taxon_ID[ii],
+          accepted_name_usage_ID = resources$subgenus_v2$accepted_name_usage_ID[ii],
+          aligned_name_tmp = paste0(resources$subgenus_v2$genus_and_subgenus[ii], " sp. [", cleaned_name),
+          aligned_name = dplyr::case_when(
+            bare_rank_name ~ resources$subgenus_v2$genus_and_subgenus[ii],
+            is.na(identifier_string2) ~ paste0(aligned_name_tmp, "]"),
+            TRUE ~ paste0(aligned_name_tmp, identifier_string2, "]")
+          ),
+          aligned_reason = paste0(
+            "Exact match of a \"Genus subg. Subgenusname\" query to a ", taxonomic_status, " ",
+            taxon_rank, " in ", taxonomic_dataset, " (", Sys.Date(), ")"
+          ),
+          chars_changed = 0L,
+          checked = TRUE,
+          known = TRUE,
+          alignment_code = "match_02x_marker_exact_subgenus"
+        )
+      taxa <- redistribute_progress(taxa, pb)
+
+      if (nrow(taxa$tocheck) > 0) {
+
+        # fuzzy match, so a merely-misspelled marker-form subgenus doesn't fall through to
+        # species-level mis-parsing. Recomputed against the current (post-exact-match, shrunk)
+        # taxa$tocheck, not the outer-scope `is_marker_subgenus`.
+        is_marker_subgenus2 <-
+          stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2 &
+          stringr::str_detect(
+            stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2),
+            stringr::regex("^subg\\.?$", ignore_case = TRUE)
+          )
+
+        fuzzy_marker <- rep(NA_character_, nrow(taxa$tocheck))
+        if (any(is_marker_subgenus2)) {
+          fuzzy_marker[is_marker_subgenus2] <- fuzzy_match_genera(
+            marker_subgenus_key(taxa$tocheck$cleaned_name[is_marker_subgenus2]),
+            resources$subgenus_v2$genus_and_subgenus
+          )
+        }
+        i <- !is.na(fuzzy_marker) & fuzzy_marker %in% resources$subgenus_v2$genus_and_subgenus
+        ii <- match(fuzzy_marker[i], resources$subgenus_v2$genus_and_subgenus)
+
+        bare_rank_name <- !include_bracketed_info &
+          stringr::str_count(stringr::str_trim(taxa$tocheck[i, ]$cleaned_name), "\\S+") == 3
+
+        taxa$tocheck[i, ] <- taxa$tocheck[i, ] |>
+          dplyr::mutate(
+            taxonomic_dataset = resources$subgenus_v2$taxonomic_dataset[ii],
+            taxon_rank = "subgenus",
+            taxonomic_status = resources$subgenus_v2$taxonomic_status[ii],
+            taxon_ID = resources$subgenus_v2$taxon_ID[ii],
+            accepted_name_usage_ID = resources$subgenus_v2$accepted_name_usage_ID[ii],
+            aligned_name_tmp = paste0(resources$subgenus_v2$genus_and_subgenus[ii], " sp. [", cleaned_name),
+            aligned_name = dplyr::case_when(
+              bare_rank_name ~ resources$subgenus_v2$genus_and_subgenus[ii],
+              is.na(identifier_string2) ~ paste0(aligned_name_tmp, "]"),
+              TRUE ~ paste0(aligned_name_tmp, identifier_string2, "]")
+            ),
+            aligned_reason = paste0(
+              "Fuzzy match of a \"Genus subg. Subgenusname\" query to a ", taxonomic_status, " ",
+              taxon_rank, " in ", taxonomic_dataset, " (", Sys.Date(), ")"
+            ),
+            chars_changed = as.integer(stringdist::stringdist(
+              marker_subgenus_key(cleaned_name), fuzzy_marker[i], method = "dl"
+            )),
+            checked = TRUE,
+            known = TRUE,
+            alignment_code = "match_02x_marker_fuzzy_subgenus"
+          )
+        taxa <- redistribute_progress(taxa, pb)
+      }
+    }
+
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+
+    # Anything still matching the marker-form shape at this point has no usable subgenus match --
+    # fall back to resolving just the genus part, exactly like match_02y's own bracket-form fallback.
+    taxa <- match_special_case_to_genus(
+      taxa, resources,
+      detect_fn = function(cleaned_name) {
+        stringr::str_count(cleaned_name, " ") == 2 &
+          stringr::str_detect(
+            stringr::word(cleaned_name, start = 2, end = 2),
+            stringr::regex("^subg\\.?$", ignore_case = TRUE)
+          )
+      },
+      bracket_sep = " sp. [",
+      reason_text = paste(
+        "Taxon name has a \"Genus subg. Subgenusname\" form whose subgenus could not be matched;",
+        "falling back to genus rank."
+      ),
+      alignment_code_exact = "match_02x_marker_genus_exact",
+      alignment_code_fuzzy = "match_02x_marker_genus_fuzzy",
+      alignment_code_unresolved = "match_02x_marker_genus_unresolved",
+      alignment_code_no_resource = "match_02x_marker_genus_no_resource",
+      fuzzy_match_genera = fuzzy_match_genera,
+      pb = pb
+    )
+
+    if (nrow(taxa$tocheck) == 0)
+      return(taxa)
+  }
+
   # match_02y: quarantine a *bare* "Genus (Subgenus)" input -- exactly two whitespace-delimited tokens,
   # nothing beyond the bracketed subgenus itself -- before it can reach later, generic
   # species/genus-level matching. Must run early (right after match_02a, well before match_05's

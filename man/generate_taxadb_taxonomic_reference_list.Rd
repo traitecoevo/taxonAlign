@@ -9,6 +9,7 @@ generate_taxadb_taxonomic_reference_list(
   rank,
   provider = "gbif",
   country = NULL,
+  gbif_snapshot_url = NULL,
   include_synonyms = TRUE,
   facet_limit = 1e+05,
   cache_dir = tools::R_user_dir("taxonAlign", "cache"),
@@ -34,6 +35,12 @@ less-actively-maintained ones). Defaults to \code{"gbif"}. Only \code{"gbif"} su
 
 \item{country}{Optional ISO 3166-1 alpha-2 country code (e.g. \code{"AU"}). Only valid when
 \code{provider = "gbif"} -- see Description.}
+
+\item{gbif_snapshot_url}{Optional character; when supplied, queries this Darwin-Core-shaped parquet
+file directly instead of \code{taxadb::taxa_tbl("gbif")} -- see Description. Only valid when
+\code{provider = "gbif"} (this is a GBIF-specific workaround for \code{taxadb}'s own registry being stale,
+not a general mechanism for other providers). Defaults to \code{NULL} (use \code{taxadb}'s own registry, as
+before).}
 
 \item{include_synonyms}{Logical; if \code{FALSE}, only accepted names are returned. Defaults to \code{TRUE}.}
 
@@ -82,6 +89,20 @@ alone would suggest, though real end-to-end name-alignment tasks were affected f
 \code{taxadb:::available_versions()} yourself before trusting this function for anything where currency
 matters; this package can't control whether taxadb's maintainers resume publishing.
 
+\strong{A genuinely current GBIF alternative exists outside taxadb's own R bindings -- \code{gbif_snapshot_url}
+(see issue #23).} The maintainer confirmed (2026) that current-year GBIF snapshots are uploaded as
+raw Darwin-Core parquet files to \code{source.coop} well before they're wired into \code{taxadb}'s own
+\code{td_create()}/\code{taxa_tbl()} registry (which is what stays frozen at \code{"22.12"} regardless). Passing a
+URL here (e.g. \code{"https://data.source.coop/cboettig/taxadb/2026/dwc_gbif_part_0.parquet"}) queries
+that file directly via DuckDB, bypassing the stale registry entirely for \code{provider = "gbif"}.
+Verified directly against a live GBIF fetch for the same real gap cases the \code{"22.12"} snapshot
+missed (\code{"Trachytetra"} and its species, \code{"Austrocardiophorus"}, \code{"Onthophagus bulga"}, \code{"Trioza melaleucae"}) -- all four now resolve. Opt-in, not the default, because the maintainer's own caveat
+when confirming this ("I haven't had a chance to update the taxadb bindings themselves or verify we
+don't have breaking changes") means schema stability here isn't a guarantee taxadb itself is making
+-- \code{gbif_snapshot_tbl()} checks the expected columns are present and errors clearly if not, rather
+than failing confusingly deeper in this function, but a column being \emph{renamed} rather than dropped
+could still slip through undetected.
+
 This function is deliberately narrower than \code{generate_GBIF_taxonomic_reference_list()}: it has no
 concept of "a minimum rank to include below \code{taxon_name}" (every row taxadb has for the requested
 group is returned, at whatever ranks that provider records), and \code{country} filtering is only
@@ -102,6 +123,14 @@ generate_taxadb_taxonomic_reference_list("Chordata", rank = "phylum")
 
 # the same, restricted to taxa with an Australian GBIF occurrence record
 generate_taxadb_taxonomic_reference_list("Chordata", rank = "phylum", country = "AU")
+
+# bypass taxadb's own stale ("22.12") registry and query a genuinely current GBIF snapshot directly
+# -- see Description's `gbif_snapshot_url` paragraph before using this in anything automated, since
+# its schema stability isn't guaranteed by taxadb itself
+generate_taxadb_taxonomic_reference_list(
+  "Chordata", rank = "phylum",
+  gbif_snapshot_url = "https://data.source.coop/cboettig/taxadb/2026/dwc_gbif_part_0.parquet"
+)
 }
 
 }

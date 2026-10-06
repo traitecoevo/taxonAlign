@@ -184,6 +184,40 @@ test_that("include_bracketed_info = FALSE (default) returns a bare name when not
   expect_equal(out_subgenus_bracket$alignment_code, "match_02y_bracket_exact_subgenus")
 })
 
+# match_02a (fuzzy/genus-fallback extension): found via the real AFD data used in the
+# demo-align-Prendergast.qmd vignette -- "Hylaeus (Rhodhylaeus) sp." (a 1-letter-missing typo for the
+# real AFD subgenus "Rhodohylaeus") resolved only to the bare genus "Hylaeus sp." via the generic
+# match_02b higher-rank loop, silently discarding the subgenus (and even the "sp." itself) with no
+# trace, because the original match_02a block only ever did an exact, membership-gated match -- no
+# fuzzy fallback and no shape-based quarantine, unlike its bare-bracket sibling match_02y.
+test_that("a misspelled 'Genus (Subgenus) sp.' query is fuzzy-matched to the real subgenus, not silently collapsed to genus rank", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia (Valvate) sp.", resources) # one letter short of "Valvatae"
+
+  expect_equal(out$taxon_rank, "subgenus")
+  expect_equal(out$aligned_name, "Boronia (Valvatae) sp.")
+  expect_equal(out$alignment_code, "match_02a_fuzzy_higher_level_accepted_or_synonym")
+  expect_equal(out$chars_changed, 1L)
+})
+
+test_that("a 'Genus (Subgenus) sp.' query falls back to genus rank, bracket preserved, when the subgenus genuinely isn't in resources", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia (Nonexistentia) sp.", resources)
+
+  expect_equal(out$taxon_rank, "genus")
+  expect_equal(out$alignment_code, "match_02a_genus_fallback_exact")
+  expect_equal(out$aligned_name, "Boronia sp. [Boronia (Nonexistentia) sp.]")
+})
+
+test_that("an exact 'Genus (Subgenus) sp.' query still matches as before (no regression)", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia (Valvatae) sp.", resources)
+
+  expect_equal(out$taxon_rank, "subgenus")
+  expect_equal(out$alignment_code, "match_02a_exact_higher_level_accepted_or_synonym")
+  expect_equal(out$chars_changed, 0L)
+})
+
 # match_02y (issue #14): a bare "Genus (Subgenus)" query must never leak into species-level matching
 # as a fake epithet -- regardless of whether the specific subgenus pair is actually in
 # resources$subgenus_v2. Regression tests for the real bug found comparing AFD+iNat against AFD+GBIF
@@ -213,6 +247,47 @@ test_that("a genuine 'Genus (Subgenus) species' trinomial is unaffected by the b
 
   expect_equal(out$aligned_name, "Boronia serrulata")
   expect_equal(out$taxon_rank, "species")
+})
+
+# match_02x (issue #25): the National Species List's own "Genus subg. Subgenusname" marker-abbreviation
+# convention for the same subgenus concept match_02y handles via the "Genus (Subgenus)" bracket --
+# found loading the new load_Australian_NSL() reference data. Built to reuse the exact same
+# resources$subgenus_v2$genus_and_subgenus lookup match_02y already relies on, so these tests reuse
+# sample_taxonomic_resources()'s existing "Boronia (Valvatae)" pair without any fixture changes.
+test_that("a bare 'Genus subg. Subgenusname' query resolves the same as its bracket equivalent", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia subg. Valvatae", resources)
+
+  expect_equal(out$aligned_name, "Boronia (Valvatae)")
+  expect_equal(out$taxon_rank, "subgenus")
+  expect_equal(out$alignment_code, "match_02x_marker_exact_subgenus")
+  expect_equal(out$chars_changed, 0L)
+})
+
+test_that("the marker convention still matches without a trailing period on the abbreviation", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia subg Valvatae", resources)
+
+  expect_equal(out$aligned_name, "Boronia (Valvatae)")
+  expect_equal(out$alignment_code, "match_02x_marker_exact_subgenus")
+})
+
+test_that("a misspelled marker-form subgenus is recovered by fuzzy matching", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia subg. Valvatte", resources) # one substitution away from "Valvatae"
+
+  expect_equal(out$aligned_name, "Boronia (Valvatae)")
+  expect_equal(out$alignment_code, "match_02x_marker_fuzzy_subgenus")
+  expect_equal(out$chars_changed, 1L)
+})
+
+test_that("a marker-form query falls back to genus rank when the subgenus pair isn't in resources", {
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  out <- align_taxa("Boronia subg. Nonexistentia", resources)
+
+  expect_equal(out$taxon_rank, "genus")
+  expect_equal(out$alignment_code, "match_02x_marker_genus_exact")
+  expect_equal(out$aligned_name, "Boronia sp. [Boronia subg. Nonexistentia]")
 })
 
 test_that("include_bracketed_info = FALSE also drops a bare match's identifier, not just the original name", {
