@@ -149,3 +149,140 @@ test_that("prepare_taxonomic_resources(load_taxonomic_resources(\"AFD\")) runs e
   expect_equal(out$accepted_name, c("Testus alphus", "Testus alphus", "Testus alphus betus"))
   expect_equal(out$taxonomic_status_aligned, c("accepted", "synonym", "accepted"))
 })
+
+test_that("load_taxonomic_resources(\"AFD\") reads the 2026 export shape (VALID_NAME, parenthesised authorship, split citations)", {
+  # the 2026 AFD CSV export renamed FULL_NAME to VALID_NAME, writes changed-combination authorship in
+  # parentheses, and occasionally separates a subsequent usage from its citation with "; "
+  raw <- sample_afd_raw() |> dplyr::rename(VALID_NAME = FULL_NAME)
+  raw$SYNONYMS[1] <- paste(
+    "Oldgenus alphus (Smith, 1900)", "Testus alfus", "Smith, 1902", "Testus alphus Smith, 1900",
+    sep = "; "
+  )
+  path <- tempfile(fileext = ".csv")
+  readr::write_csv(raw, path)
+
+  afd <- load_taxonomic_resources(
+    "AFD", path = path, cache_dir = withr::local_tempdir(), quiet = TRUE
+  )$AFD
+  syn <- afd |> dplyr::filter(taxonomic_status == "synonym")
+
+  expect_true("Testus alphus" %in% afd$canonical_name[afd$taxonomic_status == "accepted"])
+  expect_setequal(syn$canonical_name, c("Oldgenus alphus", "Testus alfus"))
+  # the orphaned "Smith, 1902" citation is re-attached to the name before it, not a synonym of its own
+  expect_true("Testus alfus Smith, 1902" %in% syn$scientific_name)
+})
+
+test_that("load_taxonomic_resources(\"AFD\") errors clearly when expected columns are missing", {
+  path <- tempfile(fileext = ".csv")
+  readr::write_csv(dplyr::select(sample_afd_raw(), -SYNONYMS), path)
+  expect_error(
+    load_taxonomic_resources("AFD", path = path, cache_dir = withr::local_tempdir(), quiet = TRUE),
+    "missing expected column\\(s\\): SYNONYMS"
+  )
+})
+
+test_that("load_taxonomic_resources(\"AFD\") keeps an \"Unplaced Synonym(s)\" pseudo-row's names as unresolved, never as an accepted taxon", {
+  raw <- sample_afd_raw() |> dplyr::rename(VALID_NAME = FULL_NAME)
+  unplaced <- raw[1, ]
+  unplaced$VALID_NAME <- "Unplaced Synonym(s)"
+  unplaced$COMPLETE_NAME <- "Unplaced Synonym(s) ,"
+  unplaced$SPECIES <- "Unplaced"
+  unplaced$SYNONYMS <- "Testus lostus Smith, 1901; Testus gonus Jones & Smith, 1902"
+  unplaced$CONCEPT_GUID <- "guid-unplaced"
+  path <- tempfile(fileext = ".csv")
+  readr::write_csv(dplyr::bind_rows(raw, unplaced), path)
+
+  afd <- load_taxonomic_resources(
+    "AFD", path = path, cache_dir = withr::local_tempdir(), quiet = TRUE
+  )$AFD
+
+  expect_false(any(grepl("Unplaced", afd$canonical_name)))
+  lost <- afd |> dplyr::filter(canonical_name %in% c("Testus lostus", "Testus gonus"))
+  expect_equal(nrow(lost), 2)
+  expect_true(all(lost$taxonomic_status == "unplaced"))
+  expect_equal(lost$accepted_name_usage_ID, lost$taxon_ID)
+})
+
+test_that("load_taxonomic_resources(\"AFD\") treats an unplaced genus/family as a placeholder, not a taxon", {
+  raw <- sample_afd_raw() |> dplyr::rename(VALID_NAME = FULL_NAME)
+  sp <- raw[1, ]
+  sp$VALID_NAME <- "Unplaced vetula"
+  sp$COMPLETE_NAME <- "Unplaced vetula (Meyrick, 1893)"
+  sp$GENUS <- "Unplaced"
+  sp$FAMILY <- "Unplaced to Family"
+  sp$SPECIES <- "vetula"
+  sp$SYNONYMS <- "Tinea vetula Meyrick, 1893"
+  sp$CONCEPT_GUID <- "guid-unplaced-genus"
+  path <- tempfile(fileext = ".csv")
+  readr::write_csv(dplyr::bind_rows(raw, sp), path)
+
+  afd <- load_taxonomic_resources(
+    "AFD", path = path, cache_dir = withr::local_tempdir(), quiet = TRUE
+  )$AFD
+
+  expect_false(any(grepl("Unplaced", afd$canonical_name, ignore.case = TRUE)))
+  tinea <- afd |> dplyr::filter(canonical_name == "Tinea vetula")
+  expect_equal(tinea$taxonomic_status, "unplaced")
+  expect_equal(tinea$accepted_name_usage_ID, tinea$taxon_ID)
+})
+
+test_that("load_taxonomic_resources(\"AFD\") reads CHANGED_COMBINATION_NAMES as generic combinations, and ranks synonyms by word count", {
+  raw <- sample_afd_raw() |> dplyr::rename(VALID_NAME = FULL_NAME)
+  raw$CHANGED_COMBINATION_NAMES <- NA_character_
+  raw$CHANGED_COMBINATION_NAMES[1] <- "Newgenus alphus (Smith, 1900); Oldgenus alphus Smith, 1900"
+  raw$SYNONYMS[2] <- "Testus alphus gammus Jones, 1940"
+  path <- tempfile(fileext = ".csv")
+  readr::write_csv(raw, path)
+
+  afd <- load_taxonomic_resources("AFD", path = path, cache_dir = withr::local_tempdir(), quiet = TRUE)$AFD
+
+  comb <- afd |> dplyr::filter(canonical_name == "Newgenus alphus")
+  expect_equal(comb$taxonomic_status, "Generic combination")
+  expect_equal(comb$accepted_name_usage_ID, "guid-1")
+  # listed in both SYNONYMS and CHANGED_COMBINATION_NAMES -> kept once, as a synonym
+  old <- afd |> dplyr::filter(canonical_name == "Oldgenus alphus")
+  expect_equal(nrow(old), 1)
+  expect_equal(old$taxonomic_status, "synonym")
+  # a trinomial synonym is a subspecies, not a species
+  expect_equal(afd$taxon_rank[afd$canonical_name == "Testus alphus gammus"], "subspecies")
+})
+
+test_that("AFD-format synonym annotations are cleaned, and misapplied/part markers become statuses", {
+  entries <- c(
+    "Acanthoglossa? setigera Smith, 1900", "Megascolides(?) pygmaeus Smith, 1900",
+    "H[yla] jacksonii Smith, 1900", "Paraponyx <i></i> pudica Smith, 1900",
+    "'Ochlerotatus' notoscriptus (Skuse, 1889)", "Allotria d'arci Smith, 1900",
+    "Myllita deshayesi d'Orbigny, 1846", "Trichobilharzia parocellata (Johnston & Simpson), 1939",
+    "Mangilia (Glyphostoma)) jousseaumei Smith, 1900",
+    "Pyramidella (Chrysallida (section Styloptygma)) typica Smith, 1900"
+  )
+  expect_equal(
+    strip_afd_authorship(entries, c("Smith", "Skuse")),
+    c(
+      "Acanthoglossa setigera", "Megascolides pygmaeus", "Hyla jacksonii", "Paraponyx pudica",
+      "Ochlerotatus notoscriptus", "Allotria d'arci", "Myllita deshayesi",
+      "Trichobilharzia parocellata", "Mangilia (Glyphostoma) jousseaumei",
+      "Pyramidella (Chrysallida (section Styloptygma)) typica"
+    )
+  )
+
+  marked <- c(
+    "Dendrodoris fumata auctt. non Rüppell & Leuckart, 0", "Aulicus episcopalis sensu Smith",
+    "Chelonia depressa (part.)", "Mopsea elegans [pars]", "Hammaticherus indutus auct., ",
+    "Testus alphus Smith, 1900"
+  )
+  expect_equal(
+    afd_usage_status(marked, "synonym"),
+    c("misapplied", "misapplied", "pro parte synonym", "pro parte synonym", "misapplied", "synonym")
+  )
+  expect_equal(
+    strip_afd_authorship(marked, "Smith"),
+    c("Dendrodoris fumata", "Aulicus episcopalis", "Chelonia depressa", "Mopsea elegans",
+      "Hammaticherus indutus", "Testus alphus")
+  )
+  # a marker or a connector-joined citation split off by "; " is re-attached to the name before it
+  expect_equal(
+    rejoin_afd_synonym_fragments(c("Paracharactis vestianella", "auctt., ", "Theretra cinerea", "Haines in Dowling & Haines, 1963")),
+    c("Paracharactis vestianella auctt., ", "Theretra cinerea Haines in Dowling & Haines, 1963")
+  )
+})

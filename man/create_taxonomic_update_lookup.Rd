@@ -18,6 +18,7 @@ create_taxonomic_update_lookup(
   consider_english_name_endings = FALSE,
   include_bracketed_info = FALSE,
   progress = FALSE,
+  taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon"),
   full = FALSE
 )
 }
@@ -29,6 +30,9 @@ create_taxonomic_update_lookup(
 also accepted directly -- see \code{align_taxa()}'s \code{resources} documentation.}
 
 \item{identifier, fuzzy_abs_dist, fuzzy_rel_dist, fuzzy_matches, imprecise_fuzzy_matches, taxon_ranks_to_check, hybrids, intergrades_affinis, consider_english_name_endings, include_bracketed_info, progress}{Forwarded to \code{\link[=align_taxa]{align_taxa()}}; see its documentation.}
+
+\item{taxonomic_splits}{Passed to \code{\link[=update_taxa]{update_taxa()}}: how to report a name that leads to more than one
+accepted name (\code{"most_likely_species"}, the default, or \code{"collapse_to_higher_taxon"}).}
 
 \item{full}{Logical; if \code{TRUE}, return every intermediate column \code{\link[=align_taxa]{align_taxa()}}/\code{\link[=update_taxa]{update_taxa()}}
 compute. If \code{FALSE} (the default), return just the key output columns: \code{original_name},

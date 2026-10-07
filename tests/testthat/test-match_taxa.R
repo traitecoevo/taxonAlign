@@ -251,7 +251,7 @@ test_that("a genuine 'Genus (Subgenus) species' trinomial is unaffected by the b
 
 # match_02x (issue #25): the National Species List's own "Genus subg. Subgenusname" marker-abbreviation
 # convention for the same subgenus concept match_02y handles via the "Genus (Subgenus)" bracket --
-# found loading the new load_Australian_NSL() reference data. Built to reuse the exact same
+# found loading the new load_NSL_resources() reference data. Built to reuse the exact same
 # resources$subgenus_v2$genus_and_subgenus lookup match_02y already relies on, so these tests reuse
 # sample_taxonomic_resources()'s existing "Boronia (Valvatae)" pair without any fixture changes.
 test_that("a bare 'Genus subg. Subgenusname' query resolves the same as its bracket equivalent", {

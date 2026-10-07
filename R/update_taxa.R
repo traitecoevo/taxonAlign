@@ -13,12 +13,18 @@
 #'  fully-formatted) taxonomic reference tibble is also accepted directly -- see `align_taxa()`'s
 #'  `resources` documentation.
 #'
+#' @param taxonomic_splits How to report a name that leads to more than one accepted name:
+#'  `"most_likely_species"` (the default) suggests one and lists the others in brackets;
+#'  `"collapse_to_higher_taxon"` collapses it to genus when all candidates share one. See Details.
+#'
 #' @return `aligned_data` with `taxon_rank`/`genus`/`family`/`taxonomic_dataset` refreshed to whatever
 #'  the current record has (a synonym's may be outdated), the pre-update `taxonomic_status` renamed to
 #'  `taxonomic_status_aligned`, and new columns `accepted_name` (the current accepted name, when the
 #'  match resolves to one, otherwise `NA`), `suggested_name` (`accepted_name` if available, otherwise
 #'  falls back to `aligned_name`), `taxonomic_status` (the *current* record's status) and
-#'  `update_reason` (a short explanation, mirroring `aligned_reason`'s style).
+#'  `update_reason` (a short explanation, mirroring `aligned_reason`'s style), and
+#'  `alternative_possible_names` (the other candidates for a name that leads to more than one accepted
+#'  name, otherwise `NA`).
 #'
 #' @details
 #' Unlike [APCalign](https://traitecoevo.github.io/APCalign/)'s `update_taxonomy()` -- five separate
@@ -30,20 +36,29 @@
 #' [prepare_taxonomic_resources()]'s requirements); a synonym resolves to whatever its
 #' `accepted_name_usage_ID` points to.
 #'
-#' Two things this deliberately does **not** do, relative to APCalign's `update_taxonomy()`:
-#' - **No splits handling.** APCalign's `taxonomic_splits` argument disambiguates a synonym that has
-#'   since been split into several modern species (`"most_likely_species"` picks one;
-#'   `"collapse_to_higher_taxon"` collapses to genus). That's specific to APC's documented split
-#'   history, which an arbitrary user-supplied reference can't be expected to carry -- if
-#'   `accepted_name_usage_ID` doesn't resolve to exactly one current record, `accepted_name`/
-#'   `suggested_name` are simply left as described above, with no attempt to pick among alternatives.
+#' **A synonym that leads to more than one accepted taxon** (a species or infraspecific name listed as
+#' a synonym of two or more different accepted taxa -- a split, or a pro parte synonym) follows
+#' APCalign's `taxonomic_splits` convention. One accepted name is chosen -- by taxonomic status
+#' precedence, then (for a tie) an accepted name sharing the name's epithet, then one of the same rank,
+#' then one published no later than the name itself, then the oldest, then the order `resources` lists
+#' them in -- and the others are listed with their status, both in `suggested_name`
+#' (`"X [alternative possible names: Y (synonym) | Z (misapplied)]"`) and in a separate
+#' `alternative_possible_names` column. With `taxonomic_splits = "collapse_to_higher_taxon"`, a name
+#' whose candidates all share one genus is collapsed to that genus instead
+#' (`"Genus sp. [collapsed names: ...]"`, `taxon_rank = "genus"`, `accepted_name = NA`). Only a match
+#' to a synonym record is treated this way: a match to an accepted name, or to a name given with its
+#' authorship (which identifies one record, e.g. one of two homonyms), is not.
+#'
+#' One thing this deliberately does **not** do, relative to APCalign's `update_taxonomy()`:
 #' - **No genus-substring surgery.** APCalign's `update_taxonomy_APC_genus()` reconstructs a species'
 #'   suggested name by splicing just the updated genus portion into the aligned name, when only the
 #'   genus (not the species) has changed. That's a nice refinement but doesn't obviously generalize
 #'   across arbitrary ranks the way the rest of this does, so it's omitted here.
 #'
 #' @export
-update_taxa <- function(aligned_data, resources = NULL) {
+update_taxa <- function(aligned_data, resources = NULL,
+                        taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon")) {
+  taxonomic_splits <- match.arg(taxonomic_splits)
 
   if (is.null(resources)) {
     stop(
@@ -78,10 +93,50 @@ update_taxa <- function(aligned_data, resources = NULL) {
   # across ranks (as it did before AFD's higher-rank `taxon_ID` fallback was namespaced by rank -- see
   # `load_taxonomic_resources.R`), the more specific, more informative rank wins the tie rather than
   # whichever rank happened to bind first.
-  rank_tables <- c(resources$species, resources[setdiff(names(resources), c("species", "subgenus_v2"))])
-  all_taxa <- dplyr::bind_rows(rank_tables)
+  # `matching_taxa` keeps the subgenus-free names matching used (what the split lookup below must
+  # compare); `all_taxa` reports accepted names as their reference writes them (with subgenus;
+  # "Genus (Subgenus)" at subgenus rank) -- see prepare_taxonomic_resources()
+  matching_taxa <- flatten_resources(resources)
+  all_taxa <- matching_taxa
+  if ("display_name" %in% names(all_taxa)) all_taxa$canonical_name <- all_taxa$display_name
 
-  current <- all_taxa[match(aligned_data$accepted_name_usage_ID, all_taxa$taxon_ID), ]
+  # a name that leads to more than one accepted name: resolve it via the record chosen by
+  # build_split_table() (see resolve_synonym_splits.R), not whichever record matching happened to hit
+  # first, and keep the other candidates. Skipped when the name was matched together with its
+  # authorship -- that already identifies one record (e.g. a homonym, "Camponotus reticulatus Kirby,
+  # 1896" vs "... Roger, 1863").
+  status_aligned <- aligned_data$taxonomic_status
+  usage_ID <- aligned_data$accepted_name_usage_ID
+  alternatives <- rep(NA_character_, nrow(aligned_data))
+  collapsed <- rep(NA_character_, nrow(aligned_data))
+  splits <- build_split_table(matching_taxa)
+  if (nrow(splits) > 0) {
+    matched <- matching_taxa[match(aligned_data$taxon_ID, matching_taxa$taxon_ID), ]
+    s <- match(
+      paste(matched$canonical_name, matched$taxon_rank, sep = "\r"),
+      paste(splits$canonical_name, splits$taxon_rank, sep = "\r")
+    )
+    by_authorship <- if ("alignment_code" %in% names(aligned_data)) {
+      grepl("with_authorship", aligned_data$alignment_code)
+    } else {
+      FALSE
+    }
+    # only a match to a synonym record is ambiguous; a match to an accepted name is just that name
+    s[!is.na(s) & (by_authorship | matched$taxonomic_status %in% "accepted")] <- NA
+    hit <- !is.na(s)
+    chosen <- all_taxa[match(splits$chosen_ID[s[hit]], all_taxa$taxon_ID), ]
+    usage_ID[hit] <- chosen$accepted_name_usage_ID
+    status_aligned[hit] <- chosen$taxonomic_status
+    alternatives[hit] <- splits$alternative_possible_names[s[hit]]
+    if (taxonomic_splits == "collapse_to_higher_taxon") {
+      collapsed[hit] <- ifelse(
+        is.na(splits$shared_genus[s[hit]]), NA_character_,
+        paste0(splits$shared_genus[s[hit]], " sp. [collapsed names: ", splits$all_possible_names[s[hit]], "]")
+      )
+    }
+  }
+
+  current <- all_taxa[match(usage_ID, all_taxa$taxon_ID), ]
   resolved <- !is.na(current$taxon_ID)
 
   # `genus`/`family` aren't required columns (unlike taxon_rank/taxonomic_dataset/taxonomic_status,
@@ -96,12 +151,25 @@ update_taxa <- function(aligned_data, resources = NULL) {
 
   aligned_data |>
     dplyr::mutate(
-      taxonomic_status_aligned = taxonomic_status,
+      taxonomic_status_aligned = status_aligned,
+      accepted_name_usage_ID = usage_ID,
+      alternative_possible_names = alternatives,
       accepted_name = dplyr::if_else(resolved & current$taxonomic_status == "accepted", current$canonical_name, NA_character_),
       suggested_name = dplyr::if_else(!is.na(accepted_name), accepted_name, aligned_name),
+      # APCalign's convention: one name, with every other candidate in brackets
+      suggested_name = dplyr::case_when(
+        !is.na(collapsed) ~ collapsed,
+        !is.na(alternatives) ~ paste0(suggested_name, " [alternative possible names: ", alternatives, "]"),
+        TRUE ~ suggested_name
+      ),
+      accepted_name = dplyr::if_else(!is.na(collapsed), NA_character_, accepted_name),
       genus = dplyr::if_else(resolved, genus_current, genus_prior),
       family = dplyr::if_else(resolved, family_current, family_prior),
-      taxon_rank = dplyr::if_else(resolved, current$taxon_rank, taxon_rank),
+      taxon_rank = dplyr::case_when(
+        !is.na(collapsed) ~ "genus",
+        resolved ~ current$taxon_rank,
+        TRUE ~ taxon_rank
+      ),
       taxonomic_dataset = dplyr::if_else(resolved, current$taxonomic_dataset, taxonomic_dataset),
       taxonomic_status = dplyr::case_when(
         resolved ~ current$taxonomic_status,
@@ -110,6 +178,10 @@ update_taxa <- function(aligned_data, resources = NULL) {
       ),
       update_reason = dplyr::case_when(
         is.na(aligned_name) ~ NA_character_,
+        !is.na(collapsed) ~
+          "Aligned name leads to more than one accepted name in the same genus; collapsed to genus",
+        !is.na(alternatives) & !is.na(accepted_name) ~
+          "Aligned name leads to more than one accepted name; the most likely is suggested, alternatives in brackets",
         !is.na(accepted_name) & accepted_name == aligned_name ~
           "Aligned name is already the current accepted name",
         !is.na(accepted_name) ~ paste0("Updated to the current accepted name (", Sys.Date(), ")"),

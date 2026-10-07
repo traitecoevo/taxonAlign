@@ -162,6 +162,10 @@ align_taxa <- function(original_name,
   out <- dplyr::bind_rows(taxa$checked, taxa$tocheck) |>
     dplyr::mutate(known = !is.na(aligned_name))
 
+  # matching ran on subgenus-free names; put the matched record's name back as its reference writes it
+  # (with subgenus, and "Genus (Subgenus)" at subgenus rank) -- see restore_display_names()
+  out$aligned_name <- restore_display_names(out$aligned_name, out$taxon_ID, flatten_resources(resources))
+
   if (!full) {
     out <- out |>
       dplyr::select(

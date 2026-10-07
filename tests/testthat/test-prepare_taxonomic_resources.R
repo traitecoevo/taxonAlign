@@ -270,3 +270,60 @@ test_that("a reference table with only one taxonomic_status still gets a 0-row s
   out <- align_taxa("Boronia serrulata Sm.", resources)
   expect_equal(out$aligned_name, "Boronia serrulata")
 })
+
+test_that("an explicit higher-rank row written with a capitalised rank isn't duplicated by synthesis", {
+  # NSL exports write ranks capitalised ("Genus"); a genus listed only as a synonym must stay a synonym,
+  # not be overridden by a synthesised "accepted" row built from the `genus` column
+  ref <- tibble::tribble(
+    ~canonical_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Newgenus", "Genus", "accepted", "Newgenus", "g1", "g1",
+    "Oldgenus", "Genus", "synonym", "Oldgenus", "g2", "g1",
+    "Newgenus alba", "Species", "accepted", "Newgenus", "s1", "s1",
+    "Oldgenus alba", "Species", "synonym", "Oldgenus", "s2", "s1"
+  ) |>
+    dplyr::mutate(scientific_name = canonical_name, taxonomic_dataset = "TEST")
+  resources <- prepare_taxonomic_resources(ref)
+  expect_equal(sum(resources$genus$canonical_name == "Oldgenus"), 1)
+  expect_equal(resources$genus$taxonomic_status[resources$genus$canonical_name == "Oldgenus"], "synonym")
+  out <- create_taxonomic_update_lookup("Oldgenus sp.", resources)
+  expect_equal(out$accepted_name, "Newgenus")
+})
+
+test_that("a genus known only from synonym names becomes a synonym of the accepted genus its species lead to", {
+  ref <- tibble::tribble(
+    ~canonical_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Monocrepidus australis", "species", "accepted", "Monocrepidus", "a1", "a1",
+    "Monocrepidus borealis", "species", "accepted", "Monocrepidus", "a2", "a2",
+    "Otherus borealis", "species", "accepted", "Otherus", "a3", "a3",
+    "Conoderus australis", "species", "synonym", "Conoderus", "s1", "a1",
+    "Conoderus borealis", "species", "synonym", "Conoderus", "s2", "a2",
+    # a genus whose species lead to two accepted genera is a synonym of each
+    "Splitgenus australis", "species", "synonym", "Splitgenus", "s3", "a1",
+    "Splitgenus borealis", "species", "synonym", "Splitgenus", "s4", "a3",
+    # an orphan: no accepted name at the end of the link
+    "Lostgenus alba", "species", "unplaced", "Lostgenus", "s5", "s5"
+  ) |> dplyr::mutate(scientific_name = canonical_name, taxonomic_dataset = "T")
+  g <- prepare_taxonomic_resources(ref)$genus
+  target <- function(name) sort(g$canonical_name[match(g$accepted_name_usage_ID[g$canonical_name == name], g$taxon_ID)])
+
+  expect_equal(g$taxonomic_status[g$canonical_name == "Monocrepidus"], "accepted")
+  expect_equal(g$taxonomic_status[g$canonical_name == "Conoderus"], "synonym")
+  expect_equal(target("Conoderus"), "Monocrepidus")
+  expect_equal(target("Splitgenus"), c("Monocrepidus", "Otherus"))
+  expect_equal(g$taxonomic_status[g$canonical_name == "Lostgenus"], "unplaced")
+
+  out <- create_taxonomic_update_lookup("Conoderus sp. 1", prepare_taxonomic_resources(ref))
+  expect_equal(out$accepted_name, "Monocrepidus")
+})
+
+test_that("a rank word plus a placeholder code is dropped, but a phrase name starting 'Genus' is kept", {
+  ref <- tibble::tribble(
+    ~canonical_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Realgenus alba", "species", "accepted", "Realgenus", "a1", "a1",
+    "Genus A", "species", "synonym", NA, "s1", "a1",
+    "Genus sp. Yalgoo (J.M.Ward s.n. 11/7/1999)", "species", "synonym", NA, "s2", "a1"
+  ) |> dplyr::mutate(scientific_name = canonical_name, taxonomic_dataset = "T")
+  expect_warning(resources <- prepare_taxonomic_resources(ref), "placeholder code")
+  expect_false("Genus A" %in% resources$species$synonym$canonical_name)
+  expect_true("Genus sp. Yalgoo (J.M.Ward s.n. 11/7/1999)" %in% resources$species$synonym$canonical_name)
+})

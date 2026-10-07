@@ -26,7 +26,7 @@ test_that("create_taxonomic_update_lookup's default output has the documented sl
     names(out),
     c("original_name", "aligned_name", "accepted_name", "suggested_name", "genus", "family",
       "taxon_rank", "taxonomic_dataset", "taxonomic_status", "taxonomic_status_aligned",
-      "aligned_reason", "update_reason", "chars_changed", "identifier")
+      "aligned_reason", "update_reason", "alternative_possible_names", "chars_changed", "identifier")
   )
 })
 

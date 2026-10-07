@@ -288,3 +288,41 @@ ensure_prepared_resources <- function(resources) {
   validate_resources_shape(resources)
   resources
 }
+
+# Removes a bracketed subgenus from a species-level name: "Pardalotus (Pardalotinus) striatus" ->
+# "Pardalotus striatus". Only the zoological "Genus (Subgenus) epithet..." shape is touched -- a
+# bracket directly after the genus, followed by at least one more word (it may hold more than one
+# subgenus, "Nassa (Alectryon, Aciculina) macrocephalus") -- so e.g. "Agaricia papillosa (pars)" or
+# "Calodema (regale species group)" are left as they are.
+#' @noRd
+strip_subgenus_from_name <- function(x) {
+  stringr::str_replace(x, "^(\\S+) \\([^()]+\\) (\\S.*)$", "\\1 \\2")
+}
+
+# Flattens every rank/status sublist of a prepared `resources` list into one table keyed by
+# `taxon_ID`, species first then `names(resources)`'s own most-specific-first order (`subgenus_v2`, a
+# derived duplicate of `subgenus`, excluded). Shared by update_taxa() and restore_display_names().
+#' @noRd
+flatten_resources <- function(resources) {
+  dplyr::bind_rows(c(resources$species, resources[setdiff(names(resources), c("species", "subgenus_v2"))]))
+}
+
+# Puts each matched record's `display_name` (the name as its reference writes it, incl. any subgenus --
+# see prepare_taxonomic_resources()) back into an output name built from its matching form
+# (`canonical_name`). Matching itself always works on the subgenus-free form; this runs afterwards.
+# Replaces `canonical_name` only where it is the whole output name or its leading part (e.g.
+# "Geobasileus sp." -> "Acanthiza (Geobasileus) sp."), and never where the display form is already
+# there (e.g. "Leioproctus (Leioproctus) sp." built by the bracketed-subgenus match blocks). A no-op
+# for `resources` prepared before `display_name` existed.
+#' @noRd
+restore_display_names <- function(name, taxon_ID, all_taxa) {
+  if (!"display_name" %in% names(all_taxa)) return(name)
+  i <- match(taxon_ID, all_taxa$taxon_ID)
+  canonical <- all_taxa$canonical_name[i]
+  display <- all_taxa$display_name[i]
+  swap <- !is.na(name) & !is.na(display) & display != canonical &
+    (name == canonical | startsWith(name, paste0(canonical, " "))) &
+    !startsWith(name, display)
+  name[swap] <- paste0(display[swap], substring(name[swap], nchar(canonical[swap]) + 1))
+  name
+}

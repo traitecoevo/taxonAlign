@@ -62,7 +62,8 @@ test_that("align_taxa matches the plain 'Subgenus sp.' convention", {
   out <- align_taxa("Valvatae sp.", resources)
 
   expect_equal(out$taxon_rank, "subgenus")
-  expect_true(grepl("^Valvatae sp\\.", out$aligned_name))
+  # subgenus-rank output is always written "Genus (Subgenus)", whichever way the query wrote it
+  expect_true(grepl("^Boronia \\(Valvatae\\) sp\\.", out$aligned_name))
 })
 
 test_that("align_taxa fuzzy-matches a slightly misspelled canonical name", {
@@ -205,4 +206,17 @@ test_that("progress = TRUE prints a progress bar and doesn't change the result (
   expect_output(out_progress <- align_taxa(names, resources, progress = TRUE), "%")
 
   expect_equal(out_quiet, out_progress)
+})
+
+test_that("a plain 'Genus sp.' matches its genus exactly, not a similar broader-rank name", {
+  ref <- tibble::tribble(
+    ~canonical_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Limnophora", "genus", "accepted", "Limnophora", "g1", "g1",
+    "Limnophora alba", "species", "accepted", "Limnophora", "s1", "s1",
+    "Lithophora", "infraorder", "accepted", NA, "io1", "io1"
+  ) |> dplyr::mutate(scientific_name = canonical_name, taxonomic_dataset = "T")
+  out <- align_taxa("Limnophora sp.", prepare_taxonomic_resources(ref))
+  expect_equal(out$taxon_rank, "genus")
+  expect_equal(out$aligned_name, "Limnophora sp.")
+  expect_match(out$alignment_code, "match_02b")
 })

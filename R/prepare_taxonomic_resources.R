@@ -57,13 +57,26 @@ taxonAlign_non_hierarchy_cols <- c("scientific_name_authorship")
 # known term (via `factor()`'s NA-for-unmatched-level behaviour, which `dplyr::arrange()` places last
 # by default) rather than being dropped or erroring -- extend this vector as further status
 # vocabularies turn up, rather than guessing at their rank.
+# AFD's own vocabulary (both its CSV and NSL exports), added once those were loaded: "objective synonym"
+# (= homotypic), "primary synonym" (the original combination -- a nomenclatural link, placed with
+# "basionym"), "synonym" (AFD's general label, placed with the other subjective synonyms), "Generic
+# combination" (another combination of the same species name) and "replacement name"; and its
+# non-synonymy statuses, placed with "excluded". Without these, every AFD status sorted *after*
+# "included" -- so e.g. an NSL names-file "included" record for "Percalates colonorum" (a spelling
+# variant of its authorship, hence a separate name record) beat the taxon file's real
+# "Generic combination" record resolving it to "Macquaria colonorum".
 taxonAlign_taxonomic_status_priority <- c(
   "accepted",
   "taxonomic synonym",
   "homotypic synonym",
+  "objective synonym",
   "basionym",
+  "primary synonym",
   "heterotypic synonym",
+  "synonym",
   "nomenclatural synonym",
+  "Generic combination",
+  "replacement name",
   "isonym",
   "orthographic variant",
   "common name",
@@ -72,10 +85,15 @@ taxonAlign_taxonomic_status_priority <- c(
   "doubtful pro parte taxonomic synonym",
   "pro parte nomenclatural synonym",
   "pro parte taxonomic synonym",
+  "pro parte synonym",
   "pro parte misapplied",
   "misapplied",
   "unplaced",
   "excluded",
+  "excluded name",
+  "excluded other",
+  "vagrant species",
+  "intercepted",
   "doubtful misapplied",
   "doubtful pro parte misapplied",
   "included"
@@ -350,12 +368,18 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # for other ranks too (e.g. "Family"/"Order"/"Tribe"/"Subfamily").
   n_before <- nrow(taxonomic_resources)
   taxonomic_resources <- taxonomic_resources |>
-    dplyr::filter(tolower(canonical_name) != tolower(taxon_rank))
+    dplyr::filter(tolower(canonical_name) != tolower(taxon_rank)) |>
+    # ... and a rank word followed only by a short placeholder code ("Genus A", "Genus 1", recorded as a
+    # name in the AFD's NSL format), which matched every "Genus 1 sp.01 Corinnidae"-style morphospecies
+    # code. Deliberately this narrow: APC's informal phrase names ("Genus sp. Yalgoo (J.M.Ward s.n.
+    # 11/7/1999)") also start with "Genus" but are real, exactly matchable names
+    dplyr::filter(!(tolower(extract_genus(canonical_name)) %in% c("species", taxonAlign_taxon_rank_specificity) &
+      grepl("^\\S+\\s+[A-Z0-9]{1,3}$", canonical_name)))
   n_dropped <- n_before - nrow(taxonomic_resources)
   if (n_dropped > 0) {
     warning(
       n_dropped, " row(s) in `taxonomic_resources` have a `canonical_name` that's just the bare name ",
-      "of their own rank (e.g. canonical_name = \"Genus\" at genus rank) and were dropped -- these are ",
+      "of their own rank, or a rank word plus a placeholder code (e.g. \"Genus\", \"Genus A\"), and were dropped -- these are ",
       "a real GBIF placeholder-naming artifact for undescribed taxa, and could never be usefully ",
       "matched against anyway.",
       call. = FALSE
@@ -385,28 +409,78 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
 
   synthesised_rows <- purrr::map(implied_rank_cols, function(col) {
     values <- taxonomic_resources[[col]]
-    already_present <- taxonomic_resources$canonical_name[taxonomic_resources$taxon_rank == col]
+    # rank compared in standardised form -- taxon_rank isn't standardised until further below, and
+    # e.g. the NSL exports write "Genus" -- otherwise every explicit row would be missed and a
+    # duplicate "accepted" row synthesised for it, overriding an explicit synonym-genus row
+    already_present <- taxonomic_resources$canonical_name[
+      APCalign::standardise_taxon_rank(taxonomic_resources$taxon_rank) == col
+    ]
     to_add <- setdiff(unique(values[!is.na(values) & values != ""]), already_present)
+    # never a bare rank word ("Genus", left over as the genus value of a dropped "Genus A" placeholder)
+    to_add <- to_add[!tolower(to_add) %in% c("species", taxonAlign_taxon_rank_specificity)]
     if (length(to_add) == 0) return(NULL)
 
     # attribute each synthesised row to whichever dataset first mentions that value -- consistent with
     # the rest of the package's "first-hit wins" priority convention when the same name could otherwise
     # be attributed to more than one source
-    dataset <- taxonomic_resources$taxonomic_dataset[match(to_add, values)]
+    dataset_of <- function(v) taxonomic_resources$taxonomic_dataset[match(v, values)]
+    row_id <- function(v, suffix = "") {
+      if (length(v) == 0) return(character(0))
+      paste0(paste(dataset_of(v), col, v, sep = "_"), suffix)
+    }
 
-    dplyr::tibble(
-      canonical_name = to_add,
-      scientific_name = to_add,
-      taxon_rank = col,
-      taxonomic_status = "accepted",
-      taxonomic_dataset = dataset,
-      genus = NA_character_,
+    # A value seen on an accepted row is an accepted taxon. A value seen only on synonym rows (e.g. the
+    # genus of a synonym -- "Conoderus" from "Conoderus australis", in the AFD format, which has no
+    # genus-level synonymy of its own) is a synonym of whichever accepted taxa those synonyms lead to:
+    # "Conoderus australis" -> accepted "Monocrepidus australis", so genus "Conoderus" -> genus
+    # "Monocrepidus" (one synonym row per accepted genus, if its species lead to more than one). A
+    # value with no such link at all is an orphan, "unplaced".
+    on_accepted <- unique(values[taxonomic_resources$taxonomic_status %in% "accepted"])
+    accepted_new <- to_add[to_add %in% on_accepted]
+    synonym_new <- setdiff(to_add, accepted_new)
+
+    accepted_rows <- dplyr::tibble(
+      canonical_name = accepted_new, scientific_name = accepted_new, taxon_rank = col,
+      taxonomic_status = "accepted", taxonomic_dataset = dataset_of(accepted_new), genus = NA_character_,
       # no natural taxon_ID exists for a rank synthesised this way -- a placeholder combining the
       # dataset, rank and name keeps it unique across both ranks (a nominotypical genus/subgenus
       # sharing a name) and datasets (two sources both having, say, a "Formicidae" family row)
-      taxon_ID = paste(dataset, col, to_add, sep = "_"),
-      accepted_name_usage_ID = paste(dataset, col, to_add, sep = "_")
+      taxon_ID = row_id(accepted_new), accepted_name_usage_ID = row_id(accepted_new)
     )
+    if (length(synonym_new) == 0) return(accepted_rows)
+
+    # every accepted taxon at this rank, explicit or synthesised just above, by name
+    rank_std <- APCalign::standardise_taxon_rank(taxonomic_resources$taxon_rank)
+    explicit <- taxonomic_resources[rank_std %in% col & taxonomic_resources$taxonomic_status %in% "accepted", ]
+    accepted_id <- c(
+      stats::setNames(accepted_rows$taxon_ID, accepted_rows$canonical_name),
+      stats::setNames(explicit$taxon_ID, explicit$canonical_name)
+    )
+    src <- which(values %in% synonym_new)
+    tgt <- match(taxonomic_resources$accepted_name_usage_ID[src], taxonomic_resources$taxon_ID)
+    links <- dplyr::tibble(
+      value = values[src],
+      target = values[tgt],
+      target_ok = taxonomic_resources$taxonomic_status[tgt] %in% "accepted"
+    ) |>
+      dplyr::filter(target_ok & !is.na(target) & target != value) |>
+      dplyr::distinct(value, target) |>
+      dplyr::mutate(target_ID = unname(accepted_id[target])) |>
+      dplyr::filter(!is.na(target_ID))
+
+    synonym_rows <- dplyr::tibble(
+      canonical_name = links$value, scientific_name = links$value, taxon_rank = rep(col, nrow(links)),
+      taxonomic_status = rep("synonym", nrow(links)), taxonomic_dataset = dataset_of(links$value),
+      genus = NA_character_,
+      taxon_ID = row_id(links$value, paste0("_syn_", links$target)), accepted_name_usage_ID = links$target_ID
+    )
+    orphans <- setdiff(synonym_new, links$value)
+    unplaced_rows <- dplyr::tibble(
+      canonical_name = orphans, scientific_name = orphans, taxon_rank = rep(col, length(orphans)),
+      taxonomic_status = rep("unplaced", length(orphans)), taxonomic_dataset = dataset_of(orphans),
+      genus = NA_character_, taxon_ID = row_id(orphans), accepted_name_usage_ID = row_id(orphans)
+    )
+    dplyr::bind_rows(accepted_rows, synonym_rows, unplaced_rows)
   })
 
   taxonomic_resources <- dplyr::bind_rows(taxonomic_resources, synthesised_rows)
@@ -426,6 +500,23 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
       word_one = extract_genus(canonical_name),
       taxon_rank = APCalign::standardise_taxon_rank(taxon_rank),
       taxon_rank2 = ifelse(taxon_rank %in% c("subspecies", "species", "form", "variety"), "species", taxon_rank),
+      ## references differ in whether a species-level name carries its subgenus: AFD's CSV export
+      ## writes "Pardalotus (Pardalotinus) striatus", most other sources (incl. the NSL exports) write
+      ## "Pardalotus striatus". Every matching key below is built from the subgenus-free form, so a
+      ## raw name written either way matches a reference written either way (a bracketed *query* is
+      ## already handled by match_taxa()'s "ignore bracketed words" blocks). `display_name` keeps the
+      ## name as the reference wrote it, and is what align_taxa()/update_taxa() put back into their
+      ## output once matching is done (see restore_display_names()). Subgenus-rank rows hold the bare
+      ## subgenus name in `canonical_name` (what the plain subgenus-name matching needs); their
+      ## `display_name` is always the full "Genus (Subgenus)" form.
+      display_name = dplyr::case_when(
+        taxon_rank == "subgenus" & !is.na(genus) & !grepl("(", canonical_name, fixed = TRUE) ~
+          paste0(genus, " (", canonical_name, ")"),
+        TRUE ~ canonical_name
+      ),
+      canonical_name = ifelse(
+        taxon_rank2 == "species", strip_subgenus_from_name(canonical_name), canonical_name
+      ),
       ## strip_names removes punctuation and filler words associated with infraspecific taxa (subsp,
       ## var, f, ser)
       stripped_canonical = APCalign::strip_names(canonical_name),

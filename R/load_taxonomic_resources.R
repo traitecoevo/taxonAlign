@@ -109,10 +109,57 @@ load_AFD <- function(path = NULL, refresh_cache = FALSE, cache_dir = tools::R_us
   afd <- readr::read_csv(
     path, col_types = readr::cols(.default = readr::col_character()), progress = FALSE
   )
+  # AFD's 2026 CSV export renamed FULL_NAME to VALID_NAME (same content: the bare canonical name);
+  # every other column this function reads is unchanged between the two export versions, so the old
+  # and new files share one code path
+  if (!"FULL_NAME" %in% names(afd) && "VALID_NAME" %in% names(afd)) {
+    afd <- dplyr::rename(afd, FULL_NAME = VALID_NAME)
+  }
+  missing_cols <- setdiff(
+    c("FULL_NAME", "COMPLETE_NAME", "GENUS", "SUB_GENUS", "SUB_SPECIES", "AUTHOR", "SYNONYMS", "CONCEPT_GUID"),
+    names(afd)
+  )
+  if (length(missing_cols) > 0) {
+    stop(
+      "The AFD file at \"", path, "\" is missing expected column(s): ", paste(missing_cols, collapse = ", "),
+      ". Is it an AFD CSV export?", call. = FALSE
+    )
+  }
 
-  accepted <- afd_accepted_rows(afd)
+  # a handful of names in the 2026 export carry stray control characters/tabs (e.g. "evanialis\u0010",
+  # "Prosocratus \t carolinae") that would otherwise never exact-match a clean query
+  name_cols <- intersect(c("FULL_NAME", "COMPLETE_NAME", "GENUS", "SUB_GENUS", "SPECIES", "SUB_SPECIES", "SYNONYMS", "CHANGED_COMBINATION_NAMES"), names(afd))
+  afd[name_cols] <- lapply(afd[name_cols], function(x) stringr::str_squish(gsub("[[:cntrl:]]", " ", x)))
+  # quote marks flagging a doubtful generic placement ("'Ochlerotatus' quasirubithorax") are kept in
+  # COMPLETE_NAME but not in the name matched against -- the same treatment synonyms get
+  afd$FULL_NAME <- strip_name_quotes(afd$FULL_NAME)
+  # and trailing punctuation left on a name ("Wallagootacoris tasmaniensis,")
+  afd$FULL_NAME <- stringr::str_remove(afd$FULL_NAME, "[,;]+$")
+
+  # the 2026 export adds two kinds of "Unplaced" row, both flagged here:
+  #  - "Unplaced Synonym(s)" holders (SPECIES or SUB_SPECIES = "Unplaced", 79 rows): names placed within
+  #    a genus/species but not assigned to any taxon -- not a real taxon at all
+  #  - species whose genus is unplaced (GENUS = "Unplaced", VALID_NAME e.g. "Unplaced vetula", 303
+  #    rows): a real species, but "Unplaced vetula" isn't a name anyone would write or that could be
+  #    usefully matched, and there's no current binomial to update anything to
+  # Neither becomes an accepted row. Their SYNONYMS (for the second kind, almost always the original
+  # combination, e.g. "Tinea vetula Meyrick, 1893") are kept (see afd_synonym_rows()) as
+  # self-referential "unplaced" names, mirroring the NSL export's own "unplaced" status
+  afd$UNPLACED <- grepl("^Unplaced", afd$FULL_NAME) | afd$SPECIES %in% "Unplaced" | afd$SUB_SPECIES %in% "Unplaced"
+
+  accepted <- afd_accepted_rows(afd[!afd$UNPLACED, ])
   higher_ranks <- afd_higher_rank_rows(afd)
+  # SYNONYMS holds synonyms proper; CHANGED_COMBINATION_NAMES holds other combinations of the same
+  # species name (e.g. "Costalynia cardinalis" under accepted "Rissoina cardinalis"), not repeated in
+  # SYNONYMS -- ~15k entries in the 2026 export. Labelled "Generic combination", matching the AFD's own
+  # NSL export's status for the same records. A name listed in both columns for the same taxon is kept
+  # once, as a synonym.
   synonyms <- afd_synonym_rows(afd)
+  if ("CHANGED_COMBINATION_NAMES" %in% names(afd)) {
+    combinations <- afd_synonym_rows(afd, "CHANGED_COMBINATION_NAMES", "Generic combination", "_comb")
+    synonyms <- dplyr::bind_rows(synonyms, combinations) |>
+      dplyr::distinct(canonical_name, accepted_name_usage_ID, .keep_all = TRUE)
+  }
 
   reshaped <- dplyr::bind_rows(accepted, higher_ranks, synonyms)
 
@@ -166,7 +213,10 @@ afd_higher_rank_rows <- function(afd) {
 
   plain_rank_rows <- purrr::imap(plain_ranks, function(rank_label, column) {
     values <- afd[[column]]
-    values <- values[!is.na(values) & values != ""]
+    # the 2026 export uses "Unplaced"/"Unplaced to Family"/"Incertae sedis" as placeholders in the
+    # hierarchy columns
+    # for a taxon not yet assigned at that rank -- not a real taxon name, so never a row of its own
+    values <- values[!is.na(values) & values != "" & !grepl("^(Unplaced|Incertae sedis)", values, ignore.case = TRUE)]
     # AFD's own export renders family-and-above ranks (family, superfamily, order, ..., phylum)
     # ALL CAPS ("BUPRESTIDAE") but subfamily-and-below (subfamily, tribe, subtribe) in normal title
     # case ("Agrilinae") -- inconsistent within the same file. Normalising every rank here to
@@ -183,7 +233,7 @@ afd_higher_rank_rows <- function(afd) {
   })
 
   genus_rows <- afd |>
-    dplyr::filter(!is.na(GENUS) & GENUS != "") |>
+    dplyr::filter(!is.na(GENUS) & GENUS != "" & !grepl("^Unplaced", GENUS)) |>
     dplyr::distinct(GENUS) |>
     dplyr::transmute(
       canonical_name = GENUS, scientific_name = GENUS, taxon_rank = "genus",
@@ -192,7 +242,7 @@ afd_higher_rank_rows <- function(afd) {
     )
 
   subgenus_rows <- afd |>
-    dplyr::filter(!is.na(SUB_GENUS) & SUB_GENUS != "") |>
+    dplyr::filter(!is.na(SUB_GENUS) & SUB_GENUS != "" & !grepl("^Unplaced", GENUS) & !grepl("^Unplaced", SUB_GENUS)) |>
     dplyr::distinct(GENUS, SUB_GENUS) |>
     dplyr::transmute(
       canonical_name = SUB_GENUS, scientific_name = SUB_GENUS, taxon_rank = "subgenus",
@@ -216,9 +266,10 @@ afd_higher_rank_rows <- function(afd) {
 # `accepted_name_usage_ID` is the accepted row's own CONCEPT_GUID, pointing forward to the current name
 # -- exactly what update_taxa() needs to resolve a matched synonym.
 #' @noRd
-afd_synonym_rows <- function(afd) {
+afd_synonym_rows <- function(afd, column = "SYNONYMS", status = "synonym", id_suffix = "_syn") {
   known_authors <- unique(afd$AUTHOR[!is.na(afd$AUTHOR) & afd$AUTHOR != ""])
 
+  afd$SYNONYMS <- afd[[column]]
   has_synonyms <- afd |> dplyr::filter(!is.na(SYNONYMS) & SYNONYMS != "")
   if (nrow(has_synonyms) == 0) {
     return(has_synonyms |>
@@ -231,30 +282,141 @@ afd_synonym_rows <- function(afd) {
 
   # one taxon's SYNONYMS field becomes a list of synonym strings; expand into one row per synonym via
   # base recycling (rep()/unlist()) rather than adding tidyr just for unnest()
-  split_synonyms <- stringr::str_split(has_synonyms$SYNONYMS, "; ")
+  split_synonyms <- lapply(stringr::str_split(has_synonyms$SYNONYMS, "; "), rejoin_afd_synonym_fragments)
   n_synonyms <- lengths(split_synonyms)
 
-  synonym_entries <- has_synonyms[rep(seq_len(nrow(has_synonyms)), n_synonyms), c("CONCEPT_GUID", "COMPLETE_NAME", "FULL_NAME")]
+  if (!"UNPLACED" %in% names(has_synonyms)) has_synonyms$UNPLACED <- FALSE
+  synonym_entries <- has_synonyms[rep(seq_len(nrow(has_synonyms)), n_synonyms), c("CONCEPT_GUID", "COMPLETE_NAME", "FULL_NAME", "UNPLACED")]
   synonym_entries$synonym <- stringr::str_trim(unlist(split_synonyms))
 
   synonym_entries <- synonym_entries |>
     dplyr::filter(synonym != "" & synonym != COMPLETE_NAME & synonym != FULL_NAME) |>
     dplyr::mutate(
       canonical_name = strip_afd_authorship(synonym, known_authors),
-      taxon_ID = paste0(CONCEPT_GUID, "_syn", dplyr::row_number())
-    )
+      taxon_ID = paste0(CONCEPT_GUID, id_suffix, dplyr::row_number())
+    ) |>
+    # a self-reference written with different authorship formatting than COMPLETE_NAME (or a
+    # same-name homonym), or just without the accepted name's subgenus ("Clivina tenuis" listed under
+    # "Clivina (Clivina) tenuis", ~3.3k in the 2026 export), would otherwise become a "synonym" of
+    # itself -- adds nothing a match on the accepted row doesn't already give
+    dplyr::filter(canonical_name != FULL_NAME & canonical_name != strip_subgenus_from_name(FULL_NAME)) |>
+    # an entry with no genus left once cleaned (e.g. "(Ciscadra) (G. Leraut, 2021)") isn't a name
+    dplyr::filter(grepl("^\\p{L}", canonical_name, perl = TRUE))
 
   synonym_entries |>
     dplyr::transmute(
       canonical_name = canonical_name,
       scientific_name = synonym,
-      taxon_rank = "species",
-      taxonomic_status = "synonym",
+      # rank from the name itself: three or more words (once any bracketed subgenus is set aside) is a
+      # subspecies. Labelling a trinomial synonym "species" made prepare_taxonomic_resources() give it
+      # a two-word binomial key, so e.g. the subspecies synonym "Pardalotus striatus kingi" claimed the
+      # binomial "Pardalotus striatus" and plain-binomial queries resolved to the subspecies.
+      taxon_rank = ifelse(
+        stringr::str_count(strip_subgenus_from_name(canonical_name), "\\S+") >= 3, "subspecies", "species"
+      ),
+      # a name held under an "Unplaced Synonym(s)" pseudo-row has no real taxon to resolve forward to,
+      # so it's self-referential, with its own status, rather than a "synonym" of the pseudo-row
+      # misapplied/part usages marked in the free text get their own status (see afd_usage_status())
+      taxonomic_status = ifelse(UNPLACED, "unplaced", afd_usage_status(synonym, status)),
       taxonomic_dataset = "AFD",
       genus = extract_genus(canonical_name),
       taxon_ID = taxon_ID,
-      accepted_name_usage_ID = CONCEPT_GUID
+      accepted_name_usage_ID = ifelse(UNPLACED, taxon_ID, CONCEPT_GUID)
     )
+}
+
+# Removes editorial annotations the AFD CSV writes into otherwise ordinary names in its SYNONYMS/
+# CHANGED_COMBINATION_NAMES free text, which its NSL export has already cleaned off the same names:
+# "[sic]"/"[sic!]" ("Iodis [sic] iosticta"), a leading "?"/"(?)" query mark ("? Goniada peruana"), a
+# whole name in square brackets ("[Spongia clathrus]"), a quoted manuscript author at the end
+# ("Conus ponderosa 'Beck'", 'Mytilus tortus "Dunker"') and stray quote marks ("Hypomecis” conspersa").
+#' @noRd
+clean_afd_name_annotations <- function(x) {
+  x <- stringr::str_remove_all(x, "<[^>]*>")
+  x <- stringr::str_remove_all(x, stringr::regex("\\s*[\\[(]sic!?[\\])]", ignore_case = TRUE))
+  x <- strip_afd_usage_markers(x)
+  # uncertainty marks anywhere: "? Goniada peruana", "Acanthoglossa? setigera", "Eristalis ?aenescens",
+  # "Megascolides(?) pygmaeus", "Rissoa (Ceratia ?) subtruncata", "Kimosina (? Kimosina) popularis"
+  x <- stringr::str_remove_all(x, "\\(\\s*\\?\\s*\\)")
+  x <- stringr::str_remove_all(x, "\\?")
+  x <- stringr::str_replace_all(x, "\\(\\s+", "(")
+  x <- stringr::str_replace_all(x, "\\s+\\)", ")")
+  x <- stringr::str_remove_all(x, "\\(\\)")
+  # a doubled closing bracket only where brackets don't balance ("Mangilia (Glyphostoma)) jousseaumei"),
+  # not a genuinely nested one ("Pyramidella (Chrysallida (section Styloptygma)) typica")
+  unbalanced <- stringr::str_count(x, "\\)") > stringr::str_count(x, "\\(")
+  x[unbalanced] <- stringr::str_replace_all(x[unbalanced], "\\)\\)", ")")
+  # authorship cut off inside square brackets ("Tinea lactella [Denis & Schiffermüller], 1775" arrives as
+  # "Tinea lactella [Denis"), then square brackets around part of a name, kept as the NSL format keeps
+  # them: "H[yla] jacksonii" -> "Hyla jacksonii", "[Spongia clathrus]" -> "Spongia clathrus"
+  x <- stringr::str_remove(x, "\\s+\\[\\p{Lu}[^\\]]*$")
+  x <- stringr::str_remove_all(x, "[\\[\\]]")
+  # authorship with the year outside its bracket, "(Johnston & Simpson), 1939" -> "(Johnston & Simpson, 1939)"
+  x <- stringr::str_replace(x, "\\s+\\(([^()]*)\\),\\s*(\\d{4})\\s*$", " (\\1, \\2)")
+  x <- stringr::str_remove(x, "\\s+['\"\u2018\u2019\u201c\u201d][^'\"\u2018\u2019\u201c\u201d]+['\"\u2018\u2019\u201c\u201d]\\s*$")
+  x <- strip_name_quotes(x)
+  stringr::str_squish(x)
+}
+
+# Removes quote marks around a word or name ("'Ochlerotatus' notoscriptus", "\"Ziba\" flammea",
+# "'Callidium signiferum'") -- both AFD formats use them to flag a doubtful generic placement, which the
+# scientific name keeps -- but not an apostrophe inside a word ("Allotria d'arci", "Geoplana m'mahoni").
+#' @noRd
+strip_name_quotes <- function(x) {
+  x <- stringr::str_remove_all(x, "(?<!\\p{L})['\"\u2018\u2019\u201c\u201d]|['\"\u2018\u2019\u201c\u201d](?!\\p{L})")
+  stringr::str_squish(x)
+}
+
+# The AFD format marks misapplied and part usages inside its SYNONYMS free text -- "sensu Author",
+# "auct."/"auctt."/"auctorum", "non Author", "(part)"/"[part]"/"(part.)"/"[pars]" -- which the NSL format
+# drops, labelling the name plain "synonym". afd_usage_status() reads them (they matter for choosing
+# between a name's several accepted names); this removes them, and anything after "sensu"/"non", from
+# the name itself.
+#' @noRd
+strip_afd_usage_markers <- function(x) {
+  x <- stringr::str_remove_all(x, stringr::regex("\\s*[\\[(]\\s*(part|pars)\\.?\\s*[\\])]", ignore_case = TRUE))
+  x <- stringr::str_remove(x, "\\s+(sensu|non|nec)\\b.*$")
+  x <- stringr::str_remove_all(x, "\\s*\\[?\\b(auctt?\\.?|auctorum)\\]?(?=\\s|,|$)")
+  stringr::str_squish(stringr::str_remove(x, "\\s*,\\s*$"))
+}
+
+# taxonomic_status implied by the AFD format's usage markers (see strip_afd_usage_markers()), or `status`
+# unchanged when there are none.
+#' @noRd
+afd_usage_status <- function(x, status) {
+  misapplied <- grepl("\\s(sensu|non|nec)\\b|\\b(auctt?\\.?|auctorum)(?=[\\s,\\]]|$)", x, perl = TRUE)
+  part <- grepl("(?i)[\\[(]\\s*(part|pars)\\.?\\s*[\\])]", x, perl = TRUE)
+  dplyr::case_when(
+    misapplied & part ~ "pro parte misapplied",
+    misapplied ~ "misapplied",
+    part ~ "pro parte synonym",
+    TRUE ~ status
+  )
+}
+
+# Re-attaches an orphaned "<author>, <year>" fragment to the synonym entry before it. AFD writes a
+# subsequent usage (typically a misspelling) with a "; " between the name and its citation, e.g.
+# "Phalaena inquinalis; Swinhoe, 1892", so splitting the SYNONYMS field on "; " would otherwise turn
+# "Swinhoe, 1892" into a bogus synonym of its own. A fragment is recognised conservatively: no word
+# starting lowercase or with "(" (so no epithet), ends in a year, *and* the preceding entry has no
+# year of its own -- old names with capitalised epithets ("Ixodes Moreliae Koch, 1867") fail the last
+# test and are left alone. Seen ~176 times in the 2026 CSV export, 6 times in the older one.
+#' @noRd
+rejoin_afd_synonym_fragments <- function(entries) {
+  if (length(entries) < 2) return(entries)
+  # a leading lowercase name particle ("van Eecke, 1925") is part of the author, not an epithet
+  without_particle <- sub("^((van|von|de|da|di|du|der|den|del|della|la|le|ter)\\s+)+", "", entries)
+  # ... and so are connectors between authors ("Haines in Dowling & Haines, 1963", "Smith et al., 1990")
+  without_particle <- gsub("\\s(in|et|and|al\\.)(?=\\s)", " ", without_particle, perl = TRUE)
+  is_fragment <- !grepl("(^|\\s)[a-z(]", without_particle) & grepl("\\d{4}\\)?\\s*$", entries) &
+    c(FALSE, !grepl("\\d{4}", entries[-length(entries)]))
+  # a misapplication marker split off the same way ("Paracharactis vestianella; auctt., ;") belongs to
+  # the name before it
+  is_fragment <- is_fragment | (grepl("^(auctt?\\.?|auctorum|sensu|non|nec)\\b", entries) & seq_along(entries) > 1)
+  for (i in rev(which(is_fragment))) {
+    entries[i - 1] <- paste(entries[i - 1], entries[i])
+  }
+  entries[!is_fragment]
 }
 
 # Strips a trailing "<author>, <year>" (or "<author> <year>") from a free-text synonym string, e.g.
@@ -268,6 +430,7 @@ afd_synonym_rows <- function(afd) {
 # matches, the entry is returned unchanged (including its authorship) rather than guessed at further.
 #' @noRd
 strip_afd_authorship <- function(synonym_strings, known_authors) {
+  synonym_strings <- clean_afd_name_annotations(synonym_strings)
   known_authors <- unique(known_authors[!is.na(known_authors) & known_authors != ""])
   known_authors <- known_authors[order(-nchar(known_authors))]
   # sequential fixed=TRUE substitutions rather than a single regex character class -- simpler and
@@ -284,17 +447,66 @@ strip_afd_authorship <- function(synonym_strings, known_authors) {
   out <- synonym_strings
   if (length(known_authors) > 0) {
     author_pattern <- paste0("(", paste(escape_regex(known_authors), collapse = "|"), ")")
-    dictionary_pattern <- paste0("\\s+", author_pattern, ",?\\s*\\d{4}\\s*$")
+    # optionally wrapped in parentheses -- a changed-combination's original authorship, e.g.
+    # "Otobothrium curtum (Linton, 1909)", common in AFD's 2026 export
+    dictionary_pattern <- paste0("\\s+\\(?", author_pattern, ",?\\s*\\d{4}\\)?\\s*$")
     out <- stringr::str_remove(out, dictionary_pattern)
   }
 
   # generic fallback for anything the dictionary pass didn't change: one or more capitalised
-  # author-name tokens (optionally joined by "&"/"and"/"in"/","), then an optional comma and a year
-  generic_pattern <- "\\s+[A-Z][\\p{L}.\\-']*(?:,?\\s*(?:&|and|in)\\s+[A-Z][\\p{L}.\\-']*)*,?\\s*\\d{4}\\s*$"
+  # author-name tokens (optionally joined by "&"/"and"/"in"/",", optionally ending "et al."), then an
+  # optional comma and a year, the whole thing optionally parenthesised
+  generic_pattern <- "\\s+\\(?[A-Z][\\p{L}.\\-']*(?:,?\\s*(?:&|and|in)\\s+[A-Z][\\p{L}.\\-']*)*(?:\\s+et al\\.)?,?\\s*\\d{4}\\)?\\s*$"
   unchanged <- out == synonym_strings
   out[unchanged] <- stringr::str_remove(out[unchanged], generic_pattern)
 
-  stringr::str_trim(out)
+  tidy_afd_authorship_debris(stringr::str_trim(out))
+}
+
+# Cleans up authorship fragments strip_afd_authorship()'s dictionary pass leaves behind when only the
+# *last* author of a multi-author/particle-prefixed citation is in the AUTHOR dictionary -- e.g.
+# "Gymnothorax griffini Whitley & Hutchins, 1988" -> "Gymnothorax griffini Whitley &", or
+# "Platydemus manokwari de Beauchamp, 1962" -> "Platydemus manokwari de". Found in ~2k of ~103k
+# synonyms in AFD's 2026 CSV export. Three conservative steps:
+#  1. truncate at the first capitalised token following a lowercase one -- after the first (lowercase)
+#     epithet, a zoological name only ever continues with lowercase epithets, "(Subgenus)" brackets or
+#     lowercase rank markers, never a capitalised word; old names with a capitalised *second* word
+#     ("Ixodes Moreliae") have no preceding lowercase token, so are left alone
+#  2. strip a residual trailing (optionally bracketed) year plus the token before it (a lowercase-typed
+#     author, e.g. "Iphiaulax morleyi froggatt, 1916")
+#  3. strip trailing connectors/name particles ("&", "in", "de", "van der", "et al.", ...) and commas
+#' @noRd
+tidy_afd_authorship_debris <- function(x) {
+  # each step can expose debris for an earlier one (e.g. removing "Madhavi, Narasimhulu &" leaves
+  # "(Bilqees, 1971)" trailing), so repeat until nothing changes
+  repeat {
+    tidied <- tidy_afd_authorship_debris_once(x)
+    if (identical(tidied, x)) return(x)
+    x <- tidied
+  }
+}
+
+#' @noRd
+tidy_afd_authorship_debris_once <- function(x) {
+  # malformed parenthesised authorship left at the end of a name of two or more words: empty
+  # ("Coccus citri (, )"), year missing ("(Milne Edwards, )"), reversed ("(1876, Bergh)"), doubled
+  # closing bracket ("(Turner, 1908))"), bracketed year ("(Guenée, [1858])") -- any trailing "(...)"
+  # holding a comma, digit or capital letter, or nothing at all -- and authorship cut off before its
+  # closing bracket ("Anatoma turbinata (Adams", "Chlamys challengeri (E.A")
+  two_words <- "^(\\S+\\s+\\S+.*?)"
+  x <- stringr::str_replace(x, paste0(two_words, "\\s*\\((?:[^()]*[,\\d\\p{Lu}][^()]*|\\s*)\\)+\\s*$"), "\\1")
+  x <- stringr::str_replace(x, paste0(two_words, "\\s+\\([^()]*$"), "\\1")
+  # (an author may also start "d'"/"l'", "Myllita deshayesi d'Orbigny", or follow a numbered informal
+  # name, "Phyllodistomum sp. 2 Cutmore, Miller, ...")
+  x <- stringr::str_remove(x, "(?<=\\s[a-z0-9][^\\s]{0,100})\\s+(?:\\p{Lu}|[dl]['’]\\p{Lu}).*$")
+  x <- stringr::str_remove(x, "(\\s+[^\\s(]+,?)?\\s*\\[?\\d{4}\\]?,?\\s*$")
+  particles <- "(&|and|in|e|et|et al\\.?|y|de|da|di|du|des|del|della|van|von|der|den|la|le|ter|of)"
+  repeat {
+    tidied <- stringr::str_remove(x, paste0("(\\s+", particles, "|\\s*[,&])\\s*$"))
+    if (identical(tidied, x)) break
+    x <- tidied
+  }
+  stringr::str_trim(x)
 }
 
 # Thin wrapper around APCalign::load_taxonomic_resources() -- flattens its several accepted/synonym/

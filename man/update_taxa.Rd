@@ -4,7 +4,11 @@
 \alias{update_taxa}
 \title{Resolve aligned names forward to their current accepted name}
 \usage{
-update_taxa(aligned_data, resources = NULL)
+update_taxa(
+  aligned_data,
+  resources = NULL,
+  taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon")
+)
 }
 \arguments{
 \item{aligned_data}{A tibble in the shape \code{\link[=align_taxa]{align_taxa()}} returns -- in particular, it must have
@@ -16,6 +20,10 @@ update_taxa(aligned_data, resources = NULL)
 \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} (the same one passed to \code{align_taxa()}). A plain (already
 fully-formatted) taxonomic reference tibble is also accepted directly -- see \code{align_taxa()}'s
 \code{resources} documentation.}
+
+\item{taxonomic_splits}{How to report a name that leads to more than one accepted name:
+\code{"most_likely_species"} (the default) suggests one and lists the others in brackets;
+\code{"collapse_to_higher_taxon"} collapses it to genus when all candidates share one. See Details.}
 }
 \value{
 \code{aligned_data} with \code{taxon_rank}/\code{genus}/\code{family}/\code{taxonomic_dataset} refreshed to whatever
@@ -23,7 +31,9 @@ the current record has (a synonym's may be outdated), the pre-update \code{taxon
 \code{taxonomic_status_aligned}, and new columns \code{accepted_name} (the current accepted name, when the
 match resolves to one, otherwise \code{NA}), \code{suggested_name} (\code{accepted_name} if available, otherwise
 falls back to \code{aligned_name}), \code{taxonomic_status} (the \emph{current} record's status) and
-\code{update_reason} (a short explanation, mirroring \code{aligned_reason}'s style).
+\code{update_reason} (a short explanation, mirroring \code{aligned_reason}'s style), and
+\code{alternative_possible_names} (the other candidates for a name that leads to more than one accepted
+name, otherwise \code{NA}).
 }
 \description{
 Takes the output of \code{\link[=align_taxa]{align_taxa()}} and, for every row that matched something in \code{resources}
@@ -40,14 +50,21 @@ accepted resolves to itself (its own \code{accepted_name_usage_ID} is self-refer
 \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}'s requirements); a synonym resolves to whatever its
 \code{accepted_name_usage_ID} points to.
 
-Two things this deliberately does \strong{not} do, relative to APCalign's \code{update_taxonomy()}:
+\strong{A synonym that leads to more than one accepted taxon} (a species or infraspecific name listed as
+a synonym of two or more different accepted taxa -- a split, or a pro parte synonym) follows
+APCalign's \code{taxonomic_splits} convention. One accepted name is chosen -- by taxonomic status
+precedence, then (for a tie) an accepted name sharing the name's epithet, then one of the same rank,
+then one published no later than the name itself, then the oldest, then the order \code{resources} lists
+them in -- and the others are listed with their status, both in \code{suggested_name}
+(\code{"X [alternative possible names: Y (synonym) | Z (misapplied)]"}) and in a separate
+\code{alternative_possible_names} column. With \code{taxonomic_splits = "collapse_to_higher_taxon"}, a name
+whose candidates all share one genus is collapsed to that genus instead
+(\code{"Genus sp. [collapsed names: ...]"}, \code{taxon_rank = "genus"}, \code{accepted_name = NA}). Only a match
+to a synonym record is treated this way: a match to an accepted name, or to a name given with its
+authorship (which identifies one record, e.g. one of two homonyms), is not.
+
+One thing this deliberately does \strong{not} do, relative to APCalign's \code{update_taxonomy()}:
 \itemize{
-\item \strong{No splits handling.} APCalign's \code{taxonomic_splits} argument disambiguates a synonym that has
-since been split into several modern species (\code{"most_likely_species"} picks one;
-\code{"collapse_to_higher_taxon"} collapses to genus). That's specific to APC's documented split
-history, which an arbitrary user-supplied reference can't be expected to carry -- if
-\code{accepted_name_usage_ID} doesn't resolve to exactly one current record, \code{accepted_name}/
-\code{suggested_name} are simply left as described above, with no attempt to pick among alternatives.
 \item \strong{No genus-substring surgery.} APCalign's \code{update_taxonomy_APC_genus()} reconstructs a species'
 suggested name by splicing just the updated genus portion into the aligned name, when only the
 genus (not the species) has changed. That's a nice refinement but doesn't obviously generalize

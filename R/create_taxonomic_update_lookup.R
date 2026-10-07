@@ -9,6 +9,8 @@
 #'  also accepted directly -- see `align_taxa()`'s `resources` documentation.
 #' @param identifier,fuzzy_abs_dist,fuzzy_rel_dist,fuzzy_matches,imprecise_fuzzy_matches,taxon_ranks_to_check,hybrids,intergrades_affinis,consider_english_name_endings,include_bracketed_info,progress
 #'  Forwarded to [align_taxa()]; see its documentation.
+#' @param taxonomic_splits Passed to [update_taxa()]: how to report a name that leads to more than one
+#'  accepted name (`"most_likely_species"`, the default, or `"collapse_to_higher_taxon"`).
 #' @param full Logical; if `TRUE`, return every intermediate column [align_taxa()]/[update_taxa()]
 #'  compute. If `FALSE` (the default), return just the key output columns: `original_name`,
 #'  `aligned_name`, `accepted_name`, `suggested_name`, `genus`, `family`, `taxon_rank`,
@@ -34,7 +36,9 @@ create_taxonomic_update_lookup <- function(original_name,
                                             consider_english_name_endings = FALSE,
                                             include_bracketed_info = FALSE,
                                             progress = FALSE,
+                                            taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon"),
                                             full = FALSE) {
+  taxonomic_splits <- match.arg(taxonomic_splits)
 
   if (is.null(resources)) {
     stop(
@@ -65,14 +69,14 @@ create_taxonomic_update_lookup <- function(original_name,
     full = TRUE
   )
 
-  updated_data <- update_taxa(aligned_data, resources)
+  updated_data <- update_taxa(aligned_data, resources, taxonomic_splits = taxonomic_splits)
 
   if (!full) {
     updated_data <- updated_data |>
       dplyr::select(
         original_name, aligned_name, accepted_name, suggested_name, genus, family, taxon_rank,
         taxonomic_dataset, taxonomic_status, taxonomic_status_aligned, aligned_reason, update_reason,
-        chars_changed, identifier
+        alternative_possible_names, chars_changed, identifier
       )
   }
 

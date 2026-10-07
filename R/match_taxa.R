@@ -579,7 +579,7 @@ match_taxa <- function(
   # handle via the zoological/AFD-style "Genus (Subgenus)" bracket. Exactly three whitespace-delimited
   # tokens, middle one "subg."/"subg" (case-insensitive), nothing beyond the subgenus name itself.
   # Built around the *same* `resources$subgenus_v2$genus_and_subgenus` lookup match_02y already uses --
-  # `load_Australian_NSL()` stores a *bare* subgenus name in `canonical_name` (via
+  # `load_NSL_resources()` stores a *bare* subgenus name in `canonical_name` (via
   # `strip_NSL_subgenus_marker()`) precisely so a "Genus subg. Name" resource row slots into that
   # existing bracket-equivalence machinery unchanged. Without this block, such a query falls through to
   # the generic higher-rank loop (match_12b), which only ever compares `word_one_stripped` (just
@@ -883,7 +883,11 @@ match_taxa <- function(
     i <-
       stringr::str_detect(taxa$tocheck$cleaned_name, "[:space:]sp\\.$") &
       taxa$tocheck$word_one_stripped %in% resources[[ranks]]$canonical_name &
-      stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2
+      # one space ("Limnophora sp.", APCalign's own condition) or two ("Genus 1 sp."): the original
+      # prototype allowed only two -- copied from the bracketed-subgenus block above -- so every plain
+      # "Genus sp." skipped exact matching and went to fuzzy matching, where a broader rank checked
+      # first could win ("Limnophora sp." -> the infraorder "Lithophora")
+      stringr::str_count(taxa$tocheck$cleaned_name, " ") %in% c(1, 2)
 
     ii <-
       match(

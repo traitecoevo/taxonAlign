@@ -1,0 +1,1651 @@
+---
+title: "Processing the Australian Faunal Directory exports in taxonAlign"
+subtitle: "A report for the AFD curators"
+date: 2026-10-07
+format:
+  html:
+    toc: true
+    toc-depth: 3
+execute:
+  eval: false
+  warning: false
+---
+
+## Purpose
+
+[taxonAlign](https://github.com/traitecoevo/taxonAlign) is an R package that aligns lists of raw
+taxon names (for example from a trait database or field survey) to one or more taxonomic reference
+lists, and then updates outdated names to their currently accepted names. The Australian Faunal
+Directory (AFD) is the core reference for Australian animals.
+
+We received the AFD in two formats and wrote a separate loading function for each:
+
+| Export | Received | File(s) | taxonAlign function |
+|---|---|---|---|
+| AFD format | 7 October 2026 | `Anamalia_all_ranks.csv` (130,503 rows) | `load_taxonomic_resources("AFD", path = ...)` |
+| NSL format | 29 September 2026 | `AFD_export_taxon_20260929.txt` (312,601 rows), `AFD_export_name_20260929.txt` (314,913 rows) | `load_NSL_resources("animals", path = ...)` |
+
+The two loaders were written independently, each applying its own rules to its own format. That lets
+us compare the results as an independent check that information was carried correctly from one
+format to the other (see [Cross-check](#cross-check)).
+
+This document records:
+
+- exactly what each loader does to the data;
+- every data issue we found and how we handle it;
+- the differences between the two exports;
+- [possible errors in the input data](#possible-errors);
+- the results of [aligning a real name list](#real-name-list) against each format;
+- a short list of [items for curator attention](#for-curator-attention).
+
+All counts below come from running the loaders on the files listed above.
+
+### What we do *not* do
+
+The loaders only reshape the data. They do not decide which taxa to include: no taxa are removed for
+being marine, introduced, extralimital and so on. The only rows left out are placeholders that don't
+represent a nameable taxon (see [Unplaced rows](#unplaced-rows)).
+
+## The target format
+
+Both loaders produce the same flat table, one row per name, with these columns:
+
+| Column | Meaning |
+|---|---|
+| `canonical_name` | The name without authorship (what names are matched against) |
+| `scientific_name` | The name with authorship |
+| `taxon_rank` | Rank of the name |
+| `taxonomic_status` | `accepted`, or the kind of synonym/other status |
+| `taxonomic_dataset` | Source label |
+| `genus` | The genus the name itself sits in (`NA` above genus rank) |
+| `taxon_ID` | Identifier of this name record |
+| `accepted_name_usage_ID` | `taxon_ID` of the accepted name this record resolves to (itself, if accepted) |
+
+The `accepted_name_usage_ID` column drives name updating. When a raw name matches a synonym,
+taxonAlign follows this link to report the accepted name. So the most important question for each
+loader is whether that link really means "this name is a synonym of that name".
+
+## The AFD format
+
+### How it is reshaped
+
+The AFD-format file has one row per accepted species or subspecies (126,740 species and 3,763 subspecies rows).
+The higher classification sits in its own columns, and every synonym is packed into a single
+semicolon-separated free-text field (`SYNONYMS`). The loader builds three kinds of rows from this:
+
+1. **Accepted species/subspecies.** One per row: `canonical_name` from `VALID_NAME`, `scientific_name`
+   from `COMPLETE_NAME`, and `CONCEPT_GUID` as the identifier. Rank is "subspecies" when
+   `SUB_SPECIES` is filled, otherwise "species".
+2. **Higher ranks.** One row per distinct value in each classification column, from `PHYLUM` down to
+   `SUB_GENUS`. These ranks have no identifier in the AFD format, so we create one from the rank and the
+   name (e.g. `genus:Agrilus`). The rank prefix matters because, under the nominotypical-subgenus
+   convention, a genus and its subgenus routinely share a name. Family and higher ranks are exported in
+   capitals (`BUPRESTIDAE`) while subfamily and lower are not (`Agrilinae`), so all are converted to
+   sentence case.
+3. **Synonyms and other combinations.** Two free-text fields are read: `SYNONYMS` (labelled
+   "synonym") and `CHANGED_COMBINATION_NAMES` (other combinations of the same species name, e.g.
+   `Costalynia cardinalis` under *Rissoina cardinalis*; labelled "Generic combination", as in the NSL
+   format). A name listed in both fields for the same taxon is kept once. Each field is split on
+   `"; "`, editorial annotations and authorship are removed from each entry to give its
+   `canonical_name`, and each entry is linked to its row's `CONCEPT_GUID`. The free-text fields have
+   no separator between a name and its authorship. To find where authorship begins, we use the file's
+   own `AUTHOR` column as a dictionary of author strings, with a general fallback pattern for authors
+   not in that list. A synonym's `genus` is taken from the synonym itself, not from the accepted
+   name, since the two often differ. Its rank is taken from its number of words: three or more
+   (ignoring a subgenus) is a subspecies. Where an entry is marked as a misapplied or part usage
+   (`sensu`, `auct.`, `auctt.`, `auctorum`, `non`, `nec`, `(part)`, `[pars]`), the marker is removed
+   from the name and recorded as its status instead: "misapplied", "pro parte synonym" or
+   "pro parte misapplied". This status matters when a name leads to more than one accepted name (see
+   [Names that lead to more than one accepted name](#multiple-accepted-names)).
+
+Output: 285,062 rows (171,260 accepted at all ranks, 99,055 synonyms, 14,164 generic combinations,
+31 misapplied, 26 pro parte synonyms, 1 pro parte misapplied, 525 "unplaced" names).
+
+### Changes from the previous AFD-format file
+
+We compared this file with the previous AFD-format file we had been using (117,471 rows):
+
+- `FULL_NAME` has been renamed `VALID_NAME` with the same content; the loader accepts either.
+- `SUBSPECIES_COUNT_IN_SPECIES`, `LAST_MODIFIED`, `ECOLOGY_DESCRIPTIORS`, `IBRA_REGIONS`,
+  `IMCRA_REGIONS`, `AUS_STATES` and `DRAINAGE_BASIN_DISTRIBUTIONS` have been removed (none were
+  used). `LAST_UPDATED` has been added.
+- `CHANGED_COMBINATION` now uses `Yes`/`No` instead of `Y`.
+- `COMPLETE_NAME` changed from `"Aaaaba fossicollis, Kerremans 1903"` to the standard
+  `"Urastoma cyprinae (Graff, 1882)"` form, with changed-combination authorship in parentheses.
+- Coverage now includes Chordata. The file is still Animalia only, with no protists.
+- Despite the filename, there are still no separate rows for higher ranks.
+- **`CONCEPT_GUID` is not stable between exports.** Only about 20% of the previous export's GUIDs
+  appear in this one. We understand the AFD team is already aware of this. In practice we treat
+  `CONCEPT_GUID` as an identifier within a single export, and never store it as a permanent link to
+  a taxon concept across exports.
+
+### Data issues found, and how we handle them
+
+| Issue | Example | Extent | Handling |
+|---|---|---|---|
+| A taxon's own name repeated in its `SYNONYMS` field | `"Neppia magnibursalis Sluys & Kawakatsu, 2001"` listed as a synonym of itself | 70,795 of 175,438 synonym entries; another 1,207 differ only in how the authorship is written | Dropped |
+| Citation separated from its name by `"; "` | `"…; Phalaena inquinalis; Swinhoe, 1892; …"` | 176 entries in 146 taxa | Joined back to the preceding name (`"Phalaena inquinalis Swinhoe, 1892"`). Without this, `"Swinhoe, 1892"` would become a "synonym" of its own |
+| Multi-author or particle-prefixed authorship only partly in the `AUTHOR` list | `"Gymnothorax griffini Whitley & Hutchins, 1988"`, `"Platydemus manokwari de Beauchamp, 1962"` | 1,247 entries | Leftover fragments (`"Whitley &"`, `"de"`) removed |
+| Control characters or tabs inside names | `"Prosocratus \t carolinae"`, `"Brancuporus<U+0012> gottwaldi"` | 5 `VALID_NAME`s, 6 `COMPLETE_NAME`s, 10 `SYNONYMS` fields | Replaced with a single space |
+| Uncertainty marks | `"? Goniada peruana"`, `"Acanthoglossa? setigera"`, `"Eristalis ?aenescens"`, `"Megascolides(?) pygmaeus"`, `"Rissoa (Ceratia ?) subtruncata"` | 119 entries | Marks removed |
+| `[sic]` | `"Iodis [sic] iosticta"` | 118 entries | Removed |
+| Square brackets around part or all of a name | `"H[yla] jacksonii"`, `"Hyla [aurea] ulongensis"`, `"[Spongia clathrus]"` | 128 entries | Brackets removed, content kept (as the NSL format writes these names) |
+| HTML tags | `"Paraponyx <i></i> pudica"`, `"Litocorsa sp. <em>arafura</em>"` | 28 entries | Tags removed |
+| Quote marks around a genus or name | `"'Ochlerotatus' notoscriptus"`, `"\"Ziba\" flammea"` | 50 synonym entries and 23 `VALID_NAME`s | Removed from the name used for matching, kept in `scientific_name`. Both formats do this; apostrophes within names (`"Allotria d'arci"`) are kept |
+| Quoted manuscript authors | `"Conus ponderosa 'Beck'"` | a few | Removed |
+| Misapplication and part markers | `"Dendrodoris fumata auctt. non Rüppell & Leuckart, 0"`, `"Aulicus episcopalis sensu …"`, `"Chelonia depressa (part.)"`, `"Mopsea elegans [pars]"` | 11 `sensu`, 22 `auct.`/`auctt.`/`auctorum`, 7 `non`/`nec`, 30 part/pars; 9 of these markers are separated from their name by `"; "` (`"Paracharactis vestianella; auctt., ;"`) | Removed from the name and recorded as the status (see above) |
+| Malformed parenthesised authorship | `"Coccus citri (, )"`, `"Goniastrea australensis (Milne Edwards, )"`, `"Armina cygnea (1876, Bergh)"`, `"Trichobilharzia parocellata (Johnston & Simpson), 1939"`, `"Anatoma turbinata (Adams"` | 38 empty, 12 with the year missing, 33 with the year outside the bracket, plus a few reversed or unclosed | Removed |
+| Unbalanced brackets | `"Mangilia (Glyphostoma)) jousseaumei"`, `"Enoplometopus (Hoplometopus)) voigtmanni"` | 6 entries | Doubled closing bracket reduced to one |
+| Author name beginning with a lowercase particle or connector, separated from its name | `"Tetraphleps parva; van Eecke, 1925"`, `"Theretra cinerea; Haines in Dowling & Haines, 1963"` | a few | Joined back to the preceding name |
+| An entry with no genus | `"(Ciscadra) (G. Leraut, 2021)"` | 1 | Dropped |
+| Trailing comma on a valid name | `"Wallagootacoris tasmaniensis,"` | 1 | Removed (see [Possible errors](#possible-errors)) |
+| Placeholder rows for unassigned synonyms | `VALID_NAME = "Unplaced Synonym(s)"` | 79 rows (16 at species level, 63 at subspecies level) | See [Unplaced rows](#unplaced-rows) |
+| Species awaiting generic placement | `VALID_NAME = "Unplaced vetula"`, `GENUS = "Unplaced"` | 303 rows | See [Unplaced rows](#unplaced-rows) |
+| Placeholder value in a classification column | `FAMILY = "Unplaced to Family"` | 5 rows | Not turned into a family |
+
+#### Unplaced rows {#unplaced-rows}
+
+This export introduces two kinds of "Unplaced" row:
+
+- **`"Unplaced Synonym(s)"`** rows hold names placed within a genus or species but not assigned to
+  any taxon.
+- **Species whose genus is unplaced**, e.g. `"Unplaced vetula (Meyrick, 1893)"` with the synonym
+  `"Tinea vetula Meyrick, 1893"`.
+
+Neither becomes an accepted name in taxonAlign. `"Unplaced vetula"` is not a name anyone would write,
+and there is no current binomial to update an old name to. The names in their `SYNONYMS` fields
+(510 in total) are kept with `taxonomic_status = "unplaced"` and point to themselves rather than to a
+placeholder. A raw name like `"Tinea vetula"` is therefore still recognised as an AFD name, but is not
+"updated" to something else. This matches how the NSL format labels such names (`"unplaced"`).
+
+#### Columns not used
+
+- **`LITERATURE_NAMES`** (5,080 entries in 3,600 rows) records how a name has been used in the
+  literature: misspellings (`"Lissothrips taverni Mound & Tree, 2015 (misspelling)"`),
+  misidentifications (`"Hydrophis schistosa Daudin, 1803 (misidentification, Australian records based
+  on H. zweifeli …)"`), errors and informal names, as free text. It is not read yet: each entry needs
+  its explanatory note separated from the name before it could be used. This information is only in
+  the AFD format. About 90% of these names appear in the NSL format's name file, but only as names
+  with no link to a taxon, and no NSL taxon record is marked as misapplied.
+- **`COMMON_NAMES`** is not used for matching scientific names.
+
+#### Synonyms whose authorship we could not remove cleanly
+
+Three synonym entries keep part of their authorship because their formatting doesn't follow any
+regular pattern:
+
+- `"Culicoides alatus, 1956b Das Gupta & Ghosh, 1956"` (becomes `"Culicoides alatus, 1956b"`)
+- `"Asterolecanium 1924 charmoyi Green, 1924"` (becomes `"Asterolecanium 1924 charmoyi"`)
+- `"Gerloubia species 1: Lee, 1986"` (becomes `"Gerloubia species 1:"`)
+
+### How the subgenus is written
+
+`VALID_NAME` includes the subgenus when there is one, e.g. `"Pardalotus (Pardalotinus) striatus"`
+(11,183 of 130,121 accepted species and subspecies). The NSL format's `canonical_name` never includes
+it. Raw name lists may be written either way, so taxonAlign accommodates both conventions:
+
+- **Matching** uses each name without its subgenus, so `"Pardalotus striatus"` and
+  `"Pardalotus (Pardalotinus) striatus"` both match the accepted species, whichever export is used.
+- **Output names include the subgenus**: it is put back once matching is finished, so the matched and
+  accepted names are reported as `"Pardalotus (Pardalotinus) striatus"`.
+- **Subgenus-rank output** is always written `"Genus (Subgenus)"` (e.g. `"Acanthiza (Geobasileus)"`),
+  whether the raw name was written that way or as the subgenus alone.
+
+A related issue in the `SYNONYMS` field: 3,305 entries are the taxon's own name written without its
+subgenus (e.g. `"Clivina tenuis"` listed as a synonym of `"Clivina (Clivina) tenuis"`). These are
+dropped, like the other self-listed entries in the table above.
+
+## The NSL format
+
+### How it is reshaped
+
+The NSL format comes as two files with the same structure as the National Species List exports for
+algae, bryophytes, fungi and lichens. The same function loads all five groups. The animals export is
+pipe-delimited with snake_case column names, while the other groups are comma-delimited with camelCase
+names; the loader reads both.
+
+- **Taxon file.** One row per taxon record, with real synonym-to-accepted links
+  (`accepted_name_usage_id`). Columns are used directly: `canonical_name`, `scientific_name`,
+  `taxon_rank`, `taxonomic_status`, `dataset_name` (`"AFD"`), `taxon_id` and
+  `accepted_name_usage_id`.
+- **Name file.** One row per name, with no accepted-name links. Every name already in the taxon file
+  (matched on `scientific_name_id`) is dropped. The remaining 6,736 names (4,866 `"included"`,
+  1,870 `"unplaced"`) are added after the taxon rows, each pointing to itself. **The taxon file always
+  takes priority**; the name file can only add names, never resolve one.
+
+Output: 319,337 rows (312,601 from the taxon file plus 6,736 from the name file).
+
+### Interpretation choices {#interpretation-choices}
+
+These are the points where we had to interpret the NSL format. Please let us know if any of them are
+wrong.
+
+1. **Excluded, vagrant and intercepted taxa.** Records with `taxonomic_status` of
+   `"vagrant species"` (281), `"excluded other"` (146) or `"excluded name"` (18) have an
+   `accepted_name_usage_id` that points to their *parent* taxon, not to a synonym. For example, the
+   vagrant `Pernis ptilorhynchus` points to the family Accipitridae. Read literally as a synonymy
+   link, that would "update" a valid species name to a family name. We make these records point to
+   themselves and keep their status, so the name is recognised and reported as e.g.
+   "vagrant species" but not replaced. In the algae, fungi, lichen and bryophyte exports, "excluded"
+   records already point to themselves.
+2. **`generic_name` in the taxon file** holds the genus of the *accepted* name, not of the record's
+   own name. For example, the synonym `Hartmannella astronyxis` has `generic_name = "Acanthamoeba"`.
+   This applies to 110,053 synonym records. Since we need each name's own genus, we take it from the
+   first word of `canonical_name` instead. (In the name file, `generic_name` is the name's own genus
+   and is used directly.)
+3. **Subgenus names** (`"Acanthiza (Geobasileus)"`) are reduced to the bare subgenus name
+   (`"Geobasileus"`) with `genus = "Acanthiza"`, the form taxonAlign uses internally for subgenera.
+   In the other direction, the NSL format's species and subspecies names don't include their subgenus
+   (`"Pardalotus striatus"`), so we add it from the classification: the parent record of 10,274
+   accepted species is a subgenus. This gives the same full name as the AFD format
+   (`"Pardalotus (Pardalotinus) striatus"`). Synonym records have no parent record, so they are left as
+   written. This is only done for zoological (ICZN) names.
+4. **Informal ranks** (`"Higher Taxon"`, `"Cohort"`, `"Section"`, `"Generic Aggregate"`,
+   `"Species Aggregate"`) are kept as ranks in their own right. No genus is assigned to them.
+   `"Generic Aggregate"` names are written like `"Subtribe Clerina"`, whose first word is not a
+   genus.
+5. **Quote marks** around a genus or name (`"'Ochlerotatus' notoscriptus"`, used in both formats to
+   flag a doubtful generic placement) are removed from `canonical_name`, as in the AFD format, and
+   kept in `scientific_name`.
+6. **Misapplication markers left in a few canonical names** (`"Saragus auctt. nec"`,
+   `"Entomobrya clitellaria sensu"`) are read the same way as in the AFD format: removed from the
+   name, and a plain "synonym" status becomes "misapplied" or "pro parte synonym". Elsewhere the NSL
+   format has no misapplied status at all: of the 58 usages the AFD format marks as misapplied or part,
+   50 are plain "synonym" records in the NSL format.
+7. **Genus records pointing to their own nominotypical subgenus.** For 675 genera (e.g. *Acritus*,
+   *Acanthiza*, *Sericornis*), the taxon file has an accepted genus record and a second, genus-rank
+   record of the same name: "primary synonym" (544), "synonym" (129) or "replacement name" (2). That
+   record points to the genus's own nominotypical subgenus, e.g. genus *Acritus* → subgenus
+   *Acritus (Acritus)*. We take the accepted genus record as the genus and don't otherwise interpret
+   these, but we don't know what they are meant to record (see
+   [Items for curator attention](#for-curator-attention)).
+8. **Repeated names in the taxon file.** 4,420 taxon records share a `scientific_name_id` with
+   another record; usually the same name listed as a synonym under more than one taxon. All are kept.
+
+## Cross-check between the two exports {#cross-check}
+
+This comparison is a work in progress. Each round has turned up differences that came from how we
+read one of the formats rather than from the data itself; we fix those and re-run. The figures below
+are from the latest round (the fourth). We will keep iterating until every remaining difference is a
+genuine difference between the two lists.
+
+We compared every species- and subspecies-level name in the AFD format with every one in the NSL
+taxon file. For each name, we took the set of accepted names it leads to (itself, if it is accepted),
+ignoring how the subgenus is written. The two files are dated eight days apart (29 September and
+7 October), so a small number of differences may simply be recent edits.
+
+| | Names |
+|---|---|
+| Same accepted name in both formats | 236,197 |
+| Same *set* of accepted names in both (the name leads to more than one accepted name) | 1,812 |
+| Different accepted names (see [Possible errors](#different-accepted-names)) | 23 |
+| Only in the AFD format | 1,308 |
+| Only in the NSL taxon file | 2,658 |
+| **Total** | **241,998** |
+
+### Names only in one format
+
+**Only in the AFD format (1,308):**
+
+- **Temnocephalidae: all 90 species in 13 genera, plus their synonyms (119 names), are missing from
+  the NSL format.** The family itself is absent. Genera: *Achenella*, *Actinodactylella*,
+  *Craspedella*, *Decadidymus*, *Diceratocephala*, *Didymorchis*, *Gelasinella*, *Heptacraspedella*,
+  *Notodactylus*, *Temnohaswellia*, *Temnomonticellia*, *Temnosewellia*, *Zygopella*.
+- **Tortricidae: 213 of 615 species in 31 genera, plus their synonyms (493 names), are missing.** The
+  family is present, but none of these 31 genera are: *Acroceuthes*, *Acropolitis*, *Adoxophyes*,
+  *Aristocosma*, *Atelodora*, *Authomaema*, *Clarana*, *Coeloptera*, *Constrictana*, *Cosmoplaca*,
+  *Cryptoptila*, *Dichelopa*, *Epiphyas*, *Ericodesma*, *Euryochra*, *Glyphidoptera*, *Homona*,
+  *Isochorista*, *Isodemis*, *Isotenes*, *Merophyas*, *Neocalyptis*, *Phryctora*, *Procalyptis*,
+  *Rupicolana*, *Sobriana*, *Standishana*, *Tarachota*, *Technitis*, *Thrincophora*, *Xenothictis*.
+- **637 names that are in the NSL name file, but with no link to a taxon**: 483 that the AFD format
+  holds as "unplaced", 119 synonyms, 32 accepted species, 2 generic combinations, 1 misapplied.
+- **59 names absent from the NSL format entirely** (listed below).
+
+**Only in the NSL taxon file (2,658):**
+
+- 2,347 are Protista, which the AFD format does not cover.
+- 273 are vagrant, excluded or intercepted taxa, which the AFD format does not include.
+- **38 names absent from the AFD format entirely** (listed below).
+
+Most of the names absent from one format are present in the other in a slightly different form; the
+differences are listed under [Possible errors](#possible-errors) where they look like errors.
+
+::: {.callout-note collapse="true"}
+## The 59 names only in the AFD format
+
+| Name | Status in AFD format | Accepted name(s) |
+|---|---|---|
+| *Aedes (subgenus near* | Generic combination | *Ochlerotatus daliensis* |
+| *Mangilia jousseaumei* | Generic combination | *Lienardia jousseaumei* |
+| *Diadiplosis queenslandi* | accepted | *Diadiplosis queenslandi* |
+| *Haplodidymos rubroculatus* | accepted | *Haplodidymos rubroculatus* |
+| *Mesostoma ehrenbergii* | accepted | *Mesostoma ehrenbergii* |
+| *Mesostoma metopoglena* | accepted | *Mesostoma metopoglena* |
+| *Pratoplana sp.* | accepted | *Pratoplana sp.* |
+| *Pseudopetalophthalmus australis* | accepted | *Pseudopetalophthalmus australis* |
+| *Ptychopera sp.* | accepted | *Ptychopera sp.* |
+| *Rastrococcus nivalis* | accepted | *Rastrococcus nivalis* |
+| *Rastrococcus stolatus* | accepted | *Rastrococcus stolatus* |
+| *Saragus (laevicollis)* | misapplied | *Saragus costatus* |
+| *Ategumia adipalis kwangtungialis* | synonym | *Ategumia adipalis* |
+| *Ategumia adipalis nigromarginalis* | synonym | *Ategumia adipalis* |
+| *Austrocyphon linguatus linguatus* | synonym | *Austrocyphon linguatus* |
+| *Cercariae queenslandiae* | synonym | *Isorchis cannoni* |
+| *Columbella (pallida)* | synonym | *Euplica varians* |
+| *Conus complanatus* | synonym | *Conus victoriae* |
+| *Cribrella studeri* | synonym | *Henricia studeri* |
+| *Limopsis philippii* | synonym | *Limopsis multistriata* |
+| *Mitra filosa borni* | synonym | *Domiporta filaris* |
+| *Ophiomastix brocki* | synonym | *Ophiomastix brocki O'Hara* |
+| *Palaemon sundaicus var.* | synonym | *Macrobrachium equidens* |
+| *Pediculus setosus* | synonym | *Linognathus setosus* |
+| *Perotrochus aff. teramachii* | synonym | *Bayerotrochus westralis* |
+| *Phasianella variabilis kahoolawensis* | synonym | *Tricolia variabilis* |
+| *Phintorene allanae proxima* | synonym | *Phosinella media* |
+| *Pseudoceros sp. 4* | synonym | *Pseudoceros zebra* |
+| *Scarabaeus novae* | synonym | *Tesserodon novaehollandiae* |
+| *Sciurus (novaehollandiae)* | synonym | *Petaurus norfolcensis* |
+| *Spilogaster rufa personata* | synonym | *Dichaetomyia vicaria* |
+| *Tellina hilaris* | synonym | *Tellina valtonis* |
+| *Termes lignarium* | synonym | *Trogium pulsatorium* |
+| *Thalycrodes australe tenebrosum* | synonym | *Thalycrodes pulchrum* |
+| *Thynnus cathreinii* | synonym | *Anthobosca australasiae australasiae* |
+| *Trigonia jukesii* | synonym | *Neotrigonia uniophora* |
+| *Trypanosyllis foliosa foliosa* | synonym | *Trypanosyllis foliosa* |
+| *Acantholipes toxica* | unplaced | *Acantholipes toxica* |
+| *Acanthoprora streblomita* | unplaced | *Acanthoprora streblomita* |
+| *Antarchaea punctilinea* | unplaced | *Antarchaea punctilinea* |
+| *Borkhausenia reprobata* | unplaced | *Borkhausenia reprobata* |
+| *Caradrina stigmatucha* | unplaced | *Caradrina stigmatucha* |
+| *Dasytes tasmanicus* | unplaced | *Dasytes tasmanicus* |
+| *Dermaleipa elliptimacula* | unplaced | *Dermaleipa elliptimacula* |
+| *Dermaleipa microrhoea elliptimacula* | unplaced | *Dermaleipa microrhoea elliptimacula* |
+| *Etiella holozona* | unplaced | *Etiella holozona* |
+| *Gafrarium obliquissimum* | unplaced | *Gafrarium obliquissimum* |
+| *Lagoptera orbifera* | unplaced | *Lagoptera orbifera* |
+| *Milesa lamus* | unplaced | *Milesa lamus* |
+| *Noctua microrhaea* | unplaced | *Noctua microrhaea* |
+| *Noctua microrhoea* | unplaced | *Noctua microrhoea* |
+| *Orthosia cremnodes* | unplaced | *Orthosia cremnodes* |
+| *Sarrothripa boeopis* | unplaced | *Sarrothripa boeopis* |
+| *Sphaerococcopsis froggatti* | unplaced | *Sphaerococcopsis froggatti* |
+| *Tephrosia perfectaria* | unplaced | *Tephrosia perfectaria* |
+| *Thalpochares vehemens* | unplaced | *Thalpochares vehemens* |
+| *Trilophonota tegulata* | unplaced | *Trilophonota tegulata* |
+| *Xanthoptera semifusca* | unplaced | *Xanthoptera semifusca* |
+| *Zagira pratti* | unplaced | *Zagira pratti* |
+:::
+
+::: {.callout-note collapse="true"}
+## The 38 names only in the NSL format
+
+| Name | Status in NSL format | Accepted name(s) |
+|---|---|---|
+| *Cheiraster Luidiaster* | Generic combination | *Luidiaster* |
+| *Delena gloriosa Rainbow* | Generic combination | *Delena gloriosa* |
+| *Epimeria Chevreux* | Generic combination | *Pseudepimeria* |
+| *Mangilia) jousseaumei* | Generic combination | *Lienardia jousseaumei* |
+| *Zeacrypta immersa* | Generic combination | *Crepidula* |
+| *Saragus* | misapplied | *Saragus costatus* |
+| *Enoplometopus) voigtmanni* | primary synonym | *Enoplometopus voigtmanni* |
+| *Genus A* | primary synonym | *Yarrhpelopia* |
+| *Pediculus setosus von* | primary synonym | *Linognathus setosus* |
+| *Scarabaeus novae Hollandiae* | primary synonym | *Tesserodon novaehollandiae* |
+| *Sikiana subgroup* | primary synonym | *Sikaianini* |
+| *Suphalomitus van der* | primary synonym | *Suphalomitus* |
+| *Zoraida subgroup* | primary synonym | *Zoraidini* |
+| *Otiocerus group* | primary synonym,synonym | *Otiocerinae*; *Otiocerini* |
+| *Thynnus cathreinii Dalla* | replacement name | *Anthobosca australasiae australasiae* |
+| *Ategumia adipalis kwangtungialis (Bocchoris aptalis)* | synonym | *Ategumia adipalis* |
+| *Ategumia adipalis nigromarginalis (Bocchoris adipalis)* | synonym | *Ategumia adipalis* |
+| *Cercariae queenslandiae II* | synonym | *Isorchis cannoni* |
+| *Columbella Deshayes, 1844* | synonym | *Euplica varians* |
+| *Conus complanatus Sowerby* | synonym | *Conus victoriae* |
+| *Conus turbinatus Sowerby* | synonym | *Conus suturatus suturatus* |
+| *Enneamera von* | synonym | *Nonarthra* |
+| *Hydra marina arctica* | synonym | *Umbellula* |
+| *Hypora, 1864* | synonym | *Lasioderma* |
+| *Isselia incisa* | synonym | *Isseliella* |
+| *Limopsis philippii A.* | synonym | *Limopsis multistriata* |
+| *Mitra filosa* | synonym | *Domiporta filaris* |
+| *Ophiothrix aristulata Investigatoris* | synonym | *Ophiothrix aristulata* |
+| *Palaemon sundaicus var. De Mani* | synonym | *Macrobrachium equidens* |
+| *Perotrochus aff. teramachii Kuroda* | synonym | *Bayerotrochus westralis* |
+| *Phasianella variabilis* | synonym | *Tricolia variabilis* |
+| *Phintorene allanae* | synonym | *Phosinella media* |
+| *Pseudoceros sp. 4 of Newman & Cannon (2003)* | synonym | *Pseudoceros zebra* |
+| *Sciurus (part B)* | synonym | *Petaurus norfolcensis* |
+| *Tellina hilaris Sowerby* | synonym | *Tellina valtonis* |
+| *Termes lignarium de* | synonym | *Trogium pulsatorium* |
+| *Thalycrodes australe* | synonym | *Thalycrodes pulchrum* |
+| *Trigonia jukesii A.* | synonym | *Neotrigonia uniophora* |
+:::
+
+## Names that lead to more than one accepted name {#multiple-accepted-names}
+
+1,893 names lead to more than one accepted name in at least one format. On their own, such names are
+ambiguous. To choose between them, taxonAlign ranks each record by its taxonomic status, using the
+same precedence order as APCalign, extended with the AFD's own terms. It then uses the
+highest-ranked one; a tie can't be resolved. The order is:
+
+> accepted > taxonomic synonym > homotypic synonym > objective synonym > basionym > **primary synonym** >
+> heterotypic synonym > **synonym** > nomenclatural synonym > **Generic combination** > replacement
+> name > … > pro parte synonym > pro parte misapplied > misapplied > unplaced > excluded > … >
+> included
+
+**We would like the curators to confirm where the AFD's terms belong in this order**, in particular
+"primary synonym", "synonym" and "Generic combination". 50 of the outcomes below depend only on
+"synonym" ranking above "Generic combination", which is our assumption.
+
+| Outcome | Names |
+|---|---|
+| The name is itself accepted, and the same name is also listed as a synonym: | 997 |
+| … of its own nominotypical subspecies (e.g. *Agrilus assimilis* Hope, 1846 under *Agrilus (Agrilus) assimilis assimilis*) | 509 |
+| … of another taxon, by a different author: a homonym (e.g. *Camponotus reticulatus* Roger, 1863 accepted; *C. reticulatus* Kirby, 1896 a synonym of *C. spenceri*) | 226 |
+| … of another taxon, with the same authorship (e.g. *Aname maculata*, also listed under *Proshermacha maculata*) | 262 |
+| Resolved by status precedence, to the same accepted name in both formats | 54 |
+| Resolved in the NSL format only; a tie in the AFD format | 295 |
+| Resolved in the AFD format only; a tie in the NSL format | 6 |
+| Resolved in both, to different accepted names | 1 |
+| **A tie in both formats: can't be resolved** | **461** |
+| Leads to more than one accepted name in one format only | 79 |
+
+For the 509 nominotypical cases, resolving to the accepted species is correct. For the 226
+homonyms, a raw name without authorship can't say which is meant: we resolve it to the accepted name,
+but a raw name *with* authorship is matched to the right one. The 262 names listed with the same
+authorship as both accepted and a synonym of another taxon look like part (pro parte) usages, and are
+as ambiguous as the ties below.
+
+The **295 names resolved only in the NSL format** are almost all (287) cases where the NSL format
+labels one record "primary synonym" and the other "synonym". The AFD format labels both "synonym",
+so they can't be told apart there.
+
+The **461 ties** are mostly names listed simply as "synonym" of two or more taxa in both formats
+(e.g. *Planorbis fragilis*, under both *Gyraulus essingtonensis* and *G. gilberti*). In 51 of them
+the NSL format lists the name as "primary synonym" of two different taxa, which looks inconsistent in
+itself. **For these names we can't say which accepted name is meant.** We would like the curators to
+look at them; a more specific status on the records would resolve them.
+
+**Which of these remain once the AFD is only published in the NSL format:** the 295 names that are a
+tie only in the AFD format are resolved by the NSL format's own statuses. The 461 ties in both formats,
+plus 6 that are a tie only in the NSL format (467 in all), are ties *within* the NSL format itself, and
+will remain until the records are given more specific statuses.
+
+**How taxonAlign reports these names in the meantime.** Following APCalign's convention, it suggests
+one accepted name and lists every other candidate with its status, so nothing is hidden, e.g.
+`"Lygisaurus foliorum [alternative possible names: Lygisaurus aeratus (synonym)]"`. The candidates are
+also given in a separate `alternative_possible_names` column. Optionally, a name whose candidates all
+share one genus can be collapsed to that genus instead (`"Genus sp. [collapsed names: …]"`). Which
+candidate is suggested first is decided by status precedence, and then, for a tie, by taxonAlign's
+own rules (an accepted name sharing the name's epithet, then one of the same rank, then one published
+no later than the name, then the oldest, then the order the source lists them in). These rules are a
+stopgap, not a judgement on the taxonomy: the ties themselves are for the curators to resolve.
+
+::: {.callout-note collapse="true"}
+## The 461 names that are a tie in both formats
+
+| Name | NSL format: accepted name [status] | AFD format: accepted name [status] |
+|---|---|---|
+| *Ablepharus boutoni pulcher* | Cryptoblepharus pulcher [synonym]; Cryptoblepharus pulcher pulcher [synonym] | Cryptoblepharus pulcher [synonym]; Cryptoblepharus pulcher pulcher [synonym] |
+| *Ablepharus heteropus* | Lygisaurus aeratus [synonym]; Lygisaurus foliorum [synonym] | Lygisaurus aeratus [synonym]; Lygisaurus foliorum [synonym] |
+| *Acanthella stipitata* | Phakellia dendyi [synonym]; Phakellia stipitata [synonym] | Phakellia dendyi [synonym]; Phakellia stipitata [synonym] |
+| *Acanthephyra batei* | Acanthephyra quadrispinosa [synonym]; Meningodora vesca [synonym] | Acanthephyra quadrispinosa [synonym]; Meningodora vesca [synonym] |
+| *Aelurus basalis* | Elidothynnus basalis [primary synonym]; Tachynomyia basalis [primary synonym] | Elidothynnus basalis [synonym]; Tachynomyia basalis [synonym] |
+| *Aelurus combustus* | Aspidothynnus combustus [primary synonym]; Tachynomyia combusta [primary synonym] | Aspidothynnus combustus [synonym]; Tachynomyia combusta [synonym] |
+| *Aelurus fervens* | Lophocheilus fervens [primary synonym]; Tachynomyia fervens [primary synonym] | Lophocheilus fervens [synonym]; Tachynomyia fervens [synonym] |
+| *Aelurus incanus* | Tachynomyia moerens [synonym]; Tachynomyia punctata [synonym] | Tachynomyia moerens [synonym]; Tachynomyia punctata [synonym] |
+| *Agama jacksoniensis* | Amphibolurus muricatus [synonym]; Rankinia diemensis [synonym] | Amphibolurus muricatus [synonym]; Rankinia diemensis [synonym] |
+| *Agatha angasi* | Megastomia angasi [Generic combination]; Odostomia angasi [Generic combination] | Megastomia angasi [Generic combination]; Odostomia angasi [Generic combination] |
+| *Allolobophora beddardi* | Aporrectodea caliginosa caliginosa [synonym]; Bimastos parvus [synonym] | Aporrectodea caliginosa caliginosa [synonym]; Bimastos parvus [synonym] |
+| *Allolobophora caliginosa* | Aporrectodea caliginosa [Generic combination]; Aporrectodea caliginosa caliginosa [Generic combination] | Aporrectodea caliginosa [Generic combination]; Aporrectodea caliginosa caliginosa [Generic combination] |
+| *Allolobophora fraissei* | Dendrodrilus rubidus rubidus [synonym]; Dendrodrilus rubidus subrubicundus [synonym] | Dendrodrilus rubidus rubidus [synonym]; Dendrodrilus rubidus subrubicundus [synonym] |
+| *Allolobophora inflata* | Aporrectodea caliginosa caliginosa [synonym]; Aporrectodea trapezoides [synonym] | Aporrectodea caliginosa caliginosa [synonym]; Aporrectodea trapezoides [synonym] |
+| *Allolobophora rosea* | Aporrectodea rosea [Generic combination]; Aporrectodea rosea rosea [Generic combination] | Aporrectodea rosea [Generic combination]; Aporrectodea rosea rosea [Generic combination] |
+| *Allolobophora veneta robusta* | Dendrobaena hortensis [synonym]; Dendrobaena veneta veneta [synonym] | Dendrobaena hortensis [synonym]; Dendrobaena veneta veneta [synonym] |
+| *Amanses brunneus* | Cantherhines pardalis [Generic combination]; Scobinichthys granulatus [Generic combination] | Cantherhines pardalis [Generic combination]; Scobinichthys granulatus [Generic combination] |
+| *Amblyosyllis granosa* | Amblyosyllis enigmatica [synonym]; Inermosyllis granosa [synonym] | Amblyosyllis enigmatica [synonym]; Inermosyllis granosa [synonym] |
+| *Amblytelus vicinus* | Dystrichothorax vicinus [Generic combination]; Dystrichothorax vicinus vicinus [Generic combination] | Dystrichothorax vicinus [Generic combination]; Dystrichothorax vicinus vicinus [Generic combination] |
+| *Amphacanthus tumifrons* | Siganus fuscescens [synonym]; Siganus spinus [synonym] | Siganus fuscescens [synonym]; Siganus spinus [synonym] |
+| *Amphidesma jukesii* | Clathrotellina carnicolor [synonym]; Semele carnicolor [synonym] | Clathrotellina carnicolor [synonym]; Semele carnicolor [synonym] |
+| *Ananca australis* | Dohrnia australis [Generic combination]; Noticha australis [Generic combination] | Dohrnia australis [Generic combination]; Noticha australis [Generic combination] |
+| *Anas punctata* | Anas castanea [synonym]; Dendrocygna guttata [synonym] | Anas castanea [synonym]; Dendrocygna guttata [synonym] |
+| *Angasella lemani* | Basedowena oligopleura [synonym]; Pleuroxia oligopleura [synonym] | Basedowena oligopleura [synonym]; Pleuroxia oligopleura [synonym] |
+| *Anguilla marginipinnis* | Anguilla obscura [synonym]; Anguilla reinhardtii [synonym] | Anguilla obscura [synonym]; Anguilla reinhardtii [synonym] |
+| *Anoplognathus brownii* | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] |
+| *Anoplognathus dytiscoides* | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] |
+| *Anoplognathus viridicollis* | Anoplognathus rugosus [synonym]; Anoplognathus viriditarsis [synonym] | Anoplognathus rugosus [synonym]; Anoplognathus viriditarsis [synonym] |
+| *Antherochalina perforata* | Antho chartacea [synonym]; Clathria perforata [synonym] | Antho chartacea [synonym]; Clathria perforata [synonym] |
+| *Anthrax obscura* | Aleucosia atherix [synonym]; Exechohypopion subobscurum [synonym] | Aleucosia atherix [synonym]; Exechohypopion subobscurum [synonym] |
+| *Aphelenchus olesistus longicollis* | Aphelenchoides fragariae [synonym]; Ptychaphelenchus dactylocercus [synonym] | Aphelenchoides fragariae [synonym]; Ptychaphelenchus dactylocercus [synonym] |
+| *Aphis persicae* | Brachycaudus persicae [primary synonym]; Myzus persicae [primary synonym] | Brachycaudus persicae [synonym]; Myzus persicae [synonym] |
+| *Aphodius australasiae* | Acrossidius tasmaniae [synonym]; Ataenius castanicolor [synonym] | Acrossidius tasmaniae [synonym]; Ataenius castanicolor [synonym] |
+| *Apus australiensis* | Triops australiensis [primary synonym]; Triops australiensis australiensis [primary synonym] | Triops australiensis [synonym]; Triops australiensis australiensis [synonym] |
+| *Arrhopalites adelaidica* | Sminthurus viridis [synonym]; Stenacidia violacea [synonym] | Sminthurus viridis [synonym]; Stenacidia violacea [synonym] |
+| *Assiminea australis* | Cryptassiminea buccinoides [synonym]; Hydrococcus brazieri [synonym] | Cryptassiminea buccinoides [synonym]; Hydrococcus brazieri [synonym] |
+| *Atherinichthys modesta* | Atherinosoma microstoma [synonym]; Kestratherina esox [synonym] | Atherinosoma microstoma [synonym]; Kestratherina esox [synonym] |
+| *Aulacomima ceramochroa* | Helcystogramma ceramochroa [primary synonym]; Scieropepla ceramochroa [primary synonym] | Helcystogramma ceramochroa [synonym]; Scieropepla ceramochroa [synonym] |
+| *Avicula heteroptera* | Pteria heteroptera [synonym]; Pteria saltata [synonym] | Pteria heteroptera [synonym]; Pteria saltata [synonym] |
+| *Bagistana rudis* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Balaena rostrata* | Balaenoptera acutorostrata [synonym]; Balaenoptera borealis [synonym] | Balaenoptera acutorostrata [synonym]; Balaenoptera borealis [synonym] |
+| *Balistes spinosissimus* | Chaetodermis penicilligerus [synonym]; Rhinecanthus verrucosus [synonym] | Chaetodermis penicilligerus [synonym]; Rhinecanthus verrucosus [synonym] |
+| *Bedeva pensa* | Bedeva paivae [synonym]; Lataxiena blosvillei [synonym] | Bedeva paivae [synonym]; Lataxiena blosvillei [synonym] |
+| *Boreomysis spinifera* | Boreomysis sibogae [synonym]; Boreomysis sphaerops [synonym] | Boreomysis sibogae [synonym]; Boreomysis sphaerops [synonym] |
+| *Bothriembryon barretti indictus* | Bothriembryon barretti [synonym]; Bothriembryon indictus [synonym] | Bothriembryon barretti [synonym]; Bothriembryon indictus [synonym] |
+| *Bothriembryon multispirus* | Bothriembryon barretti [synonym]; Bothriembryon distinctus [synonym] | Bothriembryon barretti [synonym]; Bothriembryon distinctus [synonym] |
+| *Botys subjunctalis* | Pramadea lunalis [synonym]; Rehimena surusalis [synonym] | Pramadea lunalis [synonym]; Rehimena surusalis [synonym] |
+| *Brachmia hapalyntis* | Helcystogramma hapalyntis [primary synonym]; Scieropepla hapalyntis [primary synonym] | Helcystogramma hapalyntis [synonym]; Scieropepla hapalyntis [synonym] |
+| *Brachmia obfuscata* | Helcystogramma obfuscata [primary synonym]; Scieropepla obfuscata [primary synonym] | Helcystogramma obfuscata [synonym]; Scieropepla obfuscata [synonym] |
+| *Brachyscelis crispa* | Apiomorpha crispa [synonym]; Apiomorpha strombylosa [synonym] | Apiomorpha crispa [synonym]; Apiomorpha strombylosa [synonym] |
+| *Brachyscelis thorntoni* | Apiomorpha pharetrata [synonym]; Apiomorpha thorntoni [synonym] | Apiomorpha pharetrata [synonym]; Apiomorpha thorntoni [synonym] |
+| *Branchiosyllis pacifica australis* | Branchiosyllis australis [synonym]; Branchiosyllis oculata [synonym] | Branchiosyllis australis [synonym]; Branchiosyllis oculata [synonym] |
+| *Buccinum gracile* | Prodotia iostoma [synonym]; Prodotia lannumi [synonym] | Prodotia iostoma [synonym]; Prodotia lannumi [synonym] |
+| *Buccinum lineatum* | Littoraria scabra [synonym]; Nassarius glans [synonym] | Littoraria scabra [synonym]; Nassarius glans [synonym] |
+| *Bulla smaragdina* | Phanerophthalmus smaragdinus [synonym]; Smaragdinella calyculata [synonym] | Phanerophthalmus smaragdinus [synonym]; Smaragdinella calyculata [synonym] |
+| *Cacophis harriettae flavicollis* | Cacophis churchilli [synonym]; Cacophis harriettae [synonym] | Cacophis churchilli [synonym]; Cacophis harriettae [synonym] |
+| *Campanularia tincta* | Campanularia gaussica [synonym]; Orthopyxis tincta [synonym] | Campanularia gaussica [synonym]; Orthopyxis tincta [synonym] |
+| *Cancer serratus* | Euastacus spinifer [synonym]; Scylla serrata [synonym] | Euastacus spinifer [synonym]; Scylla serrata [synonym] |
+| *Caprella obesa* | Caprella equilibra [synonym]; Caprella penantis [synonym] | Caprella equilibra [synonym]; Caprella penantis [synonym] |
+| *Capulonix violaceus* | Amathina violacea [Generic combination]; Capulus violaceus [Generic combination] | Amathina violacea [Generic combination]; Capulus violaceus [Generic combination] |
+| *Cardita citrina* | Cardita aviculina [synonym]; Cardita crassicosta [synonym] | Cardita aviculina [synonym]; Cardita crassicosta [synonym] |
+| *Cardium imbricatum* | Ctenocardia virgo [synonym]; Fragum fragum [synonym] | Ctenocardia virgo [synonym]; Fragum fragum [synonym] |
+| *Caryodes dufresnii extra* | Caryodes dufresnii [synonym]; Caryodes dufresnii dufresnii [synonym] | Caryodes dufresnii [synonym]; Caryodes dufresnii dufresnii [synonym] |
+| *Caryophyllia compressa* | Premocyathus dentiformis [synonym]; Trochocyathus apertus [synonym] | Premocyathus dentiformis [synonym]; Trochocyathus apertus [synonym] |
+| *Casuarius australis* | Casuarius casuarius [synonym]; Dromaius novaehollandiae novaehollandiae [synonym] | Casuarius casuarius [synonym]; Dromaius novaehollandiae novaehollandiae [synonym] |
+| *Cephalogryllus australicus* | Daintria australicus [primary synonym]; Stenocephalus australicus [primary synonym] | Daintria australicus [synonym]; Stenocephalus australicus [synonym] |
+| *Cerceris sculleni* | Cerceris antipodes [synonym]; Cerceris australis [synonym] | Cerceris antipodes [synonym]; Cerceris australis [synonym] |
+| *Cerithidea cingulata* | Pirenella austrocingulata [synonym]; Pirenella rugosa [synonym] | Pirenella austrocingulata [synonym]; Pirenella rugosa [synonym] |
+| *Cerithium adansonii* | Cerithium echinatum [synonym]; Cerithium nodulosum [synonym] | Cerithium echinatum [synonym]; Cerithium nodulosum [synonym] |
+| *Cerithium alveolus* | Cerithium punctatum [synonym]; Clypeomorus batillariaeformis [synonym] | Cerithium punctatum [synonym]; Clypeomorus batillariaeformis [synonym] |
+| *Cerithium nitidum* | Cerithium zonatum [synonym]; Rhinoclavis diadema [synonym] | Cerithium zonatum [synonym]; Rhinoclavis diadema [synonym] |
+| *Cerithium proditum* | Cerithium columna [synonym]; Cerithium munitum [synonym] | Cerithium columna [synonym]; Cerithium munitum [synonym] |
+| *Cerithium rubus* | Cerithium coralium [synonym]; Cerithium echinatum [synonym] | Cerithium coralium [synonym]; Cerithium echinatum [synonym] |
+| *Certhia mellivora* | Anthochaera chrysoptera chrysoptera [synonym]; Gliciphila melanops melanops [synonym] | Anthochaera chrysoptera chrysoptera [synonym]; Gliciphila melanops melanops [synonym] |
+| *Characoma basiatra* | Characoma vallata [synonym]; Garella vallata [synonym] | Characoma vallata [synonym]; Garella vallata [synonym] |
+| *Characoma vallata basiatra* | Characoma vallata [synonym]; Garella vallata [synonym] | Characoma vallata [synonym]; Garella vallata [synonym] |
+| *Charopa snowyensis* | Banjoropa snowyensis [synonym]; Scelidoropa altior [synonym] | Banjoropa snowyensis [synonym]; Scelidoropa altior [synonym] |
+| *Chironomus orarius* | Chironomus seorsus [synonym]; Polypedilum seorsum [synonym] | Chironomus seorsus [synonym]; Polypedilum seorsum [synonym] |
+| *Chiton elongatus* | Ischnochiton elongatus [primary synonym]; Ischnochiton elongatus elongatus [primary synonym]; Schizochiton incisus [synonym] | Ischnochiton elongatus [synonym]; Ischnochiton elongatus elongatus [synonym]; Schizochiton incisus [synonym] |
+| *Chlamys antiaustralis* | Talochlamys pulleineana [synonym]; Zygochlamys delicatula [synonym] | Talochlamys pulleineana [synonym]; Zygochlamys delicatula [synonym] |
+| *Chloritis millepunctata* | Damochlora millepunctata [Generic combination]; Nannochlora cassiniensis [Generic combination] | Damochlora millepunctata [Generic combination]; Nannochlora cassiniensis [Generic combination] |
+| *Chogada fuliginosa* | Cleora fuliginosa [synonym]; Cleora injectaria [synonym] | Cleora fuliginosa [synonym]; Cleora injectaria [synonym] |
+| *Chromodoris maculosa* | Hypselodoris cf. maculosa [primary synonym]; Hypselodoris maculosa [primary synonym] | Hypselodoris cf. maculosa [synonym]; Hypselodoris maculosa [synonym] |
+| *Chromodoris nigrostriata* | Hypselodoris cf. nigrostriata [primary synonym]; Hypselodoris nigrostriata [primary synonym] | Hypselodoris cf. nigrostriata [synonym]; Hypselodoris nigrostriata [synonym] |
+| *Chrysomela nitidipennis* | Calomela ioptera [synonym]; Calomela nitidipennis [synonym] | Calomela ioptera [synonym]; Calomela nitidipennis [synonym] |
+| *Cimex australis* | Leptoglossus gonagra [synonym]; Melanerythrus biguttatus [synonym] | Leptoglossus gonagra [synonym]; Melanerythrus biguttatus [synonym] |
+| *Cimex sexpunctatus* | Agonosoma trilineatum [synonym]; Hyrmine sexpunctata sexpunctata [synonym] | Agonosoma trilineatum [synonym]; Hyrmine sexpunctata sexpunctata [synonym] |
+| *Clavatula gaylordae* | Paradrillia inconstans [synonym]; Paradrillia inconstans prunulum [synonym] | Paradrillia inconstans [synonym]; Paradrillia inconstans prunulum [synonym] |
+| *Clettharra floccifera* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Clettharra valida* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Clettharra variegata* | Gyrtothripa variegata [primary synonym]; Nanaguna variegata [primary synonym] | Gyrtothripa variegata [synonym]; Nanaguna variegata [synonym] |
+| *Columbella lentiginosa* | Zafra darwini [synonym]; Zafra smithi [synonym] | Zafra darwini [synonym]; Zafra smithi [synonym] |
+| *Columbella lineolata* | Metanachis acleonta [synonym]; Mitrella bicincta [synonym]; Pseudamycla dermestoidea [synonym] | Metanachis acleonta [synonym]; Mitrella bicincta [synonym]; Pseudamycla dermestoidea [synonym] |
+| *Columbella nux* | Dentimitrella austrina [synonym]; Dentimitrella tenuis [synonym] | Dentimitrella austrina [synonym]; Dentimitrella tenuis [synonym] |
+| *Columbella saccharata* | Dentimitrella tenuis [synonym]; Pseudamycla miltostoma [synonym] | Dentimitrella tenuis [synonym]; Pseudamycla miltostoma [synonym] |
+| *Conus bicolor* | Conus litoglyphus [synonym]; Conus praecellens [synonym] | Conus litoglyphus [synonym]; Conus praecellens [synonym] |
+| *Conus fusiformis* | Conus compressus [synonym]; Conus glans [synonym] | Conus compressus [synonym]; Conus glans [synonym] |
+| *Conus fustigatus* | Conus pulicarius [synonym]; Conus pulicarius pulicarius [synonym] | Conus pulicarius [synonym]; Conus pulicarius pulicarius [synonym] |
+| *Conus gracilis* | Conasprella hopwoodi [synonym]; Conus australis [synonym] | Conasprella hopwoodi [synonym]; Conus australis [synonym] |
+| *Conus maculatus* | Conus anemone [synonym]; Conus marmoreus [synonym]; Conus sponsalis [synonym] | Conus anemone [synonym]; Conus marmoreus [synonym]; Conus sponsalis [synonym] |
+| *Conus neglectus* | Conus aplustre [synonym]; Conus flavidus [synonym] | Conus aplustre [synonym]; Conus flavidus [synonym] |
+| *Conus ponderosa* | Conus quercinus [synonym]; Conus textile [synonym] | Conus quercinus [synonym]; Conus textile [synonym] |
+| *Conus pulchellus* | Conus circumactus [synonym]; Conus varius [synonym] | Conus circumactus [synonym]; Conus varius [synonym] |
+| *Cribrarula exmouthensis rottnestensis* | Cribrarula rottnestensis [primary synonym]; Cribrarula rottnestensis rottnestensis [primary synonym] | Cribrarula rottnestensis [synonym]; Cribrarula rottnestensis rottnestensis [synonym] |
+| *Crioa leptochroma* | Ochrothripa leptochroma [primary synonym]; Plotheia leptochroma [primary synonym] | Ochrothripa leptochroma [synonym]; Plotheia leptochroma [synonym] |
+| *Cryptoblepharus suburbia* | Cryptoblepharus pulcher clarus [synonym]; Cryptoblepharus pulcher pulcher [synonym] | Cryptoblepharus pulcher clarus [synonym]; Cryptoblepharus pulcher pulcher [synonym] |
+| *Cryptocephalus tricolor* | Aporocera consors [synonym]; Aporocera lagopa [synonym] | Aporocera consors [synonym]; Aporocera lagopa [synonym] |
+| *Cryptodrilus dubius* | Oreoscolex illawarrae [synonym]; Trinephrus fastigatus [synonym] | Oreoscolex illawarrae [synonym]; Trinephrus fastigatus [synonym] |
+| *Cryptodrilus insularis* | Diporochaeta hobartensis [synonym]; Pontodrilus litoralis [synonym] | Diporochaeta hobartensis [synonym]; Pontodrilus litoralis [synonym] |
+| *Cryptorhynchus monachus* | Eutyrhinus meditabundus [heterotypic synonym]; Sternochetus mangiferae [heterotypic synonym] | Eutyrhinus meditabundus [synonym]; Sternochetus mangiferae [synonym] |
+| *Cucullus equestris* | Conus ammiralis ammiralis [synonym]; Conus bandanus [synonym] | Conus ammiralis ammiralis [synonym]; Conus bandanus [synonym] |
+| *Cucullus torquatus* | Conus ammiralis ammiralis [synonym]; Conus bandanus [synonym] | Conus ammiralis ammiralis [synonym]; Conus bandanus [synonym] |
+| *Culex basicinctus* | Culex starckeae [synonym]; Culex vicinus [synonym] | Culex starckeae [synonym]; Culex vicinus [synonym] |
+| *Culicada minuta* | Aedes vexans [synonym]; Aedes vexans vexans [synonym] | Aedes vexans [synonym]; Aedes vexans vexans [synonym] |
+| *Cycloseris hexagonalis* | Cycloseris vaughani [synonym]; Lithophyllon concinna [synonym] | Cycloseris vaughani [synonym]; Lithophyllon concinna [synonym] |
+| *Cycloseris marginata* | Cycloseris costulata [synonym]; Cycloseris cyclolites [synonym] | Cycloseris costulata [synonym]; Cycloseris cyclolites [synonym] |
+| *Cycloseris patelliformis* | Cycloseris costulata [synonym]; Cycloseris distorta [synonym]; Cycloseris sinensis [synonym] | Cycloseris costulata [synonym]; Cycloseris distorta [synonym]; Cycloseris sinensis [synonym] |
+| *Cyclostrema bruniensis* | Laevilitorina bruniensis [primary synonym]; Zalipais bruniense [primary synonym] | Laevilitorina bruniensis [synonym]; Zalipais bruniense [synonym] |
+| *Cypraea annulata* | Annepona mariae [synonym]; Monetaria annulus [synonym] | Annepona mariae [synonym]; Monetaria annulus [synonym] |
+| *Cypraea castanea* | Mauritia mauritiana [synonym]; Notocypraea angustata [synonym] | Mauritia mauritiana [synonym]; Notocypraea angustata [synonym] |
+| *Cypraea cylindrica* | Erronea cylindrica [synonym]; Erronea cylindrica cylindrica [synonym]; Talostolida teres [synonym] | Erronea cylindrica [synonym]; Erronea cylindrica cylindrica [synonym]; Talostolida teres [synonym] |
+| *Cypraea intermedia* | Mauritia arabica arabica [synonym]; Trivirostra oryza [synonym] | Mauritia arabica arabica [synonym]; Trivirostra oryza [synonym] |
+| *Cypraea marmorata* | Lyncina carneola [synonym]; Purpuradusta fimbriata fimbriata [synonym] | Lyncina carneola [synonym]; Purpuradusta fimbriata fimbriata [synonym] |
+| *Cypraea punctata* | Ransoniella punctata [primary synonym]; Ransoniella punctata punctata [primary synonym] | Ransoniella punctata [synonym]; Ransoniella punctata punctata [synonym] |
+| *Cypraea umbilicata armeniaca* | Umbilia armeniaca [primary synonym]; Umbilia armeniaca armeniaca [primary synonym] | Umbilia armeniaca [synonym]; Umbilia armeniaca armeniaca [synonym] |
+| *Daerlac affinis* | Daerlac cephalotes [synonym]; Daerlac tricolor [synonym] | Daerlac cephalotes [synonym]; Daerlac tricolor [synonym] |
+| *Dendrobaena rubida* | Dendrodrilus rubidus rubidus [Generic combination]; Dendrodrilus rubidus subrubicundus [Generic combination] | Dendrodrilus rubidus rubidus [Generic combination]; Dendrodrilus rubidus subrubicundus [Generic combination] |
+| *Dendrothripa clopaea* | Etanna clopaea [primary synonym]; Nanaguna clopaea [primary synonym] | Etanna clopaea [synonym]; Nanaguna clopaea [synonym] |
+| *Dentalium striatum* | Dentalium aprinum [synonym]; Dentalium elephantinum [synonym] | Dentalium aprinum [synonym]; Dentalium elephantinum [synonym] |
+| *Dermestes cinereus* | Dermestes ater [synonym]; Dermestes maculatus [synonym] | Dermestes ater [synonym]; Dermestes maculatus [synonym] |
+| *Dermestes macellarius* | Attagenus pellio [synonym]; Attagenus unicolor unicolor [synonym] | Attagenus pellio [synonym]; Attagenus unicolor unicolor [synonym] |
+| *Dermestes piceus* | Attagenus unicolor unicolor [synonym]; Dermestes ater [synonym] | Attagenus unicolor unicolor [synonym]; Dermestes ater [synonym] |
+| *Dermestes vulpinus* | Dermestes frischii [synonym]; Dermestes maculatus [synonym] | Dermestes frischii [synonym]; Dermestes maculatus [synonym] |
+| *Diala tumida* | Pisinna tumida [primary synonym]; Pisinna tumida tumida [primary synonym] | Pisinna tumida [synonym]; Pisinna tumida tumida [synonym] |
+| *Diaseris mortoni* | Cycloseris cyclolites [synonym]; Cycloseris sinensis [synonym] | Cycloseris cyclolites [synonym]; Cycloseris sinensis [synonym] |
+| *Diathraustodes metallosticha* | Eoophyla metallosticha [synonym]; Eoophyla triplaga [synonym] | Eoophyla metallosticha [synonym]; Eoophyla triplaga [synonym] |
+| *Didelphis ursina* | Sarcophilus harrisii [synonym]; Vombatus ursinus ursinus [synonym] | Sarcophilus harrisii [synonym]; Vombatus ursinus ursinus [synonym] |
+| *Diplodactylus bilineatus* | Crenadactylus ocellatus [synonym]; Diplodactylus pulcher [synonym] | Crenadactylus ocellatus [synonym]; Diplodactylus pulcher [synonym] |
+| *Dolium costatum* | Tonna allium [synonym]; Tonna ampullacea [synonym] | Tonna allium [synonym]; Tonna ampullacea [synonym] |
+| *Dolium variegatum* | Tonna chinensis [synonym]; Tonna luteostoma [synonym]; Tonna tankervillii [synonym] | Tonna chinensis [synonym]; Tonna luteostoma [synonym]; Tonna tankervillii [synonym] |
+| *Doris reticulata* | Chromodoris reticulatus [primary synonym]; Goniobranchus reticulatus [primary synonym] | Chromodoris reticulatus [synonym]; Goniobranchus reticulatus [synonym] |
+| *Dromia unidentata* | Cryptodromiopsis unidentata [primary synonym]; Lewindromia unidentata [primary synonym] | Cryptodromiopsis unidentata [synonym]; Lewindromia unidentata [synonym] |
+| *Drosophila maculiventris* | Drosophila repleta [synonym]; Leucophenga bellula [synonym] | Drosophila repleta [synonym]; Leucophenga bellula [synonym] |
+| *Echinonema anchoratum ramosum* | Phorbas ramosus [synonym]; Raspailia arbuscula [synonym] | Phorbas ramosus [synonym]; Raspailia arbuscula [synonym] |
+| *Ecteinascidia koumaci* | Ecteinascidia diaphanis [synonym]; Ecteinascidia rubricollis [synonym] | Ecteinascidia diaphanis [synonym]; Ecteinascidia rubricollis [synonym] |
+| *Ectopsocus punctatus* | Ectopsocus briggsi [synonym]; Ectopsocus petersi [synonym] | Ectopsocus briggsi [synonym]; Ectopsocus petersi [synonym] |
+| *Egernia bos* | Egernia napoleonis [synonym]; Liopholis multiscutata [synonym] | Egernia napoleonis [synonym]; Liopholis multiscutata [synonym] |
+| *Egila mayii* | Chrysallida mayii [Generic combination]; Microcarina mayii [Generic combination] | Chrysallida mayii [Generic combination]; Microcarina mayii [Generic combination] |
+| *Eisenia rosea* | Aporrectodea rosea [Generic combination]; Aporrectodea rosea rosea [Generic combination] | Aporrectodea rosea [Generic combination]; Aporrectodea rosea rosea [Generic combination] |
+| *Elater cinnamomeus* | Monocrepidus cinnamomeus [primary synonym]; Simodactylus cinnamomeus [primary synonym] | Monocrepidus cinnamomeus [synonym]; Simodactylus cinnamomeus [synonym] |
+| *Eleotris planiceps* | Giuris aporocephalus [synonym]; Oxyeleotris selheimi [synonym] | Giuris aporocephalus [synonym]; Oxyeleotris selheimi [synonym] |
+| *Elseya stirlingi* | Elseya dentata [synonym]; Elseya irwini [synonym] | Elseya dentata [synonym]; Elseya irwini [synonym] |
+| *Emarginula clathrata* | Emarginula montrouzieri [synonym]; Montfortista panhi [synonym] | Emarginula montrouzieri [synonym]; Montfortista panhi [synonym] |
+| *Entomobrya clitellaria newmani* | Entomobrya atrocincta [synonym]; Entomobrya nigrocincta [synonym] | Entomobrya atrocincta [synonym]; Entomobrya nigrocincta [synonym] |
+| *Erato pellucida* | Alaerato angistoma [synonym]; Volvarina mustelina [synonym] | Alaerato angistoma [synonym]; Volvarina mustelina [synonym] |
+| *Erythraeus froggatti* | Charletonia froggatti [synonym]; Charletonia novaehollandiae [synonym] | Charletonia froggatti [synonym]; Charletonia novaehollandiae [synonym] |
+| *Estea gregaria* | Pseudopisinna gregaria [primary synonym]; Pseudopisinna gregaria gregaria [primary synonym] | Pseudopisinna gregaria [synonym]; Pseudopisinna gregaria gregaria [synonym] |
+| *Eucosma leuconephela* | Holocola honesta [synonym]; Statherotis euryphaea [synonym] | Holocola honesta [synonym]; Statherotis euryphaea [synonym] |
+| *Euops puncticollis* | Euops falcatus [synonym]; Euops leai [synonym] | Euops falcatus [synonym]; Euops leai [synonym] |
+| *Eurymela suffusa* | Eurymela fenestrata [synonym]; Eurymela walkeri [synonym] | Eurymela fenestrata [synonym]; Eurymela walkeri [synonym] |
+| *Eusyllis serrata* | Perkinsyllis serrata [synonym]; Pionosyllis serrata [synonym] | Perkinsyllis serrata [synonym]; Pionosyllis serrata [synonym] |
+| *Eutorna pelogenes* | Ardozyga pelogenes [primary synonym]; Phyzanica pelogenes [primary synonym] | Ardozyga pelogenes [synonym]; Phyzanica pelogenes [synonym] |
+| *Filenchus minutus* | Filenchus infirmus [Generic combination]; Tylenchus minutus [Generic combination] | Filenchus infirmus [Generic combination]; Tylenchus minutus [Generic combination] |
+| *Flabellum rubrum* | Monomyces rubrum [Generic combination]; Truncatoflabellum aculeatum [synonym]; Truncatoflabellum spheniscus [synonym] | Monomyces rubrum [Generic combination]; Truncatoflabellum aculeatum [synonym]; Truncatoflabellum spheniscus [synonym] |
+| *Forficula pallipes* | Labidura riparia [synonym]; Nala lividipes [synonym] | Labidura riparia [synonym]; Nala lividipes [synonym] |
+| *Fulgiconus moluccensis* | Conus moluccensis [Generic combination]; Conus moluccensis moluccensis [Generic combination] | Conus moluccensis [Generic combination]; Conus moluccensis moluccensis [Generic combination] |
+| *Fungia agariciformis* | Fungia fungites [synonym]; Lithophyllon concinna [synonym] | Fungia fungites [synonym]; Lithophyllon concinna [synonym] |
+| *Fungia brachystoma* | Ctenactis crassa [synonym]; Ctenactis echinata [synonym] | Ctenactis crassa [synonym]; Ctenactis echinata [synonym] |
+| *Fungia crassitentaculata* | Heliofungia actiniformis [synonym]; Pleuractis granulosa [synonym] | Heliofungia actiniformis [synonym]; Pleuractis granulosa [synonym] |
+| *Fungia danae* | Danafungia horrida [synonym]; Danafungia scruposa [synonym] | Danafungia horrida [synonym]; Danafungia scruposa [synonym] |
+| *Fungia danai* | Danafungia scruposa [synonym]; Lithophyllon concinna [synonym]; Lithophyllon repanda [synonym] | Danafungia horrida [synonym]; Danafungia scruposa [synonym]; Lithophyllon concinna [synonym]; Lithophyllon repanda [synonym] |
+| *Fungia dentata* | Danafungia scruposa [synonym]; Fungia fungites [synonym] | Danafungia scruposa [synonym]; Fungia fungites [synonym] |
+| *Fungia discus* | Fungia fungites [synonym]; Lithophyllon repanda [synonym] | Fungia fungites [synonym]; Lithophyllon repanda [synonym] |
+| *Fungia doderleini* | Cycloseris costulata [synonym]; Pleuractis granulosa [synonym] | Cycloseris costulata [synonym]; Pleuractis granulosa [synonym] |
+| *Fungia echinata* | Ctenactis albitentaculata [synonym]; Ctenactis crassa [synonym]; Danafungia scruposa [synonym]; Herpolitha limax [synonym] | Ctenactis albitentaculata [synonym]; Ctenactis crassa [synonym]; Danafungia scruposa [synonym]; Herpolitha limax [synonym] |
+| *Fungia fieldi* | Danafungia scruposa [synonym]; Fungia fungites [synonym]; Lithophyllon repanda [synonym] | Danafungia scruposa [synonym]; Fungia fungites [synonym]; Lithophyllon repanda [synonym] |
+| *Fungia klunzingeri* | Danafungia horrida [synonym]; Lithophyllon concinna [synonym] | Danafungia horrida [synonym]; Lithophyllon concinna [synonym] |
+| *Fungia laciniosa* | Cycloseris fragilis [synonym]; Lithophyllon concinna [synonym]; Pleuractis moluccensis [synonym] | Cycloseris fragilis [synonym]; Lithophyllon concinna [synonym]; Pleuractis moluccensis [synonym] |
+| *Fungia limacina* | Ctenactis echinata [synonym]; Herpolitha limax [synonym] | Ctenactis echinata [synonym]; Herpolitha limax [synonym] |
+| *Fungia marginata* | Cycloseris costulata [synonym]; Cycloseris tenuis [synonym] | Cycloseris costulata [synonym]; Cycloseris tenuis [synonym] |
+| *Fungia patella* | Cycloseris costulata [synonym]; Cycloseris fragilis [synonym]; Cycloseris sinensis [synonym]; Cycloseris vaughani [synonym]; Fungia fungites [synonym]; Lithophyllon concinna [synonym] | Cycloseris costulata [synonym]; Cycloseris fragilis [synonym]; Cycloseris sinensis [synonym]; Cycloseris vaughani [synonym]; Fungia fungites [synonym]; Lithophyllon concinna [synonym] |
+| *Fungia patelliformis* | Cycloseris cyclolites [synonym]; Cycloseris fragilis [synonym] | Cycloseris cyclolites [synonym]; Cycloseris fragilis [synonym] |
+| *Fungia placunaria* | Lobactis scutaria [synonym]; Pleuractis paumotensis [synonym] | Lobactis scutaria [synonym]; Pleuractis paumotensis [synonym] |
+| *Fungia plana* | Lithophyllon concinna [synonym]; Pleuractis paumotensis [synonym] | Lithophyllon concinna [synonym]; Pleuractis paumotensis [synonym] |
+| *Fungia proechinata* | Ctenactis crassa [synonym]; Ctenactis echinata [synonym]; Pleuractis paumotensis [synonym] | Ctenactis crassa [synonym]; Ctenactis echinata [synonym]; Pleuractis paumotensis [synonym] |
+| *Fungia samboangensis* | Danafungia scruposa [synonym]; Lithophyllon repanda [synonym] | Danafungia scruposa [synonym]; Lithophyllon repanda [synonym] |
+| *Fungia serrulata* | Fungia fungites [synonym]; Lithophyllon concinna [synonym]; Lithophyllon repanda [synonym] | Fungia fungites [synonym]; Lithophyllon concinna [synonym]; Lithophyllon repanda [synonym] |
+| *Fungia sibogae* | Cycloseris costulata [synonym]; Lithophyllon concinna [synonym] | Cycloseris costulata [synonym]; Lithophyllon concinna [synonym] |
+| *Fungia subrepanda* | Danafungia scruposa [synonym]; Fungia fungites [synonym]; Lithophyllon repanda [synonym] | Danafungia scruposa [synonym]; Fungia fungites [synonym]; Lithophyllon repanda [synonym] |
+| *Fungia tenuifolia* | Fungia fungites [synonym]; Lithophyllon concinna [synonym] | Fungia fungites [synonym]; Lithophyllon concinna [synonym] |
+| *Fungia valida* | Danafungia horrida [synonym]; Danafungia scruposa [synonym] | Danafungia horrida [synonym]; Danafungia scruposa [synonym] |
+| *Gadirtha brisbanensis* | Iscadia poliochroa [synonym]; Plotheia poliochroa [synonym] | Iscadia poliochroa [synonym]; Plotheia poliochroa [synonym] |
+| *Gadirtha poliochroa* | Iscadia poliochroa [primary synonym]; Plotheia poliochroa [primary synonym] | Iscadia poliochroa [synonym]; Plotheia poliochroa [synonym] |
+| *Gadirtha poliochroa brisbanensis* | Iscadia poliochroa [synonym]; Plotheia poliochroa [synonym] | Iscadia poliochroa [synonym]; Plotheia poliochroa [synonym] |
+| *Gellius ridleyi* | Gelliodes pumila [synonym]; Haliclona cymaeformis [synonym] | Gelliodes pumila [synonym]; Haliclona cymaeformis [synonym] |
+| *Geophilus hartmeyeri* | Tuoba laticeps [synonym]; Tuoba sydneyensis [synonym] | Tuoba laticeps [pro parte synonym]; Tuoba sydneyensis [pro parte synonym] |
+| *Gerloubia species 1:* | Constrictobates lineolatus [synonym]; Phauloppiella quagesetosa [synonym] | Constrictobates lineolatus [synonym]; Phauloppiella quagesetosa [synonym] |
+| *Gryllacris incerta* | Hadrogryllacris certa [synonym]; Kinemania ambulans [synonym] | Hadrogryllacris certa [synonym]; Kinemania ambulans [synonym] |
+| *Gryon nigricorne* | Hadronotus nigricornis [Generic combination]; Hadronotus pictus [Generic combination] | Hadronotus nigricornis [Generic combination]; Hadronotus pictus [Generic combination] |
+| *Halichondria rubra digitata* | Hemitedania anonyma [synonym]; Raspailia arbuscula [synonym] | Hemitedania anonyma [synonym]; Raspailia arbuscula [synonym] |
+| *Halictus scutellatus* | Lasioglossum forresti [synonym]; Lasioglossum leichardti [synonym] | Lasioglossum forresti [synonym]; Lasioglossum leichardti [synonym] |
+| *Heliococcus malvastrus* | Ferrisia malvastra [synonym]; Ferrisia virgata [synonym] | Ferrisia malvastra [synonym]; Ferrisia virgata [synonym] |
+| *Helix ammonitoides* | Ammoniropa vigens [synonym]; Nautiliropa omicron [synonym] | Ammoniropa vigens [synonym]; Nautiliropa omicron [synonym] |
+| *Helix antialba* | Geminoropa antialba [synonym]; Groveiana hookeriana [synonym] | Geminoropa antialba [synonym]; Groveiana hookeriana [synonym] |
+| *Helix architectonica* | Archiropa architectonica [synonym]; Diemenoropa kingstonensis [synonym] | Archiropa architectonica [synonym]; Diemenoropa kingstonensis [synonym] |
+| *Helix petterdi* | Exquisitiropa agnewi [synonym]; Mulathena fordei [synonym] | Exquisitiropa agnewi [synonym]; Mulathena fordei [synonym] |
+| *Helix reteporoides* | Excellaoma reteporoides [synonym]; Huntiana murrayana [synonym] | Excellaoma reteporoides [synonym]; Huntiana murrayana [synonym] |
+| *Helodrilus caliginosus* | Aporrectodea caliginosa [Generic combination]; Aporrectodea caliginosa caliginosa [Generic combination] | Aporrectodea caliginosa [Generic combination]; Aporrectodea caliginosa caliginosa [Generic combination] |
+| *Helodrilus rosea* | Aporrectodea rosea [Generic combination]; Aporrectodea rosea rosea [Generic combination] | Aporrectodea rosea [Generic combination]; Aporrectodea rosea rosea [Generic combination] |
+| *Heteronyx obscurus* | Heteronyx castaneus [synonym]; Heteronyx nigella [synonym] | Heteronyx castaneus [synonym]; Heteronyx nigella [synonym] |
+| *Hippomedon miersi* | Galathella miersi [synonym]; Photosella miersi [synonym] | Galathella miersi [synonym]; Photosella miersi [synonym] |
+| *Hister nanus* | Carcinops pumilio [synonym]; Gnathoncus rotundatus [synonym] | Carcinops pumilio [synonym]; Gnathoncus rotundatus [synonym] |
+| *Hydrobius assimilis* | Enochrus natalensis [synonym]; Sternolophus marginicollis [synonym] | Enochrus natalensis [synonym]; Sternolophus marginicollis [synonym] |
+| *Hyperia thoracica* | Lestrigonus bengalensis [synonym]; Themistella fusca [synonym] | Lestrigonus bengalensis [synonym]; Themistella fusca [synonym] |
+| *Hypothripa vallata* | Characoma vallata [primary synonym]; Garella vallata [primary synonym] | Characoma vallata [synonym]; Garella vallata [synonym] |
+| *Ipobracon ingressor* | Cyanopterus ingressor [primary synonym]; Vomeribracon ingressor [primary synonym] | Cyanopterus ingressor [synonym]; Vomeribracon ingressor [synonym] |
+| *Janthina patula* | Janthina globosa [synonym]; Janthina pallida [synonym] | Janthina globosa [synonym]; Janthina pallida [synonym] |
+| *Kapala kengrahami* | Buccipagoda kengrahami [primary synonym]; Buccipagoda ponderi [primary synonym] | Buccipagoda kengrahami [synonym]; Buccipagoda ponderi [synonym] |
+| *Lambis lobata* | Lambis lambis [synonym]; Latissistrombus sinuatus [synonym] | Lambis lambis [synonym]; Latissistrombus sinuatus [synonym] |
+| *Leander serrifer longidactylus* | Palaemon macrodactylus [synonym]; Palaemon serrifer [synonym] | Palaemon macrodactylus [synonym]; Palaemon serrifer [synonym] |
+| *Lecanium depressum simulans* | Coccus hesperidum hesperidum [synonym]; Parasaissetia nigra [synonym] | Coccus hesperidum hesperidum [synonym]; Parasaissetia nigra [synonym] |
+| *Leioproctus proximus* | Leioproctus abdominalis [Generic combination]; Leioproctus striatulus [Generic combination] | Leioproctus abdominalis [Generic combination]; Leioproctus striatulus [Generic combination] |
+| *Lepidopleurus profundus* | Leptochiton collusor [synonym]; Leptochiton liratus [synonym] | Leptochiton collusor [synonym]; Leptochiton liratus [synonym] |
+| *Leptoclinides oscitans* | Leptoclinides cuspidatus [synonym]; Leptoclinides rufus [synonym] | Leptoclinides cuspidatus [synonym]; Leptoclinides rufus [synonym] |
+| *Leucinodes apicalis* | Analyta apicalis [synonym]; Leucinodes sigulalis [synonym] | Analyta apicalis [synonym]; Leucinodes sigulalis [synonym] |
+| *Liparetrus basalis* | Liparetrus albohirtus [synonym]; Liparetrus convexus [synonym] | Liparetrus albohirtus [synonym]; Liparetrus convexus [synonym] |
+| *Litoria verreauxii* | Rawlinsonia verreauxii [Generic combination]; Rawlinsonia verreauxii verreauxii [Generic combination] | Rawlinsonia verreauxii [Generic combination]; Rawlinsonia verreauxii verreauxii [Generic combination] |
+| *Lobactis conferta* | Lobactis scutaria [synonym]; Pleuractis paumotensis [synonym] | Lobactis scutaria [synonym]; Pleuractis paumotensis [synonym] |
+| *Lonchaea splendida* | Lamprolonchaea brouniana [synonym]; Lamprolonchaea smaragdi [synonym] | Lamprolonchaea brouniana [synonym]; Lamprolonchaea smaragdi [synonym] |
+| *Lucina tumida* | Codakia tigerina [synonym]; Euanodontia ovum [synonym] | Codakia tigerina [synonym]; Euanodontia ovum [synonym] |
+| *Lunulites incisa* | Conescharellina angulopora [synonym]; Conescharellina conica [synonym] | Conescharellina angulopora [synonym]; Conescharellina conica [synonym] |
+| *Lycoriella agarici* | Lycoriella auripila [synonym]; Lycoriella sativae [synonym] | Lycoriella auripila [synonym]; Lycoriella sativae [synonym] |
+| *Lygosoma duperreyii* | Acritoscincus trilineatus [synonym]; Lampropholis guichenoti [synonym] | Acritoscincus trilineatus [pro parte synonym]; Lampropholis guichenoti [pro parte synonym] |
+| *Macrobiotus lacustris* | Hypsibius dujardini [synonym]; Thulinius augusti [synonym] | Hypsibius dujardini [synonym]; Thulinius augusti [synonym] |
+| *Macropus agilis* | Notamacropus agilis [Generic combination]; Notamacropus agilis agilis [Generic combination] | Notamacropus agilis [Generic combination]; Notamacropus agilis agilis [Generic combination] |
+| *Macropus magnus* | Osphranter robustus erubescens [synonym]; Osphranter rufus [synonym] | Osphranter robustus erubescens [synonym]; Osphranter rufus [synonym] |
+| *Macrozafra fenestrata* | Anachis fenestrata [Generic combination]; Gatliffena fenestrata [Generic combination] | Anachis fenestrata [Generic combination]; Gatliffena fenestrata [Generic combination] |
+| *Madrepora aspera* | Acropora aspera [primary synonym]; Echinophyllia aspera [primary synonym] | Acropora aspera [synonym]; Echinophyllia aspera [synonym] |
+| *Madrepora cristata* | Lobophyllia hemprichii [synonym]; Pavona cactus [synonym] | Lobophyllia hemprichii [synonym]; Pavona cactus [synonym] |
+| *Madrepora daedalea* | Alveopora daedalea [primary synonym]; Platygyra daedalea [primary synonym] | Alveopora daedalea [synonym]; Platygyra daedalea [synonym] |
+| *Madrepora echinata* | Acropora echinata [primary synonym]; Ctenactis echinata [primary synonym] | Acropora echinata [synonym]; Ctenactis echinata [synonym] |
+| *Madrepora limax* | Herpolitha limax [synonym]; Polyphyllia talpina [synonym] | Herpolitha limax [synonym]; Polyphyllia talpina [synonym] |
+| *Madrepora talpa* | Herpolitha limax [synonym]; Polyphyllia talpina [synonym] | Herpolitha limax [synonym]; Polyphyllia talpina [synonym] |
+| *Mallacoota marilla* | Hoho hirtipalma [synonym]; Hoho marilla [synonym] | Hoho hirtipalma [synonym]; Hoho marilla [synonym] |
+| *Mallodon odewahnii* | Eurynassa australis [synonym]; Eurynassa servillei [synonym] | Eurynassa australis [synonym]; Eurynassa servillei [synonym] |
+| *Malurus longicaudus* | Dasyornis brachypterus brachypterus [synonym]; Malurus cyaneus cyaneus [synonym] | Dasyornis brachypterus brachypterus [synonym]; Malurus cyaneus cyaneus [synonym] |
+| *Malurus pectoralis* | Dasyornis brachypterus brachypterus [synonym]; Malurus splendens splendens [synonym] | Dasyornis brachypterus brachypterus [synonym]; Malurus splendens splendens [synonym] |
+| *Mangelia immaculata* | Guraleus lallemantianus [synonym]; Paracuneus immaculatus [synonym] | Guraleus lallemantianus [synonym]; Paracuneus immaculatus [synonym] |
+| *Margarita angulata* | Ethminolia probabilis [synonym]; Peasiella tantilla [synonym] | Ethminolia probabilis [synonym]; Peasiella tantilla [synonym] |
+| *Marptusa liturata* | Holoplatys liturata [primary synonym]; Ocrisiona liturata [primary synonym] | Holoplatys liturata [synonym]; Ocrisiona liturata [synonym] |
+| *Melanagromyza dianellae* | Kleinschmidtimyia dianellae [primary synonym]; Ophiomyia dianellae [primary synonym] | Kleinschmidtimyia dianellae [synonym]; Ophiomyia dianellae [synonym] |
+| *Melanagromyza pisi* | Kleinschmidtimyia pisi [primary synonym]; Ophiomyia pisi [primary synonym] | Kleinschmidtimyia pisi [synonym]; Ophiomyia pisi [synonym] |
+| *Melanagromyza wikstroemiae* | Kleinschmidtimyia wikstroemiae [primary synonym]; Ophiomyia wikstroemiae [primary synonym] | Kleinschmidtimyia wikstroemiae [synonym]; Ophiomyia wikstroemiae [synonym] |
+| *Meliphaga atricapilla* | Melithreptus affinis [synonym]; Melithreptus lunatus [synonym] | Melithreptus affinis [synonym]; Melithreptus lunatus [synonym] |
+| *Melobasis aureipennis* | Melobasis azureipennis [synonym]; Melobasis cyaneipennis [synonym] | Melobasis azureipennis [synonym]; Melobasis cyaneipennis [synonym] |
+| *Metriorrhynchus marginicollis* | Porrostoma laterale [synonym]; Xylobanus tamborinensis [synonym] | Porrostoma laterale [synonym]; Xylobanus tamborinensis [synonym] |
+| *Mitra amanda* | Strigatella retusa [synonym]; Vexillum amandum [synonym] | Strigatella retusa [synonym]; Vexillum amandum [synonym] |
+| *Mitra angulosa* | Vexillum mirabile [synonym]; Vexillum polygonum [synonym] | Vexillum mirabile [synonym]; Vexillum polygonum [synonym] |
+| *Mitra cancellata* | Nebularia pyramis [synonym]; Vexillum sanguisuga [synonym] | Nebularia pyramis [synonym]; Vexillum sanguisuga [synonym] |
+| *Mitra corrugata* | Vexillum exasperatum [synonym]; Vexillum rugosum [synonym] | Vexillum exasperatum [synonym]; Vexillum rugosum [synonym] |
+| *Mitra impressa* | Nebularia pellisserpentis pellisserpentis [synonym]; Vexillum acuminatum [synonym] | Nebularia pellisserpentis pellisserpentis [synonym]; Vexillum acuminatum [synonym] |
+| *Mitra kieneri* | Nebularia chrysostoma [synonym]; Turriplicifer australis [synonym] | Nebularia chrysostoma [synonym]; Turriplicifer australis [synonym] |
+| *Mitra nebulosa* | Nebularia contracta [synonym]; Quasimitra nubila nubila [synonym] | Nebularia contracta [synonym]; Quasimitra nubila nubila [synonym] |
+| *Mitra nigra* | Isara carbonaria [synonym]; Zierliana oleacea [synonym] | Isara carbonaria [synonym]; Zierliana oleacea [synonym] |
+| *Mitra ornata* | Pterygia nucea [synonym]; Vexillum curviliratum [synonym] | Pterygia nucea [synonym]; Vexillum curviliratum [synonym] |
+| *Mitra propinqua* | Quasimitra nubila nubila [synonym]; Vexillum unifasciatum [synonym] | Quasimitra nubila nubila [synonym]; Vexillum unifasciatum [synonym] |
+| *Mitra rosea* | Vexillum acuminatum [synonym]; Vexillum costatum [synonym] | Vexillum acuminatum [synonym]; Vexillum costatum [synonym] |
+| *Mitra speciosa* | Vexillum speciosum [synonym]; Vexillum unifascialis [synonym] | Vexillum speciosum [synonym]; Vexillum unifascialis [synonym] |
+| *Mitra terebralis* | Nebularia eremitarum [synonym]; Nebularia incompta [synonym] | Nebularia eremitarum [synonym]; Nebularia incompta [synonym] |
+| *Mitra zebra* | Pterygia nucea [synonym]; Strigatella paupercula [synonym] | Pterygia nucea [synonym]; Strigatella paupercula [synonym] |
+| *Modiola elongata* | Jolya elongata [synonym]; Jolya rhomboidea [synonym] | Jolya elongata [synonym]; Jolya rhomboidea [synonym] |
+| *Modiola subrugosa* | Jolya elongata [synonym]; Jolya rhomboidea [synonym] | Jolya elongata [synonym]; Jolya rhomboidea [synonym] |
+| *Monacanthus brunneus* | Cantherhines pardalis [synonym]; Scobinichthys granulatus [synonym] | Cantherhines pardalis [synonym]; Scobinichthys granulatus [synonym] |
+| *Monodonta rubra* | Clanculus dunkeri [synonym]; Euchelus rubrus [synonym] | Clanculus dunkeri [synonym]; Euchelus rubrus [synonym] |
+| *Montipora hirsuta* | Montipora hispida [synonym]; Montipora stellata [synonym] | Montipora hispida [synonym]; Montipora stellata [synonym] |
+| *Montipora ramosa* | Montipora angulata [synonym]; Montipora digitata [synonym] | Montipora angulata [synonym]; Montipora digitata [synonym] |
+| *Murex iostomus* | Morula spinosa [synonym]; Spinidrupa euracantha [synonym] | Morula spinosa [synonym]; Spinidrupa euracantha [synonym] |
+| *Murex lignarius* | Chicoreus capucinus [synonym]; Latirus polygonus [synonym] | Chicoreus capucinus [synonym]; Latirus polygonus [synonym] |
+| *Murex nodulosus* | Cerithium nodulosum [synonym]; Ptychobela nodulosa [synonym] | Cerithium nodulosum [synonym]; Ptychobela nodulosa [synonym] |
+| *Murex plicatus* | Coralliophila erosa [synonym]; Thalessa virgata [synonym] | Coralliophila erosa [synonym]; Thalessa virgata [synonym] |
+| *Murex trigonulus* | Naquetia cumingii [synonym]; Naquetia triqueter [synonym] | Naquetia cumingii [synonym]; Naquetia triqueter [synonym] |
+| *Musca australis* | Calliphora albifrontalis [synonym]; Musca domestica [synonym] | Calliphora albifrontalis [synonym]; Musca domestica [synonym] |
+| *Musca varia* | Amenia chrysame [synonym]; Cuphocera iavana [synonym] | Amenia chrysame [synonym]; Cuphocera iavana [synonym] |
+| *Muscicapa australis* | Eopsaltria australis australis [synonym]; Lichenostomus melanops melanops [synonym] | Eopsaltria australis australis [synonym]; Lichenostomus melanops melanops [synonym] |
+| *Myllocerus tristriatus* | Myllocerus obscurus [synonym]; Myllocerus trisinuatus [synonym] | Myllocerus obscurus [synonym]; Myllocerus trisinuatus [synonym] |
+| *Myrtea desiderata* | Codakia percirrata [synonym]; Easmithia desiderata [Generic combination]; Easmithia desiderata [synonym] | Codakia percirrata [synonym]; Easmithia desiderata [Generic combination]; Easmithia desiderata [synonym] |
+| *Mytilus magellanicus* | Aulacomya atra [synonym]; Brachidontes erosus [synonym] | Aulacomya atra [synonym]; Brachidontes erosus [synonym] |
+| *Nanaguna breviuscula discoidalis* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Nanaguna breviuscula dorsofascia* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Nanaguna breviuscula mediomaculata* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Nanaguna breviuscula tenebrata* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Nanaguna breviuscula uniformis* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Nanaguna breviuscula variegatana* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Nannonyx kidderi* | Parawaldeckia kidderi [Generic combination]; Parawaldeckia stebbingi [Generic combination] | Parawaldeckia kidderi [Generic combination]; Parawaldeckia stebbingi [Generic combination] |
+| *Nassa balteata* | Nassarius sufflatus [synonym]; Reticunassa paupera [synonym] | Nassarius sufflatus [synonym]; Reticunassa paupera [synonym] |
+| *Nassa fusca* | Nassarius fuscus [synonym]; Nassarius olivaceus [synonym] | Nassarius fuscus [synonym]; Nassarius olivaceus [synonym] |
+| *Nassa graphitera* | Nassarius gaudiosus [synonym]; Nassarius graphiterus [synonym] | Nassarius gaudiosus [synonym]; Nassarius graphiterus [synonym] |
+| *Nassa minor* | Nassarius concinnus [synonym]; Nassarius coronatus [synonym] | Nassarius concinnus [synonym]; Nassarius coronatus [synonym] |
+| *Nassa semisulcata* | Nassarius gaudiosus [synonym]; Nassarius semisulcatus [synonym] | Nassarius gaudiosus [synonym]; Nassarius semisulcatus [synonym] |
+| *Nephila nigritarsis insulicola* | Trichonephila antipodiana [synonym]; Trichonephila plumipes [synonym] | Trichonephila antipodiana [synonym]; Trichonephila plumipes [synonym] |
+| *Nephila ornata* | Nephila pilipes [synonym]; Trichonephila antipodiana [synonym]; Trichonephila plumipes [synonym] | Nephila pilipes [synonym]; Trichonephila antipodiana [synonym]; Trichonephila plumipes [synonym] |
+| *Nerita eburnea* | Naticarius orientalis [synonym]; Nerita plicata [synonym] | Naticarius orientalis [synonym]; Nerita plicata [synonym] |
+| *Nerita nigra* | Nerita plicata [synonym]; Nerita polita [synonym] | Nerita plicata [synonym]; Nerita polita [synonym] |
+| *Noctua maculata* | Eudocima cocalus [synonym]; Ninox leucopsis [synonym] | Eudocima cocalus [synonym]; Ninox leucopsis [synonym] |
+| *Nymphula aristodora* | Elophila aristodora [synonym]; Parapoynx sinuosa [synonym] | Elophila aristodora [synonym]; Parapoynx sinuosa [synonym] |
+| *Obeliscus jucunda* | Tiberia bifasciata [synonym]; Turbonilla fusca [synonym] | Tiberia bifasciata [synonym]; Turbonilla fusca [synonym] |
+| *Odo gracilis* | Argoctenus gracilis [primary synonym]; Knotodo gracilis [primary synonym] | Argoctenus gracilis [synonym]; Knotodo gracilis [synonym] |
+| *Odostomia lactea* | Megastomia angasi [synonym]; Odostomia angasi [synonym] | Megastomia angasi [synonym]; Odostomia angasi [synonym] |
+| *Onchidium meriakrii* | Alionchis meriakrii [primary synonym]; Onchidina meriakrii [primary synonym] | Alionchis meriakrii [synonym]; Onchidina meriakrii [synonym] |
+| *Opisthoscelis globosa* | Opisthoscelis subrotunda [synonym]; Tanyscelis convexa [synonym] | Opisthoscelis subrotunda [synonym]; Tanyscelis convexa [synonym] |
+| *Opisthosyllis brevicirra* | Paraopisthosyllis alternocirra [synonym]; Paraopisthosyllis brevicirra [synonym] | Paraopisthosyllis alternocirra [synonym]; Paraopisthosyllis brevicirra [synonym] |
+| *Ovula lactea* | Diminovula alabaster [synonym]; Procalpurnus lacteus [synonym] | Diminovula alabaster [synonym]; Procalpurnus lacteus [synonym] |
+| *Paederus erichsoni* | Paederus fuscipes fuscipes [synonym]; Paederus meyricki [synonym] | Paederus fuscipes fuscipes [synonym]; Paederus meyricki [synonym] |
+| *Panacra excellens* | Angonyx excellens [primary synonym]; Pseudoangonyx excellens [primary synonym] | Angonyx excellens [synonym]; Pseudoangonyx excellens [synonym] |
+| *Paracolletes spatulatus* | Leioproctus spatulatus [synonym]; Leioproctus versicolor [synonym] | Leioproctus spatulatus [synonym]; Leioproctus versicolor [synonym] |
+| *Paranacaena nitens* | Anacaena nitens [primary synonym]; Gentilina nitens [primary synonym] | Anacaena nitens [synonym]; Gentilina nitens [synonym] |
+| *Paropsis chlorotica* | Paropsisterna chlorotica [synonym]; Peltoschema mansueta [synonym] | Paropsisterna chlorotica [synonym]; Peltoschema mansueta [synonym] |
+| *Paropsis incarnata* | Paropsis deboeri [synonym]; Paropsis dilatata [synonym] | Paropsis deboeri [synonym]; Paropsis dilatata [synonym] |
+| *Paropsis papulosa* | Trachymela papulosa [synonym]; Trachymela rugosa [synonym] | Trachymela papulosa [synonym]; Trachymela rugosa [synonym] |
+| *Paropsis testacea* | Paropsis wilsoni [synonym]; Paropsisterna testacea [synonym] | Paropsis wilsoni [synonym]; Paropsisterna testacea [synonym] |
+| *Patella tricarinata* | Amathina tricarinata [synonym]; Montfortista panhi [synonym] | Amathina tricarinata [synonym]; Montfortista panhi [synonym] |
+| *Perionychella bithecata* | Diporochaeta bithecata [primary synonym]; Diporochaeta bithecatus [primary synonym] | Diporochaeta bithecata [synonym]; Diporochaeta bithecatus [synonym] |
+| *Phalangista cookii* | Pseudocheirus peregrinus cooki [synonym]; Pseudocheirus peregrinus peregrinus [synonym]; Pseudocheirus peregrinus pulcher [synonym] | Phalangista cookii [unplaced]; Pseudocheirus peregrinus cooki [synonym]; Pseudocheirus peregrinus peregrinus [synonym]; Pseudocheirus peregrinus pulcher [synonym] |
+| *Phascogale flavipes* | Antechinus flavipes flavipes [synonym]; Antechinus stuartii [synonym] | Antechinus flavipes flavipes [synonym]; Antechinus stuartii [synonym] |
+| *Philia compacta* | Lampromicra aerea [synonym]; Lampromicra senator [synonym] | Lampromicra aerea [synonym]; Lampromicra senator [synonym] |
+| *Philonthus xantholinoides* | Heterothops fauveli [synonym]; Neobisnius procerulus procerulus [synonym] | Heterothops fauveli [synonym]; Neobisnius procerulus procerulus [synonym] |
+| *Phronima custos* | Phronima sedentaria [synonym]; Phronima solitaria [synonym] | Phronima sedentaria [synonym]; Phronima solitaria [synonym] |
+| *Phyllidia tuberculata* | Phyllidia ocellata [synonym]; Phyllidiopsis cardinalis [synonym] | Phyllidia ocellata [synonym]; Phyllidiopsis cardinalis [synonym] |
+| *Phyllodactylus barbouri* | Diplodactylus furcosus [synonym]; Diplodactylus vittatus [synonym] | Diplodactylus furcosus [synonym]; Diplodactylus vittatus [synonym] |
+| *Pinna vitrea* | Atrina pectinata [synonym]; Streptopinna saccata [synonym] | Atrina pectinata [synonym]; Streptopinna saccata [synonym] |
+| *Pinnotheres villosulus* | Celotheres villosulus [primary synonym]; Nepinnotheres villosulus [primary synonym] | Celotheres villosulus [synonym]; Nepinnotheres villosulus [synonym] |
+| *Pionosyllis augeneri* | Perkinsyllis augeneri [Generic combination]; Perkinsyllis augeneri [synonym]; Perkinsyllis koolalya [synonym]; Pionosyllis koolalya [synonym] | Perkinsyllis augeneri [synonym]; Perkinsyllis koolalya [synonym]; Pionosyllis koolalya [synonym] |
+| *Planaria hoernesi* | Dugesia hoernesi [primary synonym]; Romankenkius hoernesi [primary synonym]; Romankenkius hoernesi [synonym] | Dugesia hoernesi [synonym]; Romankenkius hoernesi [synonym] |
+| *Planorbis fragilis* | Gyraulus essingtonensis [synonym]; Gyraulus gilberti [synonym] | Gyraulus essingtonensis [synonym]; Gyraulus gilberti [synonym] |
+| *Platystoma australis* | Euprosopia anostigma [synonym]; Euprosopia maculipennis [synonym] | Euprosopia anostigma [synonym]; Euprosopia maculipennis [synonym] |
+| *Pleurophyllidia cygnea* | Armina cf. cygnea [primary synonym]; Armina cygnea [primary synonym] | Armina cf. cygnea [synonym]; Armina cygnea [synonym] |
+| *Pleurota pyrosema* | Heterochyta pyrotypa [synonym]; Thema brevivitella [synonym] | Heterochyta pyrotypa [synonym]; Thema brevivitella [synonym] |
+| *Pleurotoma gracillima* | Turris crispa [synonym]; Turris crispa crispa [synonym] | Turris crispa [synonym]; Turris crispa crispa [synonym] |
+| *Pleurotoma marmorata* | Lophiotoma acuta [synonym]; Lophiotoma indica [synonym] | Lophiotoma acuta [synonym]; Lophiotoma indica [synonym] |
+| *Pleuroxia commenta* | Basedowena polypleura [synonym]; Pleuroxia polypleura [synonym] | Basedowena polypleura [synonym]; Pleuroxia polypleura [synonym] |
+| *Pleuroxia oligopleura numba* | Basedowena oligopleura [synonym]; Pleuroxia oligopleura [synonym] | Basedowena oligopleura [synonym]; Pleuroxia oligopleura [synonym] |
+| *Pleuroxia truca* | Granulomelon adcockiana [synonym]; Pleuroxia adcockiana [synonym] | Granulomelon adcockiana [synonym]; Pleuroxia adcockiana [synonym] |
+| *Plumularia aurita* | Macrorhynchia phoenicea [synonym]; Monotheca australis [synonym] | Macrorhynchia phoenicea [synonym]; Monotheca australis [synonym] |
+| *Plumularia indivisa* | Halopteris campanula [synonym]; Plumularia filicaulis [synonym] | Halopteris campanula [synonym]; Plumularia filicaulis [synonym] |
+| *Pneumodermis atlanticus* | Pneumoderma violaceum [synonym]; Pneumoderma violaceum atlanticum [synonym] | Pneumoderma violaceum [synonym]; Pneumoderma violaceum atlanticum [synonym] |
+| *Pocillopora nobilis* | Pocillopora meandrina [synonym]; Pocillopora verrucosa [synonym] | Pocillopora meandrina [synonym]; Pocillopora verrucosa [synonym] |
+| *Polyrhachis comata* | Polyrhachis gab [synonym]; Polyrhachis senilis [synonym] | Polyrhachis gab [synonym]; Polyrhachis senilis [synonym] |
+| *Procellaria fuliginosa* | Procellaria aequinoctialis aequinoctialis [synonym]; Pterodroma macroptera [synonym] | Procellaria aequinoctialis aequinoctialis [synonym]; Pterodroma macroptera [synonym] |
+| *Procellaria leucoptera* | Pterodroma heraldica [synonym]; Pterodroma leucoptera [synonym] | Pterodroma heraldica [synonym]; Pterodroma leucoptera [synonym] |
+| *Prosopis disjuncta* | Hylaeus disjunctus [synonym]; Meroglossa eucalypti [synonym] | Hylaeus disjunctus [synonym]; Meroglossa eucalypti [synonym] |
+| *Pseudomyrma laeviceps* | Lophocheilus laeviceps [primary synonym]; Tetraponera laeviceps [primary synonym] | Lophocheilus laeviceps [synonym]; Tetraponera laeviceps [synonym] |
+| *Pseudostichopus dilatorbis* | Molpadiodemas involutus [synonym]; Pseudostichopus mollis [synonym] | Molpadiodemas involutus [synonym]; Pseudostichopus mollis [synonym] |
+| *Psittacus australis* | Glossopsitta concinna concinna [synonym]; Lathamus discolor [synonym] | Glossopsitta concinna concinna [synonym]; Lathamus discolor [synonym] |
+| *Psittacus multicolor* | Psephotellus varius [synonym]; Trichoglossus moluccanus moluccanus [synonym] | Psephotellus varius [synonym]; Trichoglossus moluccanus moluccanus [synonym] |
+| *Psittacus novaehollandiae* | Nymphicus hollandicus [synonym]; Trichoglossus moluccanus moluccanus [synonym] | Nymphicus hollandicus [synonym]; Trichoglossus moluccanus moluccanus [synonym] |
+| *Psittacus viridis* | Barnardius zonarius zonarius [synonym]; Pezoporus wallicus wallicus [synonym] | Barnardius zonarius zonarius [synonym]; Pezoporus wallicus wallicus [synonym] |
+| *Psylla eucalypti* | Ctenarytaina eucalypti [primary synonym]; Glycaspis eucalypti [primary synonym] | Ctenarytaina eucalypti [synonym]; Glycaspis eucalypti [synonym] |
+| *Pupa strangei* | Gastrocopta strangei [primary synonym]; Velepalaina strangei [primary synonym] | Gastrocopta strangei [synonym]; Velepalaina strangei [synonym] |
+| *Purpura cancellata* | Muricodrupa fenestrata [synonym]; Naquetia triqueter [synonym]; Semiricinula muricina [synonym] | Muricodrupa fenestrata [synonym]; Naquetia triqueter [synonym]; Semiricinula muricina [synonym] |
+| *Pyralis nigricalis* | Catamola thyrisalis [synonym]; Stericta carbonalis [synonym] | Catamola thyrisalis [synonym]; Stericta carbonalis [synonym] |
+| *Pyrazus cingulatus* | Pirenella austrocingulata [synonym]; Pirenella delicatula [synonym]; Pirenella rugosa [synonym] | Pirenella austrocingulata [synonym]; Pirenella delicatula [synonym]; Pirenella rugosa [synonym] |
+| *Rachiopogon aurifacies* | Thereutria amaraca [Generic combination]; Thereutria whitei [Generic combination] | Thereutria amaraca [Generic combination]; Thereutria whitei [Generic combination] |
+| *Reticunassa compacta benthalis* | Nassarius mobilis [synonym]; Reticunassa compacta [synonym] | Nassarius mobilis [synonym]; Reticunassa compacta [synonym] |
+| *Rhizoconus vexillum* | Conus vexillum [Generic combination]; Conus vexillum vexillum [Generic combination] | Conus vexillum [Generic combination]; Conus vexillum vexillum [Generic combination] |
+| *Rhodogastria papuana* | Amerila crokeri [synonym]; Amerila timolis [synonym] | Amerila crokeri [synonym]; Amerila timolis [synonym] |
+| *Rissoa glomerosa* | Botelloides bassianus [synonym]; Botelloides bassianus bassianus [synonym] | Botelloides bassianus [synonym]; Botelloides bassianus bassianus [synonym] |
+| *Rissoa maccoyi* | Austrorissopsis maccoyi [primary synonym]; Rissopsetia maccoyi [primary synonym] | Austrorissopsis maccoyi [synonym]; Rissopsetia maccoyi [synonym] |
+| *Rissopsis brevis* | Austrorissopsis consobrina [synonym]; Liostomia consobrina [synonym] | Austrorissopsis consobrina [synonym]; Liostomia consobrina [synonym] |
+| *Ropalidia mutabilis torresiana* | Ropalidia flavinoda [synonym]; Ropalidia gregaria [synonym] | Ropalidia flavinoda [synonym]; Ropalidia gregaria [synonym] |
+| *Rutela bracteatus* | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] |
+| *Rutela manicata* | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] |
+| *Rutela ruficollis* | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] | Repsimus manicatus [synonym]; Repsimus manicatus manicatus [synonym] |
+| *Sabella monophthalma* | Notaulax phaeotaenia [synonym]; Stylomma palmatum [synonym] | Notaulax phaeotaenia [synonym]; Stylomma palmatum [synonym] |
+| *Sandolitha robusta* | Halomitra pileus [synonym]; Podabacia crustacea [synonym] | Halomitra pileus [synonym]; Podabacia crustacea [synonym] |
+| *Sardia rostrata pluto* | Haplodelphax pluto [Generic combination]; Sardia rostrata [Generic combination] | Haplodelphax pluto [Generic combination]; Sardia rostrata [Generic combination] |
+| *Sarotricha demiota* | Nycteola polycyma [synonym]; Selepa circulella [synonym] | Nycteola polycyma [synonym]; Selepa circulella [synonym] |
+| *Scincus undecimstriatus* | Ctenotus taeniolatus [synonym]; Pseudemoia entrecasteauxii [synonym] | Ctenotus taeniolatus [pro parte synonym]; Pseudemoia entrecasteauxii [pro parte synonym] |
+| *Scolopendra tigrina* | Scolopendra morsitans [synonym]; Scolopendra subspinipes mutilans [synonym] | Scolopendra morsitans [synonym]; Scolopendra subspinipes mutilans [synonym] |
+| *Selepa curiosa* | Characoma curiosa [primary synonym]; Garella curiosa [primary synonym] | Characoma curiosa [synonym]; Garella curiosa [synonym] |
+| *Semanopterus subaequalis* | Semanopterus solidus [synonym]; Semanopterus subcostatus [synonym] | Semanopterus solidus [synonym]; Semanopterus subcostatus [synonym] |
+| *Sertularella tridentata* | Sertularella diaphana [synonym]; Sertularella pinnata [synonym] | Sertularella diaphana [synonym]; Sertularella pinnata [synonym] |
+| *Siganus tumifrons* | Siganus fuscescens [Generic combination]; Siganus spinus [Generic combination] | Siganus fuscescens [Generic combination]; Siganus spinus [Generic combination] |
+| *Simoselaps fasciolatus* | Brachyurophis fasciolatus [Generic combination]; Brachyurophis fasciolatus fasciolatus [Generic combination] | Brachyurophis fasciolatus [Generic combination]; Brachyurophis fasciolatus fasciolatus [Generic combination] |
+| *Solarium maculatum* | Architectonica perspectiva [synonym]; Architectonica picta [synonym] | Architectonica perspectiva [synonym]; Architectonica picta [synonym] |
+| *Sphaerosyllis cuticulata* | Sphaerosyllis capensis [synonym]; Sphaerosyllis densopapillata [synonym] | Sphaerosyllis capensis [synonym]; Sphaerosyllis densopapillata [synonym] |
+| *Sphex argentifrons* | Sphex argentatus [synonym]; Sphex semifossulatus [synonym] | Sphex argentatus [synonym]; Sphex semifossulatus [synonym] |
+| *Spiophanes cf. kroeyeri* | Spiophanes japonicum [synonym]; Spiophanes modestus [synonym]; Spiophanes viriosus [synonym] | Spiophanes japonicum [synonym]; Spiophanes modestus [synonym]; Spiophanes viriosus [synonym] |
+| *Spondylus aculeatus* | Spondylus nicobaricus [synonym]; Spondylus spinosus [synonym]; Spondylus variegatus [synonym] | Spondylus nicobaricus [synonym]; Spondylus spinosus [synonym]; Spondylus variegatus [synonym] |
+| *Spondylus flabellum* | Spondylus anacanthus [synonym]; Spondylus candidus [synonym] | Spondylus anacanthus [synonym]; Spondylus candidus [synonym] |
+| *Spongia bilamellata* | Callyspongia bilamellata [synonym]; Echinodictyum mesenterinum [synonym] | Callyspongia bilamellata [synonym]; Echinodictyum mesenterinum [synonym] |
+| *Spongia pala* | Taonura colus [synonym]; Taonura pala [synonym] | Taonura colus [synonym]; Taonura pala [synonym] |
+| *Spongia tubulosa* | Callyspongia tubulosa [synonym]; Hyattella intestinalis [synonym] | Callyspongia tubulosa [synonym]; Hyattella intestinalis [synonym] |
+| *Stellettinopsis tuberculata* | Asteropus radiocrusta [synonym]; Jaspis stellifera [synonym]; Stelletta tuberculata [synonym] | Asteropus radiocrusta [synonym]; Jaspis stellifera [synonym]; Stelletta tuberculata [synonym] |
+| *Sterna novaehollandiae* | Onychoprion anaethetus anaethetus [synonym]; Thalasseus bergii cristatus [synonym] | Onychoprion anaethetus anaethetus [synonym]; Thalasseus bergii cristatus [synonym] |
+| *Stigmodera addenda* | Castiarina straminea [synonym]; Temognatha excisicollis [synonym] | Castiarina straminea [synonym]; Temognatha excisicollis [synonym] |
+| *Stigmodera apicalis* | Castiarina kerremansi [synonym]; Castiarina trifasciata [synonym] | Castiarina kerremansi [synonym]; Castiarina trifasciata [synonym] |
+| *Stigmodera bicincta* | Castiarina bifasciata [synonym]; Castiarina vicina [synonym] | Castiarina bifasciata [synonym]; Castiarina vicina [synonym] |
+| *Stigmodera capucina* | Castiarina decipiens [synonym]; Temognatha wimmerae wimmerae [synonym] | Castiarina decipiens [synonym]; Temognatha wimmerae wimmerae [synonym] |
+| *Stigmodera caudata* | Castiarina insignis [synonym]; Castiarina rollei [synonym] | Castiarina insignis [synonym]; Castiarina rollei [synonym] |
+| *Stigmodera cruentata* | Castiarina bella [synonym]; Temognatha flavomarginata [synonym] | Castiarina bella [synonym]; Temognatha flavomarginata [synonym] |
+| *Stigmodera deliciosa* | Castiarina beatrix [synonym]; Castiarina distincta [synonym] | Castiarina beatrix [synonym]; Castiarina distincta [synonym] |
+| *Stigmodera imperator* | Temognatha chevrolatii [synonym]; Temognatha murrayi [synonym] | Temognatha chevrolatii [synonym]; Temognatha murrayi [synonym] |
+| *Stigmodera pictiventris* | Castiarina pictipennis [synonym]; Temognatha sanguinea [synonym] | Castiarina pictipennis [synonym]; Temognatha sanguinea [synonym] |
+| *Stigmodera saundersii* | Nascioides parryi [synonym]; Temognatha obesissima obesissima [synonym] | Nascioides parryi [synonym]; Temognatha obesissima obesissima [synonym] |
+| *Stigmodera suavis* | Castiarina scalaris [synonym]; Castiarina venusta [synonym] | Castiarina scalaris [synonym]; Castiarina venusta [synonym] |
+| *Stilpnosoma turneri* | Euryglossa laevigatum [synonym]; Euryglossa subsericea [synonym] | Euryglossa laevigatum [synonym]; Euryglossa subsericea [synonym] |
+| *Strombus haemastoma* | Canarium erythrinum [synonym]; Hawaiistrombus scalariforme [Generic combination]; Hawaiistrombus scalariforme [synonym] | Canarium erythrinum [synonym]; Hawaiistrombus scalariforme [synonym] |
+| *Strombus petrosus* | Clypeomorus petrosa [synonym]; Clypeomorus petrosa petrosa [synonym] | Clypeomorus petrosa [synonym]; Clypeomorus petrosa petrosa [synonym] |
+| *Strombus plicatus* | Canarium erythrinum [synonym]; Canarium labiatum [synonym] | Canarium erythrinum [synonym]; Canarium labiatum [synonym] |
+| *Suberites mollis* | Pseudosuberites mollis [synonym]; Stylissa massa [synonym] | Pseudosuberites mollis [synonym]; Stylissa massa [synonym] |
+| *Syllis spongicola* | Haplosyllis cf. spongicola [synonym]; Haplosyllis spongicola [synonym] | Haplosyllis cf. spongicola [synonym]; Haplosyllis spongicola [synonym] |
+| *Symitha nigridisca* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Symplectoscyphus australis* | Symplectoscyphus johnstoni [synonym]; Symplectoscyphus neglectus [synonym] | Symplectoscyphus johnstoni [synonym]; Symplectoscyphus neglectus [synonym] |
+| *Synthemis brevistyla* | Eusynthemis brevistyla [primary synonym]; Eusynthemis brevistyla brevistyla [primary synonym] | Eusynthemis brevistyla [synonym]; Eusynthemis brevistyla brevistyla [synonym] |
+| *Syrnola angasi* | Megastomia angasi [Generic combination]; Odostomia angasi [Generic combination] | Megastomia angasi [Generic combination]; Odostomia angasi [Generic combination] |
+| *Tabanus antecedens* | Dasybasis edentula [synonym]; Dolichapha gregaria [synonym] | Dasybasis edentula [synonym]; Dolichapha gregaria [synonym] |
+| *Tabanus posticus* | Anabasis postica [synonym]; Cydistomyia avida [synonym] | Anabasis postica [synonym]; Cydistomyia avida [synonym] |
+| *Tabanus rufoabdominalis* | Cydistomyia laticallosa [synonym]; Cydistomyia laticallosa aticallosa [synonym] | Cydistomyia laticallosa [synonym]; Cydistomyia laticallosa aticallosa [synonym] |
+| *Tellina denticulata* | Serratina capsoides [synonym]; Tellinota imbellis [synonym] | Serratina capsoides [synonym]; Tellinota imbellis [synonym] |
+| *Tellina minuta* | Moerella minuta [synonym]; Nitidotellina australiensis [synonym] | Moerella minuta [synonym]; Nitidotellina australiensis [synonym] |
+| *Tellina modesta* | Abranda modestina [synonym]; Merisca margaritina [synonym] | Abranda modestina [synonym]; Merisca margaritina [synonym] |
+| *Terebra flavescens* | Myurella affinis [synonym]; Terebra succincta [Generic combination]; Terebra succincta [synonym] | Myurella affinis [synonym]; Terebra succincta [Generic combination]; Terebra succincta [synonym] |
+| *Terebra striata* | Myurella affinis [synonym]; Terebra babylonia [synonym] | Myurella affinis [synonym]; Terebra babylonia [synonym] |
+| *Tethina lasiophthalma* | Dasyrhicnoessa ferruginea [synonym]; Dasyrhicnoessa insularis [synonym] | Dasyrhicnoessa ferruginea [synonym]; Dasyrhicnoessa insularis [synonym] |
+| *Thalassodendron rubens dura* | Clathria rubens [synonym]; Clathria rubra [synonym] | Clathria rubens [synonym]; Clathria rubra [synonym] |
+| *Thalassodendron rubens lamella* | Clathria rubens [synonym]; Clathria rubra [synonym] | Clathria rubens [synonym]; Clathria rubra [synonym] |
+| *Thalassodendron typica* | Clathria cactiformis [synonym]; Echinodictyum mesenterinum [synonym] | Clathria cactiformis [synonym]; Echinodictyum mesenterinum [synonym] |
+| *Theretra butus* | Theretra clotho [synonym]; Theretra tryoni [synonym] | Theretra clotho [synonym]; Theretra tryoni [synonym] |
+| *Thracia jacksonensis* | Thracia angasiana [synonym]; Thracia modesta [synonym] | Thracia angasiana [synonym]; Thracia modesta [synonym] |
+| *Thrypticodes xyloglypta* | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] | Etanna breviuscula [synonym]; Nanaguna breviuscula [synonym] |
+| *Thynnus affinis* | Agriomyia marginilabris [synonym]; Catocheilus affinis [primary synonym]; Euthynnus affinis [primary synonym] | Agriomyia marginilabris [synonym]; Catocheilus affinis [synonym]; Euthynnus affinis [synonym] |
+| *Thynnus conspicuus* | Agriomyia albomaculata [synonym]; Thynnus ventralis [synonym] | Agriomyia albomaculata [synonym]; Thynnus ventralis [synonym] |
+| *Thynnus klugii* | Catocheilus klugii [primary synonym]; Megalothynnus klugii [primary synonym] | Catocheilus klugii [synonym]; Megalothynnus klugii [synonym] |
+| *Trachycardium peregrinum* | Vasticardium flavum [synonym]; Vasticardium pectiniforme [synonym] | Vasticardium flavum [synonym]; Vasticardium pectiniforme [synonym] |
+| *Trichopteryx gigas* | Acrotrichis grandicollis [synonym]; Acrotrichis inconspicua [synonym] | Acrotrichis grandicollis [synonym]; Acrotrichis inconspicua [synonym] |
+| *Tridacna cumingii* | Tridacna crocea [synonym]; Tridacna maxima [synonym] | Tridacna crocea [synonym]; Tridacna maxima [synonym] |
+| *Tridacna lamarcki* | Tridacna crocea [synonym]; Tridacna gigas [synonym]; Tridacna maxima [synonym]; Tridacna squamosa [synonym] | Tridacna crocea [synonym]; Tridacna gigas [synonym]; Tridacna maxima [synonym]; Tridacna squamosa [synonym] |
+| *Tridacna mutica* | Tridacna gigas [synonym]; Tridacna maxima [synonym] | Tridacna gigas [synonym]; Tridacna maxima [synonym] |
+| *Tridacne imbricata* | Tridacna gigas [synonym]; Tridacna maxima [synonym]; Tridacna squamosa [synonym] | Tridacna gigas [synonym]; Tridacna maxima [synonym]; Tridacna squamosa [synonym] |
+| *Triforis fasciata* | Costatophora granifera [synonym]; Hedleytriphora fasciata [synonym] | Costatophora granifera [synonym]; Hedleytriphora fasciata [synonym] |
+| *Tritonium granulatum* | Austrotriton subdistorta [synonym]; Monoplex exaratus [synonym] | Austrotriton subdistorta [synonym]; Monoplex exaratus [synonym] |
+| *Trochosa expolita expolita* | Artoriopsis expolita [Generic combination]; Artoriopsis melissae [Generic combination] | Artoriopsis expolita [Generic combination]; Artoriopsis melissae [Generic combination] |
+| *Trochosa expolita impedita* | Artoria impedita [Generic combination]; Artoriopsis expolita [Generic combination] | Artoria impedita [Generic combination]; Artoriopsis expolita [Generic combination] |
+| *Trochosa tristicula tristicula* | Kangarosa ludwigi [Generic combination]; Kangarosa tristicula [Generic combination] | Kangarosa ludwigi [Generic combination]; Kangarosa tristicula [Generic combination] |
+| *Trochus australis* | Astele rubiginosa rubiginosa [synonym]; Chlorodiloma adelaidae [Generic combination]; Phasianotrochus eximius [synonym] | Astele rubiginosa rubiginosa [synonym]; Chlorodiloma adelaidae [Generic combination]; Phasianotrochus eximius [synonym] |
+| *Trochus indistinctus* | Calthalotia fragum [synonym]; Cantharidus lepidus [synonym] | Calthalotia fragum [synonym]; Cantharidus lepidus [synonym] |
+| *Trochus nitens* | Cantharidus lepidus [synonym]; Prothalotia lehmanni [synonym] | Cantharidus lepidus [synonym]; Prothalotia lehmanni [synonym] |
+| *Trochus smithi* | Clanculus undatus [synonym]; Clanculus undatus undatus [synonym] | Clanculus undatus [synonym]; Clanculus undatus undatus [synonym] |
+| *Tropidolopisma dumerillii* | Egernia kingii [synonym]; Liopholis pulchra pulchra [synonym] | Egernia kingii [pro parte synonym]; Liopholis pulchra pulchra [pro parte synonym] |
+| *Turbo nivosus* | Turbo haynesi [synonym]; Turbo necnivosa [synonym] | Turbo haynesi [synonym]; Turbo necnivosa [synonym] |
+| *Turbonilla iredalei* | Mormulasta iredalei [Generic combination]; Tathrella iredalei [Generic combination] | Mormulasta iredalei [Generic combination]; Tathrella iredalei [Generic combination] |
+| *Turdus badius* | Colluricincla harmonica harmonica [synonym]; Turdus poliocephalus poliocephalus [synonym] | Colluricincla harmonica harmonica [synonym]; Turdus poliocephalus poliocephalus [synonym] |
+| *Tylenchus coffeae* | Aphelenchoides coffeae [primary synonym]; Pratylenchus coffeae [primary synonym] | Aphelenchoides coffeae [synonym]; Pratylenchus coffeae [synonym] |
+| *Typosyllis rockinghamensis* | Syllis pharobroomensis [synonym]; Typosyllis gerhardi [synonym] | Syllis pharobroomensis [synonym]; Typosyllis gerhardi [synonym] |
+| *Urodacus granifrons* | Urodacus armatus [synonym]; Urodacus yaschenkoi [synonym] | Urodacus armatus [synonym]; Urodacus yaschenkoi [synonym] |
+| *Verrilliola gracilis* | Brachioteuthis behnii [synonym]; Brachioteuthis riisei [synonym] | Brachioteuthis behnii [synonym]; Brachioteuthis riisei [synonym] |
+| *Voluccella nigra* | Petauroides volans [synonym]; Petaurus australis australis [synonym] | Petauroides volans [synonym]; Petaurus australis australis [synonym] |
+| *Vulturnia albonotata* | Daerlac cephalotes [synonym]; Daerlac tricolor [synonym] | Daerlac cephalotes [synonym]; Daerlac tricolor [synonym] |
+| *Xanthorhoe brujata* | Visiana brujata [Generic combination]; Visiana repentinata [Generic combination] | Visiana brujata [Generic combination]; Visiana repentinata [Generic combination] |
+| *Zoniolaimus labiatus* | Rugostrongylus labiatus [Generic combination]; Wallabinema labiatum [Generic combination] | Rugostrongylus labiatus [Generic combination]; Wallabinema labiatum [Generic combination] |
+| *Zora ferruginea* | Miturgopelma ferruginea [primary synonym]; Uliodon ferrugineus [primary synonym] | Miturgopelma ferruginea [synonym]; Uliodon ferrugineus [synonym] |
+:::
+
+::: {.callout-note collapse="true"}
+## The 295 names resolved only in the NSL format
+
+| Name | NSL format: accepted name [status] | AFD format: accepted name [status] |
+|---|---|---|
+| *Ablepharus boutoni australis* | Cryptoblepharus australis [primary synonym]; Cryptoblepharus plagiocephalus [synonym] | Cryptoblepharus australis [synonym]; Cryptoblepharus plagiocephalus [synonym] |
+| *Acanthodrilus schmardae* | Diplotrema daemeli [synonym]; Diplotrema schmardae [primary synonym] | Diplotrema daemeli [synonym]; Diplotrema schmardae [synonym] |
+| *Acontia signifera* | Acontia crocata [synonym]; Maliattha signifera [primary synonym] | Acontia crocata [synonym]; Maliattha signifera [synonym] |
+| *Acrotelsa producta* | Acrotelsella producta [synonym]; Acrotelsella producta producta [primary synonym] | Acrotelsella producta [synonym]; Acrotelsella producta producta [synonym] |
+| *Agromyza piliseta* | Cerodontha piliseta [primary synonym]; Melanagromyza pubiseta [synonym] | Cerodontha piliseta [synonym]; Melanagromyza pubiseta [synonym] |
+| *Agrypnus ereptus* | Lanelater ereptus [primary synonym]; Lanelater fleutiauxi [synonym] | Lanelater ereptus [synonym]; Lanelater fleutiauxi [synonym] |
+| *Alecto labialis* | Austrelaps labialis [primary synonym]; Drysdalia coronoides [synonym] | Austrelaps labialis [synonym]; Drysdalia coronoides [synonym] |
+| *Allolobophora constricta* | Bimastos constrictus [primary synonym]; Dendrodrilus rubidus rubidus [synonym] | Bimastos constrictus [synonym]; Dendrodrilus rubidus rubidus [synonym] |
+| *Allolobophora tenuis* | Dendrodrilus rubidus rubidus [synonym]; Dendrodrilus rubidus tenuis [primary synonym] | Dendrodrilus rubidus rubidus [synonym]; Dendrodrilus rubidus tenuis [synonym] |
+| *Alona longirostris* | Biapertura kendallensis [synonym]; Kurzia longirostris [primary synonym] | Biapertura kendallensis [synonym]; Kurzia longirostris [synonym] |
+| *Alvania olivacea* | Pisinna olivacea [primary synonym]; Pisinna olivacea olivacea [synonym] | Pisinna olivacea [synonym]; Pisinna olivacea olivacea [synonym] |
+| *Amalda sydneyensis* | Amalda edithae [synonym]; Exiquaspira sydneyensis [primary synonym] | Amalda edithae [synonym]; Exiquaspira sydneyensis [synonym] |
+| *Amphistomum scleroporum* | Schizamphistomum erratum [synonym]; Schizamphistomum scleroporum [primary synonym] | Schizamphistomum erratum [synonym]; Schizamphistomum scleroporum [synonym] |
+| *Amplirhagada alta intermedia* | Amplirhagada ambulator [synonym]; Amplirhagada intermedia [primary synonym] | Amplirhagada ambulator [synonym]; Amplirhagada intermedia [synonym] |
+| *Ancistrosyllis rigida* | Synelmis gibbsi [synonym]; Synelmis rigida [primary synonym] | Synelmis gibbsi [synonym]; Synelmis rigida [synonym] |
+| *Anguillulina curriei* | Fergusobia curriei [primary synonym]; Fergusobia tumifaciens [synonym] | Fergusobia curriei [synonym]; Fergusobia tumifaciens [synonym] |
+| *Anthomyia cana* | Delia platura [synonym]; Lispe cana [primary synonym] | Delia platura [synonym]; Lispe cana [synonym] |
+| *Anthophila marginalis* | Adisura marginalis [primary synonym]; Phytometra formosalis [synonym] | Adisura marginalis [synonym]; Phytometra formosalis [synonym] |
+| *Anthrax basalis* | Comptosia basalis [primary synonym]; Villa macquarti [synonym] | Comptosia basalis [synonym]; Villa macquarti [synonym] |
+| *Anthrenocerus bicolor* | Eurhopalus arrowi [synonym]; Eurhopalus bicolor [primary synonym] | Eurhopalus arrowi [synonym]; Eurhopalus bicolor [synonym] |
+| *Anthrenus fasciatus* | Anthrenus flavipes flavipes [synonym]; Telopes fasciatus [primary synonym] | Anthrenus flavipes flavipes [synonym]; Telopes fasciatus [synonym] |
+| *Arca trapezina* | Barbatia foliata [synonym]; Barbatia trapezina [primary synonym] | Barbatia foliata [synonym]; Barbatia trapezina [synonym] |
+| *Ardea antigone* | Antigone antigone [primary synonym]; Antigone rubicunda [synonym] | Antigone antigone [synonym]; Antigone rubicunda [synonym] |
+| *Ardea australis* | Ixobrychus flavicollis australis [primary synonym]; Nycticorax caledonicus australasiae [synonym] | Ixobrychus flavicollis australis [synonym]; Nycticorax caledonicus australasiae [synonym] |
+| *Ardea novaehollandiae* | Egretta novaehollandiae [primary synonym]; Nycticorax caledonicus australasiae [synonym] | Egretta novaehollandiae [synonym]; Nycticorax caledonicus australasiae [synonym] |
+| *Articerus tumidus* | Tiracerus sharpi [synonym]; Tiracerus tumidus [primary synonym] | Tiracerus sharpi [synonym]; Tiracerus tumidus [synonym] |
+| *Assiminea tasmanica* | Cryptassiminea buccinoides [synonym]; Cryptassiminea tasmanica [primary synonym] | Cryptassiminea buccinoides [synonym]; Cryptassiminea tasmanica [synonym] |
+| *Bembex palmata* | Bembix palmata [primary synonym]; Bembix pectinipes [synonym] | Bembix palmata [synonym]; Bembix pectinipes [synonym] |
+| *Bolboceras kirbyi* | Blackburnium kirbyi [primary synonym]; Elephastomus proboscideus kirbyanus [synonym] | Blackburnium kirbyi [synonym]; Elephastomus proboscideus kirbyanus [synonym] |
+| *Bolboceras reichei* | Blackburnium kirbyi [synonym]; Blackburnium reichei [primary synonym] | Blackburnium kirbyi [synonym]; Blackburnium reichei [synonym] |
+| *Bombyx tristis* | Epicoma contristis [synonym]; Epicoma tristis [primary synonym]; Epicoma tristis [synonym] | Epicoma contristis [synonym]; Epicoma tristis [synonym] |
+| *Bostrichus ferrugineus* | Euwallacea similis [synonym]; Xyleborus ferrugineus [primary synonym] | Euwallacea similis [synonym]; Xyleborus ferrugineus [synonym] |
+| *Brachyscelis pedunculata* | Apiomorpha pedunculata [primary synonym]; Apiomorpha pedunculata [synonym]; Apiomorpha regularis [synonym] | Apiomorpha pedunculata [synonym]; Apiomorpha regularis [synonym] |
+| *Buccinum australe* | Nassarius pauperatus [synonym]; Phasianella australis [primary synonym] | Nassarius pauperatus [synonym]; Phasianella australis [synonym] |
+| *Buccinum dolium* | Tonna dolium [primary synonym]; Tonna lischkeana [synonym]; Tonna tessellata [synonym] | Tonna dolium [synonym]; Tonna lischkeana [synonym]; Tonna tessellata [synonym] |
+| *Buccinum harpa* | Harpa harpa [primary synonym]; Harpa major [synonym] | Harpa harpa [synonym]; Harpa major [synonym] |
+| *Buccinum pauperatum* | Nassarius acuticostus [synonym]; Nassarius pauperatus [primary synonym] | Nassarius acuticostus [synonym]; Nassarius pauperatus [synonym] |
+| *Buccinum scabrum* | Mieniplotia scabra [primary synonym]; Nassarius horridus [synonym] | Mieniplotia scabra [synonym]; Nassarius horridus [synonym] |
+| *Bulimus onslowi* | Bothriembryon costulata [synonym]; Bothriembryon onslowi [primary synonym] | Bothriembryon costulata [synonym]; Bothriembryon onslowi [synonym] |
+| *Bulla decussata* | Cylichna decussata [synonym]; Pyrunculus decussatus [primary synonym] | Cylichna decussata [synonym]; Pyrunculus decussatus [synonym] |
+| *Buprestis cancellata* | Stigmodera cancellata [primary synonym]; Stigmodera roei [synonym] | Stigmodera cancellata [synonym]; Stigmodera roei [synonym] |
+| *Buprestis cuprifera* | Melobasis cuprifera [synonym]; Torresita cuprifera [primary synonym] | Melobasis cuprifera [synonym]; Torresita cuprifera [synonym] |
+| *Buprestis fissiceps* | Ethonion corpulentum [synonym]; Ethonion fissiceps [primary synonym] | Ethonion corpulentum [synonym]; Ethonion fissiceps [synonym] |
+| *Buprestis scalaris* | Castiarina scalaris [primary synonym]; Diadoxus regius [synonym] | Castiarina scalaris [synonym]; Diadoxus regius [synonym] |
+| *Calloodes frenchi* | Anoplognathus aureus [heterotypic synonym]; Calloodes nitidissimus [synonym] | Anoplognathus aureus [synonym]; Calloodes nitidissimus [synonym] |
+| *Cancer aeneus* | Lophozozymus pictor [synonym]; Zosimus aeneus [primary synonym] | Lophozozymus pictor [synonym]; Zosimus aeneus [synonym] |
+| *Cancer dentatus* | Etisus dentatus [primary synonym]; Myomenippe fornasinii [synonym] | Etisus dentatus [synonym]; Myomenippe fornasinii [synonym] |
+| *Cancer longipes* | Phalangipus longipes [primary synonym]; Stenopus hispidus [synonym] | Phalangipus longipes [synonym]; Stenopus hispidus [synonym] |
+| *Cancer quadridens* | Dorippe quadridens [primary synonym]; Myomenippe fornasinii [synonym] | Dorippe quadridens [synonym]; Myomenippe fornasinii [synonym] |
+| *Cardium australiense* | Hemidonax australiensis [primary synonym]; Hemidonax pictus [synonym] | Hemidonax australiensis [synonym]; Hemidonax pictus [synonym] |
+| *Cardium sueziense* | Fragum fragum [synonym]; Fragum sueziense [primary synonym] | Fragum fragum [synonym]; Fragum sueziense [synonym] |
+| *Celama subpallida* | Manoba major [synonym]; Nola subpallida [primary synonym] | Manoba major [synonym]; Nola subpallida [synonym] |
+| *Chaetodon diacanthus* | Centropyge bispinosa [synonym]; Pygoplites diacanthus [primary synonym] | Centropyge bispinosa [synonym]; Pygoplites diacanthus [synonym] |
+| *Chiton versicolor* | Callochiton crocinus [synonym]; Ischnochiton versicolor [primary synonym] | Callochiton crocinus [synonym]; Ischnochiton versicolor [synonym] |
+| *Chlorita biguttula* | Amrasca biguttula [synonym]; Amrasca biguttula biguttula [primary synonym] | Amrasca biguttula [synonym]; Amrasca biguttula biguttula [synonym] |
+| *Cimex biguttatus* | Closterotomus norwegicus [synonym]; Melanerythrus biguttatus [primary synonym] | Closterotomus norwegicus [synonym]; Melanerythrus biguttatus [synonym] |
+| *Cisseis aenea* | Diphucrania aenea [primary synonym]; Diphucrania marmorata [synonym] | Diphucrania aenea [synonym]; Diphucrania marmorata [synonym] |
+| *Cisseis marmorata prasina* | Diphucrania marmorata [synonym]; Diphucrania prasina [primary synonym] | Diphucrania marmorata [synonym]; Diphucrania prasina [synonym] |
+| *Cladocarpella multiseptata* | Cladocarpus bathyzonatus [synonym]; Streptocaulus multiseptatus [primary synonym] | Cladocarpus bathyzonatus [synonym]; Streptocaulus multiseptatus [synonym] |
+| *Clathrina latitubulata* | Leucaltis clathria [synonym]; Leucaltis latitubulata [primary synonym] | Leucaltis clathria [synonym]; Leucaltis latitubulata [synonym] |
+| *Columbella bicincta* | Graphicomassa peroniana [synonym]; Mitrella bicincta [primary synonym] | Graphicomassa peroniana [synonym]; Mitrella bicincta [synonym] |
+| *Conus elegans* | Conasprella comatosa [synonym]; Conasprella elegans [primary synonym] | Conasprella comatosa [synonym]; Conasprella elegans [synonym] |
+| *Conus terebellum* | Conus circumcisus [synonym]; Conus terebra [synonym]; Terebellum terebellum [primary synonym] | Conus circumcisus [synonym]; Conus terebra [synonym]; Terebellum terebellum [synonym] |
+| *Crossea consobrina* | Crossea concinna [synonym]; Icuncula consobrina [primary synonym] | Crossea concinna [synonym]; Icuncula consobrina [synonym] |
+| *Cryptobium sanguinicolle* | Ochthephilum bernhauerianum [synonym]; Ochthephilum sanguinicolle [primary synonym] | Ochthephilum bernhauerianum [synonym]; Ochthephilum sanguinicolle [synonym] |
+| *Cryptocephalus convexicollis* | Aporocera bynoei [synonym]; Aporocera convexicollis [primary synonym] | Aporocera bynoei [synonym]; Aporocera convexicollis [synonym] |
+| *Cryptolaria conferta* | Acryptolaria conferta [synonym]; Acryptolaria conferta conferta [primary synonym] | Acryptolaria conferta [synonym]; Acryptolaria conferta conferta [synonym] |
+| *Curculio granarius* | Sitophilus granarius [primary synonym]; Sitophilus oryzae [synonym] | Sitophilus granarius [synonym]; Sitophilus oryzae [synonym] |
+| *Cyathostomum labratum* | Coronocyclus labiatus [synonym]; Coronocyclus labratus [primary synonym] | Coronocyclus labiatus [synonym]; Coronocyclus labratus [synonym] |
+| *Cyclopecten nepeanensis* | Chlamydella favus [synonym]; Cyclochlamys nepeanensis [primary synonym] | Chlamydella favus [synonym]; Cyclochlamys nepeanensis [synonym] |
+| *Cyclostrema micra* | Lissotesta micra [primary synonym]; Microdiscula charopa [synonym] | Lissotesta micra [synonym]; Microdiscula charopa [synonym] |
+| *Cypraea marginata* | Monetaria moneta [synonym]; Zoila ketyana [synonym]; Zoila marginata marginata [primary synonym] | Monetaria moneta [synonym]; Zoila ketyana [synonym]; Zoila marginata marginata [synonym] |
+| *Cypraea ovum* | Erronea errones [synonym]; Erronea ovum ovum [primary synonym] | Erronea errones [synonym]; Erronea ovum ovum [synonym] |
+| *Cypraea ursellus* | Bistolida ursellus [primary synonym]; Melicerona listeri listeri [synonym] | Bistolida ursellus [synonym]; Melicerona listeri listeri [synonym] |
+| *Darala cinerascens* | Anthela astata [synonym]; Anthela cinerascens [primary synonym] | Anthela astata [synonym]; Anthela cinerascens [synonym] |
+| *Delphax hyas* | Delphacodes hyas [primary synonym]; Syndelphax disonymos [synonym] | Delphacodes hyas [synonym]; Syndelphax disonymos [synonym] |
+| *Dermestes unicolor* | Attagenus unicolor unicolor [primary synonym]; Dermestes carnivorus [synonym] | Attagenus unicolor unicolor [synonym]; Dermestes carnivorus [synonym] |
+| *Deviginella maxilla* | Mesoginella brachia [synonym]; Mesoginella maxilla [primary synonym] | Mesoginella brachia [synonym]; Mesoginella maxilla [synonym] |
+| *Diaseris fragilis* | Cycloseris cyclolites [synonym]; Cycloseris fragilis [primary synonym] | Cycloseris cyclolites [synonym]; Cycloseris fragilis [synonym] |
+| *Diathrausta metallosticha* | Eoophyla metallosticha [primary synonym]; Eoophyla triplaga [synonym] | Eoophyla metallosticha [synonym]; Eoophyla triplaga [synonym] |
+| *Dromia conchifera* | Conchoecetes artificiosus [synonym]; Conchoecetes conchifera [primary synonym] | Conchoecetes artificiosus [synonym]; Conchoecetes conchifera [synonym] |
+| *Echidna acanthion* | Tachyglossus aculeatus acanthion [primary synonym]; Tachyglossus aculeatus aculeatus [synonym] | Tachyglossus aculeatus acanthion [synonym]; Tachyglossus aculeatus aculeatus [synonym] |
+| *Elegidion occiduus* | Diodora jukesii [synonym]; Diodora occidua [primary synonym] | Diodora jukesii [synonym]; Diodora occidua [synonym] |
+| *Elmis punctulatus* | Austrolimnius punctulatus [synonym]; Austrolimnius punctulatus punctulatus [primary synonym] | Austrolimnius punctulatus [synonym]; Austrolimnius punctulatus punctulatus [synonym] |
+| *Eodrilus daemeli* | Diplotrema daemeli [primary synonym]; Diplotrema schmardae [synonym] | Diplotrema daemeli [synonym]; Diplotrema schmardae [synonym] |
+| *Eristus pallidus* | Thaumastophasis orbitalis [heterotypic synonym]; Thaumastophasis pallida [primary synonym] | Thaumastophasis orbitalis [synonym]; Thaumastophasis pallida [synonym] |
+| *Eudalia sublaevis* | Dicraspeda brunnea [synonym]; Dicraspeda sublaevis [primary synonym] | Dicraspeda brunnea [synonym]; Dicraspeda sublaevis [synonym] |
+| *Eumida dorsolobata* | Clavadoce dorsolobata [primary synonym]; Eumida subulifera [synonym] | Clavadoce dorsolobata [synonym]; Eumida subulifera [synonym] |
+| *Eurybrachys sicca* | Platybrachys sicca [synonym]; Platybrachys sicca sicca [primary synonym] | Platybrachys sicca [synonym]; Platybrachys sicca sicca [synonym] |
+| *Eurymedusa picta* | Odontosyllis polycera [synonym]; Syllis picta [primary synonym] | Odontosyllis polycera [synonym]; Syllis picta [synonym] |
+| *Eurytoma acaciae* | Bruchophagus acaciae [primary synonym]; Bruchophagus secundus [synonym] | Bruchophagus acaciae [synonym]; Bruchophagus secundus [synonym] |
+| *Falco radiatus* | Erythrotriorchis radiatus [primary synonym]; Tachyspiza fasciatus fasciatus [synonym] | Erythrotriorchis radiatus [synonym]; Tachyspiza fasciatus fasciatus [synonym] |
+| *Feronia nitidicollis* | Castelnaudia septemcostata [synonym]; Notonomus nitidicollis [primary synonym] | Castelnaudia septemcostata [synonym]; Notonomus nitidicollis [synonym] |
+| *Feronia resplendens* | Notonomus resplendens [primary synonym]; Platycoelus melliei [synonym] | Notonomus resplendens [synonym]; Platycoelus melliei [synonym] |
+| *Fragum symbolicum* | Acrosterigma impolitum [synonym]; Ctenocardia virgo [replacement name] | Acrosterigma impolitum [synonym]; Ctenocardia virgo [synonym] |
+| *Fulgora obscurata* | Eurinopsyche obscurata [synonym]; Eurinopsyche obscurata obscurata [primary synonym] | Eurinopsyche obscurata [synonym]; Eurinopsyche obscurata obscurata [synonym] |
+| *Fungia actiniformis* | Fungia fungites [synonym]; Heliofungia actiniformis [primary synonym] | Fungia fungites [synonym]; Heliofungia actiniformis [synonym] |
+| *Fungia concinna* | Danafungia scruposa [synonym]; Fungia fungites [synonym]; Lithophyllon concinna [primary synonym]; Lithophyllon repanda [synonym] | Danafungia scruposa [synonym]; Fungia fungites [synonym]; Lithophyllon concinna [synonym]; Lithophyllon repanda [synonym] |
+| *Fungia costulata* | Cycloseris costulata [primary synonym]; Pleuractis granulosa [synonym] | Cycloseris costulata [synonym]; Pleuractis granulosa [synonym] |
+| *Fungia distorta* | Cycloseris distorta [primary synonym]; Pleuractis granulosa [synonym] | Cycloseris distorta [synonym]; Pleuractis granulosa [synonym] |
+| *Fungia granulosa* | Lithophyllon concinna [synonym]; Lithophyllon repanda [synonym]; Pleuractis granulosa [Generic combination]; Pleuractis granulosa [primary synonym]; Pleuractis gravis [synonym]; Pleuractis moluccensis [synonym] | Lithophyllon concinna [synonym]; Lithophyllon repanda [synonym]; Pleuractis granulosa [Generic combination]; Pleuractis granulosa [synonym]; Pleuractis gravis [synonym]; Pleuractis moluccensis [synonym] |
+| *Fungia moluccensis* | Cycloseris tenuis [synonym]; Pleuractis moluccensis [primary synonym] | Cycloseris tenuis [synonym]; Pleuractis moluccensis [synonym] |
+| *Fungia paumotensis* | Ctenactis echinata [synonym]; Cycloseris somervillei [synonym]; Fungia fungites [synonym]; Lobactis scutaria [synonym]; Pleuractis gravis [synonym]; Pleuractis paumotensis [primary synonym] | Ctenactis echinata [synonym]; Cycloseris somervillei [synonym]; Fungia fungites [synonym]; Lobactis scutaria [synonym]; Pleuractis gravis [synonym]; Pleuractis paumotensis [synonym] |
+| *Fungia repanda* | Danafungia horrida [synonym]; Danafungia scruposa [synonym]; Lithophyllon repanda [primary synonym] | Danafungia horrida [synonym]; Danafungia scruposa [synonym]; Lithophyllon repanda [synonym] |
+| *Fungia scabra* | Lithophyllon scabra [primary synonym]; Pleuractis granulosa [synonym] | Lithophyllon scabra [synonym]; Pleuractis granulosa [synonym] |
+| *Fungia somervillei* | Cycloseris somervillei [primary synonym]; Pleuractis moluccensis [synonym] | Cycloseris somervillei [synonym]; Pleuractis moluccensis [synonym] |
+| *Glyptozaria columnaria* | Brookesena columnaria [primary synonym]; Glyptozaria opulenta [synonym] | Brookesena columnaria [synonym]; Glyptozaria opulenta [synonym] |
+| *Grammatophora temporalis* | Lophognathus horneri [synonym]; Tropicagama temporalis [primary synonym] | Lophognathus horneri [synonym]; Tropicagama temporalis [synonym] |
+| *Grapsus plicatus* | Metopograpsus quadridentatus [synonym]; Pachygrapsus plicatus [primary synonym] | Metopograpsus quadridentatus [synonym]; Pachygrapsus plicatus [synonym] |
+| *Gyrocochlea conferta* | Comboynea conferta [primary synonym]; Planorbacochlea planorbis [synonym] | Comboynea conferta [synonym]; Planorbacochlea planorbis [synonym] |
+| *Gyrocochlea planorbis* | Planorbacochlea planorbis [primary synonym]; Planorbacochlea yessabahensis [synonym] | Planorbacochlea planorbis [synonym]; Planorbacochlea yessabahensis [synonym] |
+| *Hadeodelphax pluto* | Haplodelphax pluto [primary synonym]; Sardia rostrata [Generic combination]; Sardia rostrata [synonym] | Haplodelphax pluto [synonym]; Sardia rostrata [synonym] |
+| *Helix costulata* | Bothriembryon costulata [primary synonym]; Bothriembryon costulata [synonym]; Diphyoropa saturni [synonym] | Bothriembryon costulata [synonym]; Diphyoropa saturni [synonym] |
+| *Helix neglecta* | Planilaoma luckmanii [synonym]; Xerocincta neglecta [primary synonym] | Planilaoma luckmanii [synonym]; Xerocincta neglecta [synonym] |
+| *Helix tuckeri* | Trachiopsis strangulata [synonym]; Trachiopsis tuckeri [primary synonym] | Trachiopsis strangulata [synonym]; Trachiopsis tuckeri [synonym] |
+| *Heteropegma nodusgordii* | Leucaltis clathria [synonym]; Leucaltis nodusgordii [primary synonym] | Leucaltis clathria [synonym]; Leucaltis nodusgordii [synonym] |
+| *Hirundo pacifica* | Apus pacificus pacificus [primary synonym]; Hirundo neoxena neoxena [synonym] | Apus pacificus pacificus [synonym]; Hirundo neoxena neoxena [synonym] |
+| *Holothuria maculata* | Holothuria whitmaei [synonym]; Synapta maculata [primary synonym] | Holothuria whitmaei [synonym]; Synapta maculata [synonym] |
+| *Hoplocephalus superbus* | Austrelaps superbus [primary synonym]; Elapognathus minor [synonym] | Austrelaps superbus [synonym]; Elapognathus minor [synonym] |
+| *Hyla latopalmata watjulumensis* | Litoria coplandi [synonym]; Litoria watjulumensis [primary synonym]; Pengilleyia peronii [synonym] | Litoria coplandi [synonym]; Litoria watjulumensis [synonym]; Pengilleyia peronii [synonym] |
+| *Idiodes ischnora* | Idiodes pellophanes [synonym]; Idiodes tenuicorpis [replacement name] | Idiodes pellophanes [synonym]; Idiodes tenuicorpis [synonym] |
+| *Labiostrongylus longispicularis* | Labiosimplex australis [synonym]; Labiosimplex longispicularis [Generic combination]; Labiosimplex longispicularis [primary synonym] | Labiosimplex australis [synonym]; Labiosimplex longispicularis [Generic combination]; Labiosimplex longispicularis [synonym] |
+| *Lacon conspiciendus* | Agrypnus conspiciendus [primary synonym]; Agrypnus elstoni [synonym] | Agrypnus conspiciendus [synonym]; Agrypnus elstoni [synonym] |
+| *Lepidocyrtus cinctus* | Ascocyrtus cinctus [primary synonym]; Lepidosira laboriosa [synonym] | Ascocyrtus cinctus [synonym]; Lepidosira laboriosa [synonym] |
+| *Lepralia candida* | Arachnopusia unicornis [synonym]; Fenestrulina candida [primary synonym] | Arachnopusia unicornis [synonym]; Fenestrulina candida [synonym] |
+| *Lepralia elegans* | Adeonellopsis baccata [synonym]; Hippoporina elegans [primary synonym] | Adeonellopsis baccata [synonym]; Hippoporina elegans [synonym] |
+| *Leucetta isoraphis apicalis* | Leucetta apicalis [primary synonym]; Soleneiscus apicalis [synonym] | Leucetta apicalis [synonym]; Soleneiscus apicalis [synonym] |
+| *Limnaea subaquatilis* | Austropeplea subaquatilis [primary synonym]; Austropeplea tomentosa [synonym] | Austropeplea subaquatilis [synonym]; Austropeplea tomentosa [synonym] |
+| *Liocranum pallipes* | Creugas gulosus [synonym]; Medmassa pallipes [primary synonym] | Creugas gulosus [synonym]; Medmassa pallipes [synonym] |
+| *Littorina australis* | Bembicium nanum [synonym]; Echinolittorina australis [primary synonym] | Bembicium nanum [synonym]; Echinolittorina australis [synonym] |
+| *Lotella marginata* | Lotella rhacina [synonym]; Notophycis marginata [primary synonym] | Lotella rhacina [synonym]; Notophycis marginata [synonym] |
+| *Lucina pisum* | Cardiolucina eucosmia [synonym]; Cardiolucina semperiana [replacement name] | Cardiolucina eucosmia [synonym]; Cardiolucina semperiana [synonym] |
+| *Lycosa phyllis* | Tasmanicosa phyllis [synonym]; Trochosa phyllis [primary synonym] | Tasmanicosa phyllis [synonym]; Trochosa phyllis [synonym] |
+| *Lycosa woodwardi* | Allocosa woodwardi [primary synonym]; Tasmanicosa godeffroyi [synonym] | Allocosa woodwardi [synonym]; Tasmanicosa godeffroyi [synonym] |
+| *Macroclanculus occiduus* | Clanculus undatus [synonym]; Clanculus undatus occiduus [primary synonym] | Clanculus undatus [synonym]; Clanculus undatus occiduus [synonym] |
+| *Macrohelodes crassus* | Pictacara crassa [primary synonym]; Pictacara tasmanica [synonym] | Pictacara crassa [synonym]; Pictacara tasmanica [synonym] |
+| *Macrurus fasciatus* | Coelorinchus fasciatus [primary synonym]; Lucigadus microlepis [synonym] | Coelorinchus fasciatus [synonym]; Lucigadus microlepis [synonym] |
+| *Madrepora pileus* | Halomitra pileus [primary synonym]; Herpolitha limax [synonym]; Podabacia crustacea [synonym]; Polyphyllia talpina [synonym] | Halomitra pileus [synonym]; Herpolitha limax [synonym]; Podabacia crustacea [synonym]; Polyphyllia talpina [synonym] |
+| *Mallodon australis* | Eurynassa australis [primary synonym]; Tragocerus fasciatus [synonym] | Eurynassa australis [synonym]; Tragocerus fasciatus [synonym] |
+| *Mallodon stigmosum* | Eurynassa australis [synonym]; Eurynassa stigmosa [primary synonym] | Eurynassa australis [synonym]; Eurynassa stigmosa [synonym] |
+| *Marginella punicea* | Gibberula agapeta [synonym]; Mesoginella punicea [primary synonym] | Gibberula agapeta [synonym]; Mesoginella punicea [synonym] |
+| *Medusa cephea* | Cephea cephea [primary synonym]; Cephea octostyla [synonym] | Cephea cephea [synonym]; Cephea octostyla [synonym] |
+| *Megascolex fletcheri* | Bursadrilus fletcheri [primary synonym]; Gemascolex stirlingi [synonym] | Bursadrilus fletcheri [synonym]; Gemascolex stirlingi [synonym] |
+| *Melobasis obscura* | Anilara obscura [primary synonym]; Melobasis sordida [synonym] | Anilara obscura [synonym]; Melobasis sordida [synonym] |
+| *Membranipora cervicornis* | Chaperiopsis cervicornis [primary synonym]; Electra bellula [synonym] | Chaperiopsis cervicornis [synonym]; Electra bellula [synonym] |
+| *Mesostenus albopictus* | Thelodon albopictus [primary synonym]; Xanthocryptus novazealandicus [synonym] | Thelodon albopictus [synonym]; Xanthocryptus novazealandicus [synonym] |
+| *Metoncholaimus brevispiculum* | Metoncholaimoides brevispiculum [primary synonym]; Oncholaimus brevispiculum [synonym] | Metoncholaimoides brevispiculum [synonym]; Oncholaimus brevispiculum [synonym] |
+| *Metriorrhynchus hackeri* | Metriorrhynchus macphersonensis [synonym]; Porrostoma hackeri [primary synonym] | Metriorrhynchus macphersonensis [synonym]; Porrostoma hackeri [synonym] |
+| *Mimosybra uniformis* | Porithea uniformis [primary synonym]; Sybra gaindahensis [synonym] | Porithea uniformis [synonym]; Sybra gaindahensis [synonym] |
+| *Mitra contracta* | Nebularia chrysostoma [synonym]; Nebularia contracta [primary synonym] | Nebularia chrysostoma [synonym]; Nebularia contracta [synonym] |
+| *Mitra delicata* | Vexillum delicatum [primary synonym]; Vexillum sculptile [synonym] | Vexillum delicatum [synonym]; Vexillum sculptile [synonym] |
+| *Mitra fraga* | Pseudonebularia fraga [Generic combination]; Pseudonebularia fraga [primary synonym]; Vexillum cancellarioides [synonym] | Pseudonebularia fraga [Generic combination]; Pseudonebularia fraga [synonym]; Vexillum cancellarioides [synonym] |
+| *Mitra unifascialis* | Vexillum aureolineatum [synonym]; Vexillum unifascialis [primary synonym] | Vexillum aureolineatum [synonym]; Vexillum unifascialis [synonym] |
+| *Modiolarca bicolor* | Kidderia bicolor [primary synonym]; Mysella subquadrata [synonym] | Kidderia bicolor [synonym]; Mysella subquadrata [synonym] |
+| *Monocrepidius aurulentus* | Monocrepidus aurulentus [primary synonym]; Monocrepidus confusibilis [synonym] | Monocrepidus aurulentus [synonym]; Monocrepidus confusibilis [synonym] |
+| *Monocrepidius flavobasalis* | Monocrepidus flavobasalis [primary synonym]; Monocrepidus torresi [synonym] | Monocrepidus flavobasalis [synonym]; Monocrepidus torresi [synonym] |
+| *Monocrepidius macleayi* | Monocrepidus macleayanus [synonym]; Monocrepidus macleayi [primary synonym] | Monocrepidus macleayanus [synonym]; Monocrepidus macleayi [synonym] |
+| *Monocrepidius ruficollis* | Monocrepidus ignobilis [synonym]; Monocrepidus ruficollis [primary synonym] | Monocrepidus ignobilis [synonym]; Monocrepidus ruficollis [synonym] |
+| *Monocrepidius striatus* | Monocrepidus striatus [primary synonym]; Monocrepidus strigatus [synonym] | Monocrepidus striatus [synonym]; Monocrepidus strigatus [synonym] |
+| *Monodonta ringens* | Clanculus personatus [synonym]; Clanculus ringens [primary synonym] | Clanculus personatus [synonym]; Clanculus ringens [synonym] |
+| *Mopsea elegans* | Plexipomisis elegans [primary synonym]; Plexipomisis thetis [synonym] | Plexipomisis elegans [pro parte synonym]; Plexipomisis thetis [pro parte synonym] |
+| *Mopsella fragilis* | Melithaea fragilis [primary synonym]; Melithaea rubeola [synonym] | Melithaea fragilis [synonym]; Melithaea rubeola [synonym] |
+| *Mullus fasciatus* | Hemigymnus fasciatus [synonym]; Ostorhinchus fasciatus [primary synonym] | Hemigymnus fasciatus [synonym]; Ostorhinchus fasciatus [synonym] |
+| *Murex lampas* | Charonia lampas [primary synonym]; Tutufa bubo [synonym] | Charonia lampas [synonym]; Tutufa bubo [synonym] |
+| *Murex pyrum* | Mancinella alouina [synonym]; Ranularia pyrum [primary synonym] | Mancinella alouina [synonym]; Ranularia pyrum [synonym] |
+| *Murex undatus* | Drupella margariticola [synonym]; Fusinus undatus [primary synonym] | Drupella margariticola [synonym]; Fusinus undatus [synonym] |
+| *Musca ruficornis* | Calliphora dispar [synonym]; Sarcophaga ruficornis [primary synonym] | Calliphora dispar [synonym]; Sarcophaga ruficornis [synonym] |
+| *Nemotois panaeola* | Nemophora panaeola [primary synonym]; Nemophora turneri [synonym] | Nemophora panaeola [synonym]; Nemophora turneri [synonym] |
+| *Nereis oxypoda* | Alitta succinea [synonym]; Nectoneanthes oxypoda [primary synonym] | Alitta succinea [synonym]; Nectoneanthes oxypoda [synonym] |
+| *Nirmus tenuis* | Brueelia tenuis [primary synonym]; Neopsittaconirmus eos [synonym] | Brueelia tenuis [synonym]; Neopsittaconirmus eos [synonym] |
+| *Nothrus crassus* | Trhypochthoniellus crassus [primary synonym]; Trhypochthoniellus longisetus [synonym] | Trhypochthoniellus crassus [synonym]; Trhypochthoniellus longisetus [synonym] |
+| *Obstopalia lixa* | Acirsa magna [synonym]; Alaba lixa [primary synonym] | Acirsa magna [synonym]; Alaba lixa [synonym] |
+| *Odynerus subalaris* | Flammodynerus subalaris [primary synonym]; Parifodynerus alariformis [synonym] | Flammodynerus subalaris [synonym]; Parifodynerus alariformis [synonym] |
+| *Oecophora divisella* | Heteroteucha kershawi [synonym]; Zonopetala divisella [primary synonym] | Heteroteucha kershawi [synonym]; Zonopetala divisella [synonym] |
+| *Oliarus lubra* | Miclucha incerta [synonym]; Oteana lubra [primary synonym] | Miclucha incerta [synonym]; Oteana lubra [synonym] |
+| *Onchidium tumidum* | Paromoionchis tumidus [synonym]; Peronia tumidum [primary synonym] | Paromoionchis tumidus [synonym]; Peronia tumidum [synonym] |
+| *Ophiura annulosa* | Ophiolepis superba [synonym]; Ophiomastix annulosa [primary synonym] | Ophiolepis superba [synonym]; Ophiomastix annulosa [synonym] |
+| *Orchomene gerulicorbis* | Abyssorchomene gerulicorbis [primary synonym]; Orchomenella gerulicorbis [synonym] | Abyssorchomene gerulicorbis [synonym]; Orchomenella gerulicorbis [synonym] |
+| *Ostrea cucullata* | Saccostrea cucullata [primary synonym]; Saccostrea glomerata [synonym] | Saccostrea cucullata [synonym]; Saccostrea glomerata [synonym] |
+| *Ostrea gigas* | Hyotissa hyotis [synonym]; Magallana gigas [Generic combination]; Magallana gigas [primary synonym] | Hyotissa hyotis [synonym]; Magallana gigas [Generic combination]; Magallana gigas [synonym] |
+| *Ovulum gallinaceum* | Alaerato gallinacea [primary synonym]; Ovula ovum [synonym] | Alaerato gallinacea [synonym]; Ovula ovum [synonym] |
+| *Ovulum philippinarum* | Hiatavolva depressa [synonym]; Phenacovolva philippinarum [primary synonym] | Hiatavolva depressa [synonym]; Phenacovolva philippinarum [synonym] |
+| *Oxytelus latiusculus* | Anotylus latiusculus [synonym]; Anotylus latiusculus latiusculus [primary synonym] | Anotylus latiusculus [synonym]; Anotylus latiusculus latiusculus [synonym] |
+| *Paragonatopus nigricans* | Gonatopus nigricans [synonym]; Pseudogonatopus nigricans [primary synonym] | Gonatopus nigricans [synonym]; Pseudogonatopus nigricans [synonym] |
+| *Passalus dilatatus* | Pharochilus dilatatus [primary synonym]; Pharochilus rugiceps [synonym] | Pharochilus dilatatus [synonym]; Pharochilus rugiceps [synonym] |
+| *Patella aculeata* | Bostrycapulus aculeata [primary synonym]; Scutellastra peronii [synonym] | Bostrycapulus aculeata [synonym]; Scutellastra peronii [synonym] |
+| *Patella insignis* | Cellana testudinaria [synonym]; Patelloida insignis [primary synonym] | Cellana testudinaria [synonym]; Patelloida insignis [synonym] |
+| *Pediculus meleagridis* | Chelopistes meleagridis [primary synonym]; Chelopistes meleagridis [synonym]; Menacanthus stramineus [synonym] | Chelopistes meleagridis [synonym]; Menacanthus stramineus [synonym] |
+| *Pedioscopus polydoros* | Busoniomimus polydoros [primary synonym]; Pedioscopus philenor [synonym] | Busoniomimus polydoros [synonym]; Pedioscopus philenor [synonym] |
+| *Phlogistus blackburni* | Phlogistomorpha blackburni [primary synonym]; Phlogistus bicolor [synonym] | Phlogistomorpha blackburni [synonym]; Phlogistus bicolor [synonym] |
+| *Pinna strangei* | Atrina strangei [primary synonym]; Pinna muricata [synonym] | Atrina strangei [synonym]; Pinna muricata [synonym] |
+| *Platycephalus grandisquamis* | Onigocia grandisquamis [primary synonym]; Onigocia sibogae [synonym] | Onigocia grandisquamis [synonym]; Onigocia sibogae [synonym] |
+| *Platynus marginicollis* | Notagonum marginellum [synonym]; Notagonum marginicolle [primary synonym] | Notagonum marginellum [synonym]; Notagonum marginicolle [synonym] |
+| *Platyomopsis frenchi* | Rhytiphora frenchi [primary synonym]; Rhytiphora frenchiana [synonym] | Rhytiphora frenchi [synonym]; Rhytiphora frenchiana [synonym] |
+| *Pleurotoma crispa* | Turris crispa [primary synonym]; Turris crispa crispa [synonym] | Turris crispa [synonym]; Turris crispa crispa [synonym] |
+| *Pleurotoma inconstans* | Inquisitor radula [synonym]; Paradrillia inconstans [primary synonym] | Inquisitor radula [synonym]; Paradrillia inconstans [synonym] |
+| *Plumularia divaricata* | Aglaophenia divaricata [primary synonym]; Aglaophenia divaricata cystifera [synonym] | Aglaophenia divaricata [synonym]; Aglaophenia divaricata cystifera [synonym] |
+| *Podocotyloides stenometra* | Polypipapiliotrema heniochi [synonym]; Polypipapiliotrema stenometra [primary synonym] | Polypipapiliotrema heniochi [synonym]; Polypipapiliotrema stenometra [synonym] |
+| *Polistes townsvillensis* | Polistes stigma bernardii [synonym]; Polistes stigma townsvillensis [primary synonym] | Polistes stigma bernardii [synonym]; Polistes stigma townsvillensis [synonym] |
+| *Polynoe muricata* | Iphione muricata [primary synonym]; Iphione readi [synonym] | Iphione muricata [synonym]; Iphione readi [synonym] |
+| *Portunus gladiator* | Monomia gladiator [primary synonym]; Monomia haanii [synonym]; Portunus sanguinolentus sanguinolentus [synonym] | Monomia gladiator [synonym]; Monomia haanii [synonym]; Portunus sanguinolentus sanguinolentus [synonym] |
+| *Portunus integrifrons* | Nectocarcinus integrifrons [primary synonym]; Thalamita admete [synonym] | Nectocarcinus integrifrons [synonym]; Thalamita admete [synonym] |
+| *Prosopis cognata* | Anthobosca cognata [primary synonym]; Hylaeus violaceus [synonym] | Anthobosca cognata [synonym]; Hylaeus violaceus [synonym] |
+| *Prosopis perhumilis* | Hylaeus brevior [synonym]; Hylaeus perhumilis [primary synonym] | Hylaeus brevior [synonym]; Hylaeus perhumilis [synonym] |
+| *Psammocora exesa* | Coscinaraea exesa [primary synonym]; Psammocora haimiana [synonym] | Coscinaraea exesa [synonym]; Psammocora haimiana [synonym] |
+| *Pseudodipsas cuprea* | Acrodipsas cuprea [primary synonym]; Acrodipsas cuprea cuprea [synonym] | Acrodipsas cuprea [synonym]; Acrodipsas cuprea cuprea [synonym] |
+| *Psittacus brownii* | Platycercus caledonicus brownii [primary synonym]; Platycercus venustus venustus [synonym] | Platycercus caledonicus brownii [synonym]; Platycercus venustus venustus [synonym] |
+| *Psittacus lathami* | Calyptorhynchus lathami lathami [primary synonym]; Lathamus discolor [synonym] | Calyptorhynchus lathami lathami [synonym]; Lathamus discolor [synonym] |
+| *Psittacus venustus* | Neophema chrysostoma [synonym]; Platycercus venustus venustus [primary synonym] | Neophema chrysostoma [synonym]; Platycercus venustus venustus [synonym] |
+| *Purpura amygdala* | Cronia amygdala [primary synonym]; Cronia avellana [synonym] | Cronia amygdala [synonym]; Cronia avellana [synonym] |
+| *Purpura fragum* | Drupella fragum [primary synonym]; Drupella rugosa [synonym] | Drupella fragum [synonym]; Drupella rugosa [synonym] |
+| *Purpura muricina* | Semiricinula muricina [primary synonym]; Semiricinula muricoides [synonym] | Semiricinula muricina [synonym]; Semiricinula muricoides [synonym] |
+| *Purpura muricoides* | Muricodrupa fiscella [synonym]; Semiricinula muricoides [primary synonym] | Muricodrupa fiscella [synonym]; Semiricinula muricoides [synonym] |
+| *Purpura violacea* | Coralliophila violacea [primary synonym]; Drupella margariticola [synonym] | Coralliophila violacea [synonym]; Drupella margariticola [synonym] |
+| *Pyralis myrsusalis* | Banisia lobata [synonym]; Banisia myrsusalis [primary synonym] | Banisia lobata [synonym]; Banisia myrsusalis [synonym] |
+| *Pyralis polygraphalis* | Addaea polyphoralis [synonym]; Calindoea polygraphalis [primary synonym] | Addaea polyphoralis [synonym]; Calindoea polygraphalis [synonym] |
+| *Rallus pectoralis* | Gallirallus philippensis mellori [synonym]; Lewinia pectoralis pectoralis [primary synonym] | Gallirallus philippensis mellori [synonym]; Lewinia pectoralis pectoralis [synonym] |
+| *Rhizobius subaustralis* | Rhyzobius subaustralis [primary synonym]; Rodatus bakewellii [synonym] | Rhyzobius subaustralis [synonym]; Rodatus bakewellii [synonym] |
+| *Rissoa badia* | Amphithalamus jacksoni [synonym]; Badepigrus badius [primary synonym] | Amphithalamus jacksoni [synonym]; Badepigrus badius [synonym] |
+| *Rissopsis consobrina* | Austrorissopsis consobrina [synonym]; Liostomia consobrina [primary synonym] | Austrorissopsis consobrina [synonym]; Liostomia consobrina [synonym] |
+| *Sabella porifera* | Bispira porifera [primary synonym]; Parasabella aberrans [synonym] | Bispira porifera [synonym]; Parasabella aberrans [synonym] |
+| *Scalaria striata* | Epitonium dubium [synonym]; Filiscala raricosta [heterotypic synonym] | Epitonium dubium [synonym]; Filiscala raricosta [synonym] |
+| *Schizognathus prasinus* | Paraschizognathus prasinus [synonym]; Paraschizognathus prasinus prasinus [primary synonym] | Paraschizognathus prasinus [synonym]; Paraschizognathus prasinus prasinus [synonym] |
+| *Schizoporella insignis* | Chiastosella daedala [synonym]; Vitrius insignis [primary synonym] | Chiastosella daedala [synonym]; Vitrius insignis [synonym] |
+| *Scolopendra longicornis* | Scolopendra morsitans [synonym]; Thereuopoda longicornis [primary synonym] | Scolopendra morsitans [synonym]; Thereuopoda longicornis [synonym] |
+| *Scytodes rufipes* | Loxosceles laeta [synonym]; Loxosceles rufipes [primary synonym] | Loxosceles laeta [synonym]; Loxosceles rufipes [synonym] |
+| *Sejanus unicolor webbi* | Xiphoidellus unicolor [synonym]; Xiphoidellus unicolor webbi [primary synonym] | Xiphoidellus unicolor [synonym]; Xiphoidellus unicolor webbi [synonym] |
+| *Signiphora australiensis* | Chartocerus australiensis [synonym]; Chartocerus australiensis australiensis [primary synonym] | Chartocerus australiensis [synonym]; Chartocerus australiensis australiensis [synonym] |
+| *Silphomorpha bivittata* | Sphallomorpha bivittata [primary synonym]; Sphallomorpha macleayi [synonym] | Sphallomorpha bivittata [synonym]; Sphallomorpha macleayi [synonym] |
+| *Silphomorpha marginata* | Sphallomorpha castelnaui [synonym]; Sphallomorpha marginata [primary synonym] | Sphallomorpha castelnaui [synonym]; Sphallomorpha marginata [synonym] |
+| *Sphaerosyllis erinaceus serratosetosa* | Erinaceusyllis serratosetosa [primary synonym]; Sphaerosyllis serratosetosa [synonym] | Erinaceusyllis serratosetosa [synonym]; Sphaerosyllis serratosetosa [synonym] |
+| *Sphaerosyllis opisthoculata* | Erinaceusyllis opisthodentata [synonym]; Prosphaerosyllis opisthoculata [primary synonym] | Erinaceusyllis opisthodentata [synonym]; Prosphaerosyllis opisthoculata [synonym] |
+| *Sphenoeacus gramineus* | Poodytes gramineus [synonym]; Poodytes gramineus gramineus [primary synonym] | Poodytes gramineus [synonym]; Poodytes gramineus gramineus [synonym] |
+| *Sphex albohirtus* | Isodontia albohirta [primary synonym]; Isodontia sepicola [synonym] | Isodontia albohirta [synonym]; Isodontia sepicola [synonym] |
+| *Staphylinus procerulus* | Neobisnius procerulus [primary synonym]; Neobisnius procerulus procerulus [synonym] | Neobisnius procerulus [synonym]; Neobisnius procerulus procerulus [synonym] |
+| *Staphylinus quisquiliarius* | Philonthus quisquiliarius [synonym]; Philonthus quisquiliarius quisquiliarius [primary synonym] | Philonthus quisquiliarius [synonym]; Philonthus quisquiliarius quisquiliarius [synonym] |
+| *Stenocorus punctatus* | Phoracantha punctata [primary synonym]; Phoracantha synonyma [synonym] | Phoracantha punctata [synonym]; Phoracantha synonyma [synonym] |
+| *Stephanoderes polyphagus* | Hypothenemus areccae [heterotypic synonym]; Hypothenemus crudiae [synonym] | Hypothenemus areccae [synonym]; Hypothenemus crudiae [synonym] |
+| *Stigmodera acuta* | Castiarina acuta [primary synonym]; Castiarina delicatula [synonym] | Castiarina acuta [synonym]; Castiarina delicatula [synonym] |
+| *Stigmodera aurifera* | Castiarina pallas [synonym]; Selagis aurifera aurifera [primary synonym] | Castiarina pallas [synonym]; Selagis aurifera aurifera [synonym] |
+| *Stigmodera bifasciata* | Castiarina bifasciata [primary synonym]; Temognatha brevifasciata [synonym]; Temognatha secularis [synonym] | Castiarina bifasciata [synonym]; Temognatha brevifasciata [synonym]; Temognatha secularis [synonym] |
+| *Stigmodera bimaculata* | Castiarina bimaculata [primary synonym]; Castiarina binotata [synonym] | Castiarina bimaculata [synonym]; Castiarina binotata [synonym] |
+| *Stigmodera campestris* | Castiarina campestris [primary synonym]; Castiarina subgrata [synonym] | Castiarina campestris [synonym]; Castiarina subgrata [synonym] |
+| *Stigmodera colorata* | Castiarina colorata [primary synonym]; Castiarina thomsoni [synonym] | Castiarina colorata [synonym]; Castiarina thomsoni [synonym] |
+| *Stigmodera distinguenda* | Castiarina distinguenda [primary synonym]; Castiarina simulata [synonym] | Castiarina distinguenda [synonym]; Castiarina simulata [synonym] |
+| *Stigmodera fusca* | Castiarina hawkeswoodi [synonym]; Temognatha fusca [primary synonym] | Castiarina hawkeswoodi [synonym]; Temognatha fusca [synonym] |
+| *Stigmodera guttata* | Castiarina guttata [primary synonym]; Castiarina viridolinea [synonym] | Castiarina guttata [synonym]; Castiarina viridolinea [synonym] |
+| *Stigmodera obscuripennis* | Castiarina gravis [synonym]; Temognatha obscuripennis [primary synonym] | Castiarina gravis [synonym]; Temognatha obscuripennis [synonym] |
+| *Stigmodera parallela* | Castiarina parallela [primary synonym]; Castiarina parallelipennis [synonym] | Castiarina parallela [synonym]; Castiarina parallelipennis [synonym] |
+| *Stigmodera parryi* | Nascioides parryi [primary synonym]; Temognatha fusca [synonym] | Nascioides parryi [synonym]; Temognatha fusca [synonym] |
+| *Stigmodera viridiventris* | Castiarina haroldii [synonym]; Castiarina viridiventris [primary synonym] | Castiarina haroldii [synonym]; Castiarina viridiventris [synonym] |
+| *Stomatella mariei* | Pseudostomatella decolorata [synonym]; Stomatolina mariei [primary synonym] | Pseudostomatella decolorata [synonym]; Stomatolina mariei [synonym] |
+| *Strix novaehollandiae* | Ninox boobook boobook [synonym]; Tyto novaehollandiae novaehollandiae [primary synonym] | Ninox boobook boobook [synonym]; Tyto novaehollandiae novaehollandiae [synonym] |
+| *Strombus urceus orrae* | Canarium orrae [primary synonym]; Canarium urceum [Generic combination]; Canarium urceum [synonym] | Canarium orrae [synonym]; Canarium urceum [Generic combination]; Canarium urceum [synonym] |
+| *Strongylus circumcinctus* | Ostertagia circumcincta [primary synonym]; Teladorsagia circumcincta [synonym] | Ostertagia circumcincta [synonym]; Teladorsagia circumcincta [synonym] |
+| *Tabanus heroni* | Cydistomyia laticallosa [synonym]; Cydistomyia laticallosa heroni [primary synonym] | Cydistomyia laticallosa [synonym]; Cydistomyia laticallosa heroni [synonym] |
+| *Tachytes australis* | Liris australis [primary synonym]; Tachysphex mackayensis [synonym] | Liris australis [synonym]; Tachysphex mackayensis [synonym] |
+| *Talorchestia novaehollandiae* | Notorchestia novaehollandiae [primary synonym]; Notorchestia quadrimana [synonym] | Notorchestia novaehollandiae [synonym]; Notorchestia quadrimana [synonym] |
+| *Tarentula zualella* | Allocosa zualella [primary synonym]; Tasmanicosa godeffroyi [synonym] | Allocosa zualella [synonym]; Tasmanicosa godeffroyi [synonym] |
+| *Tellina balansae* | Jactellina formosa [synonym]; Loxoglypta balansae [primary synonym] | Jactellina formosa [synonym]; Loxoglypta balansae [synonym] |
+| *Tellina brazieri* | Notomyrtea botanica [synonym]; Semelangulus brazieri [primary synonym] | Notomyrtea botanica [synonym]; Semelangulus brazieri [synonym] |
+| *Tellina semitorta* | Cadella semen [synonym]; Cadella semitorta [primary synonym] | Cadella semen [synonym]; Cadella semitorta [synonym] |
+| *Tellina sulcata* | Cyclotellina remies [synonym]; Serratina sulcata [primary synonym] | Cyclotellina remies [synonym]; Serratina sulcata [synonym] |
+| *Tellina tenuilirata* | Pharaonella perna [synonym]; Semelangulus tenuiliratus [primary synonym] | Pharaonella perna [synonym]; Semelangulus tenuiliratus [synonym] |
+| *Tenebrio nigerrimus* | Meneristes australis [synonym]; Zophophilus nigerrimus [primary synonym] | Meneristes australis [synonym]; Zophophilus nigerrimus [synonym] |
+| *Terebra fictilis* | Duplicaria fictilis [primary synonym]; Terebra jacksoniana [synonym] | Duplicaria fictilis [synonym]; Terebra jacksoniana [synonym] |
+| *Terebra nebulosa* | Myurella nebulosa [Generic combination]; Myurella nebulosa [primary synonym]; Terebra argus [synonym]; Terebra guttata [synonym] | Myurella nebulosa [Generic combination]; Myurella nebulosa [synonym]; Terebra argus [synonym]; Terebra guttata [synonym] |
+| *Tetrastichella fuscipennis* | Aprostocetus fuscipennatus [synonym]; Aprostocetus fuscipennis [primary synonym] | Aprostocetus fuscipennatus [synonym]; Aprostocetus fuscipennis [synonym] |
+| *Thuiaria distans* | Salacia fraseri [primary synonym]; Sertularella diaphana [synonym] | Salacia fraseri [synonym]; Sertularella diaphana [synonym] |
+| *Thynnus caelebs* | Catocheilus caelebs [primary synonym]; Keteiothynnus carbonarius [synonym] | Catocheilus caelebs [synonym]; Keteiothynnus carbonarius [synonym] |
+| *Thynnus leachiellus* | Zaspilothynnus campanularis [synonym]; Zaspilothynnus leachiellus [replacement name] | Zaspilothynnus campanularis [synonym]; Zaspilothynnus leachiellus [synonym] |
+| *Thyrsocera australis* | Ellipsidion australe [primary synonym]; Ellipsidion marginifera [synonym] | Ellipsidion australe [synonym]; Ellipsidion marginifera [synonym] |
+| *Tinea vittella* | Earias vittella [primary synonym]; Hednota bivittella [synonym] | Earias vittella [synonym]; Hednota bivittella [synonym] |
+| *Torcula parva* | Haustator cingulifera [synonym]; Seila parva [primary synonym] | Haustator cingulifera [synonym]; Seila parva [synonym] |
+| *Triforis tasmanica* | Hedleytriphora fasciata [synonym]; Isotriphora tasmanica [primary synonym] | Hedleytriphora fasciata [synonym]; Isotriphora tasmanica [synonym] |
+| *Tringa lobata* | Phalaropus lobatus [primary synonym]; Vanellus miles novaehollandiae [synonym] | Phalaropus lobatus [synonym]; Vanellus miles novaehollandiae [synonym] |
+| *Triphora disjuncta* | Isotriphora disjuncta [primary synonym]; Isotriphora simulata [synonym] | Isotriphora disjuncta [synonym]; Isotriphora simulata [synonym] |
+| *Triphora tribulationis* | Coriophora dolicha [synonym]; Obesula tribulationis [primary synonym] | Coriophora dolicha [synonym]; Obesula tribulationis [synonym] |
+| *Triton comptus* | Colubraria castanea [synonym]; Monoplex comptus [primary synonym] | Colubraria castanea [synonym]; Monoplex comptus [synonym] |
+| *Triton gemmatus* | Monoplex gemmatus [primary synonym]; Monoplex mundus [synonym] | Monoplex gemmatus [synonym]; Monoplex mundus [synonym] |
+| *Trochus lehmanni* | Notogibbula lehmanni [Generic combination]; Prothalotia lehmanni [primary synonym]; Thalotia conica [synonym] | Notogibbula lehmanni [Generic combination]; Prothalotia lehmanni [synonym]; Thalotia conica [synonym] |
+| *Trochus poupineli* | Calliostoma comptum [synonym]; Dactylastele poupineli [primary synonym] | Calliostoma comptum [synonym]; Dactylastele poupineli [synonym] |
+| *Trogoderma ellipticum* | Eurhopalus antipodus [synonym]; Eurhopalus ellipticus [primary synonym] | Eurhopalus antipodus [synonym]; Eurhopalus ellipticus [synonym] |
+| *Trogoderma pectinifer* | Eurhopalus apicalis [synonym]; Eurhopalus pectinifer [primary synonym] | Eurhopalus apicalis [synonym]; Eurhopalus pectinifer [synonym] |
+| *Trox australasiae* | Omorgus alternans [synonym]; Omorgus australasiae [primary synonym] | Omorgus alternans [synonym]; Omorgus australasiae [synonym] |
+| *Tryphosa murrayi* | Uristes adarei [synonym]; Uristes murrayi [primary synonym] | Uristes adarei [synonym]; Uristes murrayi [synonym] |
+| *Turbo torquatus* | Lunella torquata torquata [primary synonym]; Lunella torquata whitleyi [synonym] | Lunella torquata torquata [synonym]; Lunella torquata whitleyi [synonym] |
+| *Turritella tasmanica* | Colpospira atkinsoni [synonym]; Gazameda tasmanica [primary synonym] | Colpospira atkinsoni [synonym]; Gazameda tasmanica [synonym] |
+| *Tylenchus filiformis* | Aglenchus agricola [synonym]; Filenchus filiformis [primary synonym] | Aglenchus agricola [synonym]; Filenchus filiformis [synonym] |
+| *Typton dimorphus* | Typtonychus dimorphus [primary synonym]; Typtonychus infaustus [synonym] | Typtonychus dimorphus [synonym]; Typtonychus infaustus [synonym] |
+| *Urodiaspis novaehollandiae* | Deraiophorus novaehollandiae [primary synonym]; Eutrachytes novaehollandiae [synonym] | Deraiophorus novaehollandiae [synonym]; Eutrachytes novaehollandiae [synonym] |
+| *Vanessa calybe* | Junonia villida calybe [primary synonym]; Junonia villida villida [synonym] | Junonia villida calybe [synonym]; Junonia villida villida [synonym] |
+| *Vermilia polytrema* | Spirobranchus polytrema [primary synonym]; Spirobranchus pseudopolytremus [synonym] | Spirobranchus polytrema [synonym]; Spirobranchus pseudopolytremus [synonym] |
+| *Zoniolaimus communis* | Labiosimplex australis [synonym]; Labiosimplex communis [primary synonym] | Labiosimplex australis [synonym]; Labiosimplex communis [synonym] |
+| *Zopheromantis trimaculata* | Hierodula trimaculata [primary synonym]; Zopheromantis loripes [synonym] | Hierodula trimaculata [synonym]; Zopheromantis loripes [synonym] |
+:::
+
+::: {.callout-note collapse="true"}
+## The 7 names resolved in one format only, or differently
+
+| Name | NSL format: accepted name [status] | AFD format: accepted name [status] |
+|---|---|---|
+| *Chelonia depressa* | Chelonia mydas [synonym]; Natator depressus [synonym] | Chelonia mydas [synonym]; Natator depressus [pro parte synonym] |
+| *Ehlersia ferrugina* | Paraehlersia ferrugina [synonym]; Paraehlersia weissmannioides [synonym] | Paraehlersia ferrugina [synonym]; Paraehlersia weissmannioides [misapplied] |
+| *Mocoa ocellata* | Carinascincus metallicus [synonym]; Carinascincus ocellatus [synonym] | Carinascincus metallicus [pro parte synonym]; Carinascincus ocellatus [synonym] |
+| *Mocoa pseudocarinata* | Carinascincus metallicus [synonym]; Pseudemoia entrecasteauxii [synonym] | Carinascincus metallicus [pro parte synonym]; Pseudemoia entrecasteauxii [synonym] |
+| *Pseudechis cupreus* | Pseudechis australis [synonym]; Pseudonaja textilis [synonym] | Pseudechis australis [pro parte synonym]; Pseudonaja textilis [synonym] |
+| *Typhlops unguirostris* | Anilios affinis [synonym]; Anilios unguirostris [synonym] | Anilios affinis [pro parte synonym]; Anilios unguirostris [synonym] |
+| *Aulicus episcopalis* | Phlogistus instabilis [heterotypic synonym]; Phlogistus remotus [objective synonym] | Phlogistus instabilis [synonym]; Phlogistus remotus [misapplied] |
+:::
+
+::: {.callout-note collapse="true"}
+## The 79 names that lead to more than one accepted name in one format only
+
+| Name | NSL format: accepted name [status] | AFD format: accepted name [status] |
+|---|---|---|
+| *Acanthiza pyrrhopygia* | — | Acanthiza pyrrhopygia [unplaced]; Hylacola pyrrhopygia pyrrhopygius [synonym] |
+| *Arcella catinus* | Arcella catinus [accepted]; Arcella catinus catinus [synonym] | — |
+| *Arcella discoides* | Arcella discoides [accepted]; Arcella discoides discoides [synonym] | — |
+| *Bathypallenopsis mollissima* | — | Bathypallenopsis annandalei [synonym]; Bathypallenopsis longiseta [synonym]; Bathypallenopsis paramollis [synonym] |
+| *Bathypallenopsis oscitans* | — | Bathypallenopsis californica [synonym]; Bathypallenopsis longirostris [Generic combination] |
+| *Capua acritodes* | — | Clarana arrythmodes [synonym]; Euphona ammochroa [synonym] |
+| *Capua oxygona* | — | Constrictana oxygona [synonym]; Neocalyptis molesta [synonym] |
+| *Capua promiscua* | — | Capua promiscua [unplaced]; Stereoloba promiscua [synonym] |
+| *Centropyxis aerophila* | Centropyxis aerophila [accepted]; Centropyxis aerophila aerophila [primary synonym] | — |
+| *Cerithideopsilla cingulata* | — | Pirenella austrocingulata [synonym]; Pirenella delicatula [synonym]; Pirenella rugosa [synonym] |
+| *Cerithiopsis dannevigi* | Prolixodens [synonym]; Prolixodens dannevigi [primary synonym] | — |
+| *Chilodon cyprini* | Chilodonella cyprini [primary synonym]; Chilodonella piscicola [synonym] | — |
+| *Chondrilla nucula* | — | Chondrilla linnaei [misapplied]; Chondrilla nucula [accepted] |
+| *Clavulina pacifica* | Clavulina pacifica [accepted]; Olgita pacifica [synonym] | — |
+| *Conus turbinatus* | — | Conus suturatus [synonym]; Conus suturatus suturatus [synonym] |
+| *Corythion dubium* | Corythion dubium [accepted]; Corythion dubium dubium [primary synonym] | — |
+| *Cryptodifflugia pusilla* | Cryptodifflugia pusilla [accepted]; Cryptodifflugia pusilla pusilla [primary synonym] | — |
+| *Cyclopyxis eurystoma* | Cyclopyxis eurystoma [accepted]; Cyclopyxis eurystoma eurystoma [primary synonym] | — |
+| *Cycloseris cyclolites* | — | Cycloseris costulata [synonym]; Cycloseris cyclolites [accepted] |
+| *Cyrtohymena candens* | Cyrtohymena candens [accepted]; Cyrtohymena candens candens [Generic combination] | — |
+| *Cystoisospora canis* | Eimeria canis [Generic combination]; Isospora canis [Generic combination] | — |
+| *Difflugia acuminata* | Difflugia acuminata [accepted]; Difflugia acuminata acuminata [primary synonym] | — |
+| *Difflugia compressa* | Pontigulasia compressa [primary synonym]; Zivkovicia compressa [primary synonym] | — |
+| *Difflugia constricta* | Difflugia constricta [accepted]; Difflugia constricta constricta [primary synonym] | — |
+| *Difflugia corona* | Difflugia corona [accepted]; Difflugia corona corona [primary synonym] | — |
+| *Difflugia globulosa* | Difflugia globulosa [accepted]; Difflugia globulosa globulosa [primary synonym] | — |
+| *Difflugia lismorensis* | Difflugia lismorensis [accepted]; Difflugia lismorensis lismorensis [primary synonym] | — |
+| *Difflugia lobostoma* | Difflugia lobostoma [accepted]; Difflugia lobostoma lobostoma [primary synonym] | — |
+| *Difflugia mitrata* | Difflugia mitrata [accepted]; Difflugia mitrata mitrata [primary synonym] | — |
+| *Difflugia oviformis* | Difflugia oviformis [accepted]; Difflugia oviformis oviformis [primary synonym]; Netzelia oviformis [primary synonym] | — |
+| *Difflugia pulex* | Difflugia pulex [accepted]; Difflugia pulex pulex [primary synonym] | — |
+| *Difflugia pyriformis* | Difflugia pyriformis [accepted]; Difflugia pyriformis pyriformis [primary synonym] | — |
+| *Difflugia seminulum* | Assulina seminulum seminulum [primary synonym]; Euglypha seminulum [primary synonym] | — |
+| *Difflugia tuberculata* | Difflugia tuberculata [accepted]; Netzelia tuberculata [primary synonym] | — |
+| *Difflugia urceolata* | Difflugia urceolata [accepted]; Difflugia urceolata urceolata [primary synonym] | — |
+| *Dimorphus muris* | Giardia muris [primary synonym]; Trichomonas muris [synonym] | — |
+| *Eimeria ahsata* | Eimeria ahsata [accepted]; Eimeria christenseni [synonym] | — |
+| *Eimeria anguillae* | Eimeria anguillae [accepted]; Epieimeria anguillae [primary synonym] | — |
+| *Eimeria cunnamullensis* | Eimeria cunnamullensis [accepted]; Eimeria macropodis [synonym] | — |
+| *Epieimeria anguillae* | Eimeria anguillae [Generic combination]; Epieimeria anguillae [accepted] | — |
+| *Euglypha alveolata* | Euglypha alveolata [accepted]; Euglypha alveolata alveolata [primary synonym] | — |
+| *Euglypha compressa* | Euglypha compressa [accepted]; Euglypha compressa compressa [primary synonym] | — |
+| *Euglypha cristata* | Euglypha cristata [accepted]; Euglypha cristata cristata [primary synonym] | — |
+| *Euglypha dentata* | Euglypha dentata [accepted]; Tracheleuglypha dentata [primary synonym] | — |
+| *Euglypha filifera* | Euglypha filifera [accepted]; Euglypha filifera filifera [primary synonym] | — |
+| *Euglypha laevis* | Euglypha alveolata laevis [primary synonym]; Euglypha laevis [accepted] | — |
+| *Glyphipteryx triplaca* | — | Glyphipterix triplaca [synonym]; Glyphipteryx triplaca [unplaced] |
+| *Hemiarcha polioleuca* | — | Hemiarcha polioleuca [unplaced]; Scieropepla polioleuca [synonym] |
+| *Histriculus muscorum* | Histriculus muscorum [accepted]; Sterkiella histriomuscorum [synonym] | — |
+| *Histrio muscorum* | Histriculus muscorum [primary synonym]; Sterkiella histriomuscorum [Generic combination] | — |
+| *Lacrymaria olor* | Lacrymaria olor [accepted]; Trachelocerca olor [primary synonym] | — |
+| *Malachius luridicollis* | — | Heteromastix luridicollis [synonym]; Malachius luridicollis [unplaced] |
+| *Marginopora vertebralis* | Amphisorus hemprichii [synonym]; Marginopora vertebralis [accepted] | — |
+| *Nebela militaris* | Nebela militaris [accepted]; Nebela militaris militaris [primary synonym] | — |
+| *Otiocerus group* | Otiocerinae [synonym]; Otiocerini [primary synonym] | — |
+| *Oxytricha granulifera* | Hemiamphisiella granulifera [primary synonym]; Oxytricha granulifera [accepted] | — |
+| *Patellina corrugata* | Patellina cf. formosa [synonym]; Patellina corrugata [accepted] | — |
+| *Philiris papuana papuana* | Philiris papuana [Generic combination]; Philiris papuana papuana [excluded other] | — |
+| *Piroplasma mutans* | Theileria mutans [primary synonym]; Theileria orientalis [synonym] | — |
+| *Placopsilina bradyi* | Placopsilina bradyi [accepted]; Rudigaudryina minor [synonym] | — |
+| *Ptilochares trissodesma* | — | Limnaecia trissodesma [synonym]; Ptilochares trissodesma [unplaced] |
+| *Quadrulella symmetrica* | Quadrulella symmetrica [accepted]; Quadrulella symmetrica symmetrica [Generic combination] | — |
+| *Saprophilus muscorum* | Litonotus muscorum [primary synonym]; Sathrophilus muscorum [primary synonym] | — |
+| *Sciomyza nigricornis* | — | Sciomyza nigricornis [unplaced]; Tapeigaster nigricornis [synonym] |
+| *Spathidium atypicum* | Apospathidium atypicum [primary synonym]; Arcuospathidium atypicum [primary synonym]; Spathidium longicaudatum [synonym] | — |
+| *Sphenoderia fissirostris* | Sphenoderia fissirostris [accepted]; Sphenoderia fissirostris fissirostris [primary synonym] | — |
+| *Spirillina vivipara revertens* | Mychostomina peripora [synonym]; Mychostomina revertens [primary synonym] | — |
+| *Spirotrichosoma obtusa* | Leptospironympha obtusa [primary synonym]; Spirotrichosoma obtusa [accepted] | — |
+| *Stosicia incisa* | Isseliella [Generic combination]; Isseliella incisa [Generic combination]; Isseliella incisa [synonym] | — |
+| *Strombus vomer iredalei* | Euprotomus [Generic combination]; Euprotomus [synonym]; Euprotomus iredalei [Generic combination]; Euprotomus iredalei [primary synonym] | — |
+| *Theileria buffeli* | Theileria buffeli [accepted]; Theileria mutans [Generic combination]; Theileria orientalis [synonym] | — |
+| *Theileria orientalis* | Theileria buffeli [synonym]; Theileria mutans [Generic combination]; Theileria orientalis [accepted] | — |
+| *Theileria sergenti* | Theileria mutans [synonym]; Theileria orientalis [synonym]; Theileria sergenti [accepted] | — |
+| *Thynnus placidus* | Iswaroides placidus [primary synonym]; Thynnus placidus [excluded other] | — |
+| *Thysanozoon brocchii* | — | Thysanozoon brocchii [accepted]; Thysanozoon cruciatum [synonym] |
+| *Trichomastix batrachorum* | Monocercomonas batrachorum [primary synonym]; Trichomastix batrachorum [accepted] | — |
+| *Trypanosoma anellobiae* | Leucocytozoon anellobiae [primary synonym]; Trypanosoma anellobiae [accepted] | — |
+| *Turbinella ustulata* | — | Peristernia ustulata [synonym]; Propefusus pyrulatus [synonym] |
+| *Zaclys dannevigi* | Prolixodens [Generic combination]; Prolixodens dannevigi [Generic combination] | — |
+:::
+
+## Test against a real name list {#real-name-list}
+
+As a practical check, we aligned the 5,154 raw names from an Australian invertebrate trait database
+against each format separately, and compared the names taxonAlign suggests. This list is typical of
+what taxonAlign is used for: it includes misspellings, morphospecies codes (`"Acritus BF01"`,
+`"Genus 1 sp.01 Corinnidae"`) and names written with and without subgenera.
+
+**5,116 of the 5,154 names (99.3%) get the same suggested name from both formats.** The other 38
+(36 distinct names) are listed below by cause. Earlier rounds of this test also turned up three problems in
+taxonAlign itself, now fixed. One was a matching rule that sent every plain `"Genus sp."` to fuzzy
+matching; this is why `"Limnophora sp."` used to resolve to the NSL format's infraorder *Lithophora*.
+
+**A. A genus name that the NSL format treats as a synonym of a subgenus (10 names).** In the NSL
+format, the genus *Homalictus* is a synonym of the subgenus *Lasioglossum (Homalictus)*, and
+*Goniocolletes* of *Leioproctus (Goniocolletes)*. The AFD format has no genus-level synonymy at all.
+taxonAlign can only infer that a genus known only from synonym names belongs with the accepted genus
+its species lead to, so it gives the genus, *Lasioglossum*, not the subgenus.
+
+| Name in the list | NSL format | AFD format |
+|---|---|---|
+| Goniocolletes | *Leioproctus (Goniocolletes)* | *Leioproctus* |
+| Homalictus | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+| Homalictus (Homalictus) brisbanensis | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+| Homalictus (Homalictus) dampieri | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+| Homalictus (Homalictus) dotatus | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+| Homalictus (Homalictus) niveifrons | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+| Homalictus (Homalictus) scrupulosus | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+| Homalictus (Homalictus) sphecodoides | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+| Homalictus (Homalictus) sphecodopsis | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+| Homalictus (Homalictus) urbanus | *Lasioglossum (Homalictus)* | *Lasioglossum* |
+
+**B. A genus with an explicit synonymy record in the NSL format, inferred differently from the AFD
+format (3 names).** The NSL format lists *Lathridius* as a synonym of *Latridius*. It lists
+*Trigona* as a synonym of the mollusc genus *Gomphina*, plus a second, "included" record; the bee
+genus of that name doesn't appear. In the AFD format, both genera are known only from synonym names,
+whose species lead to *Enicmus* and *Austroplebeia*.
+
+| Name in the list | NSL format | AFD format |
+|---|---|---|
+| Lathridius BF01 | *Latridius* | *Enicmus* |
+| Trigona (Plebeia) sp. A | *Gomphina* | *Austroplebeia* |
+| Trigona (Plebeia) sp. B | *Gomphina* | *Austroplebeia* |
+
+**C. A genus known only from synonym names, whose species lead to accepted names in more than one
+genus (6 names).** Neither format has a genus record for *Falagria*, *Halictus*, *Choleva* or
+*Syrphus*. Their species are synonyms of species in several different genera, so the genus name is
+ambiguous. Each format's first link is different.
+
+| Name in the list | NSL format | AFD format |
+|---|---|---|
+| Choleva TFIC sp 01 | *Austronemadus* | *Nargomorphus* |
+| Falagria B319 | *Cordalia* | *Myrmecocephalus* |
+| Falagria COL043 | *Cordalia* | *Myrmecocephalus* |
+| Halictus rufiabdominalis | *Euryglossa* | *Lasioglossum* |
+| Halictus rufoazureus | *Euryglossa* | *Lasioglossum* |
+| Syrphus sp. | *Allograpta* | *Melanostoma* |
+
+**D. The two formats place the same species in different subgenera (2 names).** These look like
+genuine discrepancies between the two formats.
+
+| Name in the list | NSL format | AFD format |
+|---|---|---|
+| Leioproctus (Colletellus) ciliatus | *Leioproctus (Colletellus) ciliatus* | *Leioproctus (Goniocolletes) ciliatus* |
+| Megachile (Hackeriapis) adusta | *Megachile (Hackeriapis) adusta* | *Megachile (Austrochile) adusta* |
+
+**E. A name that is in the NSL format only (5 names).** *Aphalara tecta* and *Calodema plebeia* are
+NSL synonym records missing from the AFD format. The genera *Epistranus* and *Insnesia* and the
+nominotypical subgenus *Coelioxys (Coelioxys)* are also NSL-only. With the AFD format these names
+fall back to a similar-looking name, or to the genus.
+
+| Name in the list | NSL format | AFD format |
+|---|---|---|
+| Aphalara tecta | *Aphalara tecta* | *Leptospermonastes* |
+| Calodema plebeia | *Calodema plebeia* | *Calodema plebeium* |
+| Coelioxys (Coelioxys) | *Coelioxys (Coelioxys)* | *Coelioxys* |
+| Epistranus BF01 | *Epistranus* | *Epistranodes* |
+| Insnesia sp. | *Insnesia* | *Inonemia* |
+
+**F. A name in neither format (10 names).** These reach different similar-looking names in each
+format, or none, simply because the two formats contain different names. They aren't a
+discrepancy between the formats.
+
+| Name in the list | NSL format | AFD format |
+|---|---|---|
+| Lispininae B018 | *Pisinae* | *Lispinina* |
+| Microsilpha BF01 | *Octangium* | *Polyangium* |
+| Trachytetra BF01 | no match | *Trachycentra* |
+| Trachytetra BF02 | no match | *Trachycentra* |
+| Trachytetra BF03 | no match | *Trachycentra* |
+| Trachytetra BF04 | no match | *Trachycentra* |
+| Trachytetra BF05 | no match | *Trachycentra* |
+| Trachytetra BF06 | no match | *Trachycentra* |
+| Weevil | *Iasis* | no match |
+| Weevil sp5 | *Iasis* | no match |
+
+## Possible errors in input data {#possible-errors}
+
+These are records that look like errors in the source data rather than issues of format. We have not
+changed any of them; how taxonAlign currently treats each one is noted below.
+
+### Valid names that appear twice
+
+Twelve valid names each appear on two separate rows of the AFD format, with different
+`CONCEPT_GUID`s. **The same twelve names are also duplicated in the NSL format**, so they come from
+the AFD itself rather than from the AFD-format export process. Most are Chalcidoidea described by Girault.
+
+The pairs fall into two patterns. We have described what the data shows without trying to judge the
+taxonomy, which is for the curators to resolve.
+
+**Identical name and authorship on both rows (3 names).** These are either two records for one
+species, or two different species, originally described in different genera, that are now homonyms in
+the same genus.
+
+| Valid name | Authorship | Synonym listed on each row | `CONCEPT_GUID` |
+|---|---|---|---|
+| *Aglaotilla mira* | (André, 1895) | *Mutilla mira* André, 1895 | 799636d2-c42f-4aab-a4ac-3d5cfaecfcfe |
+| | (André, 1895) | *Mutilla (Sphaerophthalma [sic]) mira* André, 1895 | d98910ed-83a2-4e0e-960d-53282b2e7907 |
+| *Aprostocetus fuscipennis* | (Girault, 1913) | *Syntomosphyrella fuscipennis* Girault, 1913 | 18a889dc-90e3-433a-9969-6def30287f00 |
+| | (Girault, 1913) | *Tetrastichella fuscipennis* Girault, 1913 | d53b2279-30e4-4cba-8d4f-bc69c9aca2e6 |
+| *Aprostocetus viridithorax* | (Girault, 1913) | *Trichoporoides viridithorax* Girault, 1913 | 9d37c4a5-318b-4a9b-871a-192681d08cbe |
+| | (Girault, 1913) | *Ootetrastichus viridithorax* Girault, 1913 | 395f7a69-e946-481c-93a1-3b02495df5a2 |
+
+**Same name, different authorship or year (9 names).** These are either homonyms (where, if both
+are valid, one would normally need a replacement name) or two records for one species that was
+described more than once.
+
+| Valid name | Authorship | Synonym listed on each row | `CONCEPT_GUID` |
+|---|---|---|---|
+| *Callitula grotiusi* | (Girault & Dodd, 1915) | *Pseudosphegigasterus grotiusi* Girault & Dodd, 1915 | 4badaab8-cb59-409f-8b91-c33aab8b0252 |
+| | (Girault, 1913) | *Pseudosphegigasterus grotiusi* Girault, 1913 | d4011ac7-e568-4cc7-be34-d24bac3c5e86 |
+| *Cyanea rosea* | (Agassiz & Mayer, 1898) | *Desmonema rosea* Agassiz & Mayer, 1898 | 6f7fd55e-3be4-45f4-be51-a643a42ee021 |
+| | Quoy & Gaimard, 1824 | — | 257fa394-82a8-4fed-b891-470e9139241f |
+| *Ditropidus latifrons* | Lea, 1920 | — | 3d28d07b-219e-4302-9780-c7effe7dbb9e |
+| | Weise, 1923 | — | 63c90e49-71f9-40ae-b42d-95850cbc9f90 |
+| *Euderus ovativentris* | (Girault, 1924) | *Secodella ovativentris* Girault, 1924 | e2f06fbd-0b26-4a95-b94c-3ff472bf2f96 |
+| | (Girault, 1926) | *Secodella ovativentris* Girault, 1926 | 47d1559d-d878-45d9-b550-c113c733e8ed |
+| *Ophelimus dei* | (Girault, 1933) | *Rhicnopeltella dei* Girault, 1933 | 4e8489bd-f909-40e0-bdfb-f8407cb483be |
+| | (Girault, 1926) | *Rhicnopeltella dei* Girault, 1926 | 92803fd9-5ea8-43ce-991b-8f110cdfcadf |
+| *Ophelimus gemma* | (Girault, 1921) | *Rhicnopeltella gemma* Girault, 1921 | c0288af1-61d6-4458-8fd6-85c5b498c433 |
+| | (Girault, 1934) | *Rhicnopeltella gemma* Girault, 1934 | 48f1b73c-acce-44bb-8bf9-1d8623485d4d |
+| *Sphegipterosemella unicolor* | (Girault, 1914) | *Pterosema unicolor* Girault, 1914 | 51bd0a57-4e8d-479e-803d-2cc0e14a10d8 |
+| | Girault, 1913 | — | 74631dfb-30ac-45f8-826c-f831f34be725 |
+| *Tachinaephagus australiensis* | (Girault, 1914) | *Phaenodiscus australiensis* Girault, 1914 | 1e2bbc95-68e3-4bcf-b4a3-7c2fc5573be8 |
+| | (Girault, 1915) | *Phaenodiscoides australiensis* Girault, 1915 | f4ca826b-0d34-44dc-9393-2e03eb037a45 |
+| *Tetrastichus kurandensis* | Girault, 1914 | — | b3e1c187-1129-4f27-9442-a663b3824490 |
+| | (Girault, 1913) | *Aprostocetus kurandensis* Girault, 1913 | c705b20d-2dba-4b40-b80f-c216959404f8 |
+
+"—" means the row's only synonym entry was the valid name itself.
+
+**How taxonAlign treats these:** both records are kept. A raw name matching one of these names can't
+be told apart by name alone, so it is matched to the first record. The original combinations listed
+as synonyms (e.g. *Secodella ovativentris*) still lead to an accepted name, but where both original
+combinations are identical (e.g. *Rhicnopeltella dei* Girault, 1926 and 1933), they lead to the same
+first record.
+
+### Trailing comma in a valid name
+
+*Wallagootacoris tasmaniensis* (Miridae) is written `"tasmaniensis,"` (with a trailing comma) in the
+AFD format's `SPECIES` column. The comma carries through to `VALID_NAME`
+(`"Wallagootacoris tasmaniensis,"`), `COMPLETE_NAME` and `SYNONYMS`. The NSL format has the name
+without the comma.
+
+Before we removed the comma, this was the only accepted animal name that appeared to be in the NSL
+format but not in the AFD format when we compared the two (see [Cross-check](#cross-check)).
+
+**How taxonAlign treats this:** the trailing comma is removed when the AFD format is loaded.
+
+### Names that lead to different accepted names in the two formats {#different-accepted-names}
+
+These 23 names are present in both formats but lead to different accepted names. "(itself)" is not
+shown: where a name's own name appears among its accepted names, it is accepted, or held under an
+"Unplaced" row in the AFD format, or is an excluded record in the NSL format (which we read as
+pointing to itself). Patterns:
+
+- **The AFD format lists the name under its accepted taxon and also under an "Unplaced" row**
+  (e.g. *Capua promiscua*, *Malachius luridicollis*, *Phalangista cookii*).
+- **The NSL format also links a species name to a genus** (e.g. *Zaclys dannevigi* to
+  *Prolixodens* as well as *Prolixodens dannevigi*).
+- **One format lists an additional accepted name** (e.g. *Bathypallenopsis oscitans*, *Fungia
+  danai*, *Turbinella ustulata*).
+
+| Name | NSL format: accepted name(s) [status] | AFD format: accepted name(s) [status] |
+|---|---|---|
+| *Acanthiza pyrrhopygia* | *Hylacola pyrrhopygia pyrrhopygius* [synonym] | *Acanthiza pyrrhopygia*; *Hylacola pyrrhopygia pyrrhopygius* [synonym,unplaced] |
+| *Bathypallenopsis oscitans* | *Bathypallenopsis longirostris* [Generic combination] | *Bathypallenopsis californica*; *Bathypallenopsis longirostris* [Generic combination,synonym] |
+| *Capua acritodes* | *Euphona ammochroa* [synonym] | *Clarana arrythmodes*; *Euphona ammochroa* [synonym] |
+| *Capua promiscua* | *Stereoloba promiscua* [primary synonym] | *Capua promiscua*; *Stereoloba promiscua* [synonym,unplaced] |
+| *Cerithideopsilla cingulata* | *Pirenella rugosa* [synonym] | *Pirenella austrocingulata*; *Pirenella delicatula*; *Pirenella rugosa* [synonym] |
+| *Cerithiopsis dannevigi* | *Prolixodens*; *Prolixodens dannevigi* [primary synonym,synonym] | *Prolixodens dannevigi* [synonym] |
+| *Chondrilla nucula* | *Chondrilla nucula* [accepted] | *Chondrilla linnaei*; *Chondrilla nucula* [accepted,misapplied] |
+| *Conus turbinatus* | *Conus suturatus* [synonym] | *Conus suturatus*; *Conus suturatus suturatus* [synonym] |
+| *Cycloseris cyclolites* | *Cycloseris cyclolites* [accepted] | *Cycloseris costulata*; *Cycloseris cyclolites* [accepted,synonym] |
+| *Fungia danai* | *Danafungia scruposa*; *Lithophyllon concinna*; *Lithophyllon repanda* [synonym] | *Danafungia horrida*; *Danafungia scruposa*; *Lithophyllon concinna*; *Lithophyllon repanda* [synonym] |
+| *Glyphipteryx triplaca* | *Glyphipterix triplaca* [synonym] | *Glyphipterix triplaca*; *Glyphipteryx triplaca* [synonym,unplaced] |
+| *Hemiarcha polioleuca* | *Scieropepla polioleuca* [primary synonym] | *Hemiarcha polioleuca*; *Scieropepla polioleuca* [synonym,unplaced] |
+| *Malachius luridicollis* | *Heteromastix luridicollis* [primary synonym] | *Heteromastix luridicollis*; *Malachius luridicollis* [synonym,unplaced] |
+| *Phalangista cookii* | *Pseudocheirus peregrinus cooki*; *Pseudocheirus peregrinus peregrinus*; *Pseudocheirus peregrinus pulcher* [synonym] | *Phalangista cookii*; *Pseudocheirus peregrinus cooki*; *Pseudocheirus peregrinus peregrinus*; *Pseudocheirus peregrinus pulcher* [synonym,unplaced] |
+| *Philiris papuana papuana* | *Philiris papuana*; *Philiris papuana papuana* [excluded other,Generic combination] | *Philiris papuana* [Generic combination] |
+| *Ptilochares trissodesma* | *Limnaecia trissodesma* [primary synonym] | *Limnaecia trissodesma*; *Ptilochares trissodesma* [synonym,unplaced] |
+| *Sciomyza nigricornis* | *Tapeigaster nigricornis* [primary synonym] | *Sciomyza nigricornis*; *Tapeigaster nigricornis* [synonym,unplaced] |
+| *Stosicia incisa* | *Isseliella*; *Isseliella incisa* [Generic combination,synonym] | *Isseliella incisa* [Generic combination,synonym] |
+| *Strombus vomer iredalei* | *Euprotomus*; *Euprotomus iredalei* [Generic combination,primary synonym,synonym] | *Euprotomus iredalei* [Generic combination,synonym] |
+| *Thynnus placidus* | *Iswaroides placidus*; *Thynnus placidus* [excluded other,primary synonym] | *Iswaroides placidus* [synonym] |
+| *Thysanozoon brocchii* | *Thysanozoon brocchii* [accepted,synonym] | *Thysanozoon brocchii*; *Thysanozoon cruciatum* [accepted,synonym] |
+| *Turbinella ustulata* | *Peristernia ustulata* [primary synonym] | *Peristernia ustulata*; *Propefusus pyrulatus* [synonym] |
+| *Zaclys dannevigi* | *Prolixodens*; *Prolixodens dannevigi* [Generic combination] | *Prolixodens dannevigi* [Generic combination] |
+
+### Other formatting errors
+
+In the AFD format:
+
+- *Goniastrea australensis* (a generic combination of *Paragoniastrea australensis*) is written
+  `"Goniastrea australensis (Milne Edwards, )"`, with the year missing. 11 other names have
+  authorship with the year missing, and 38 have empty authorship, `"(, )"`.
+- `"Dendrodoris fumata auctt. non Rüppell & Leuckart, 0"` has a year of 0.
+- `"(Ciscadra) (G. Leraut, 2021)"`, a changed combination with no genus.
+- `"Aedes (?subgenus near …"`, cut off.
+- Brackets that don't balance: `"Mangilia (Glyphostoma)) jousseaumei"`,
+  `"Enoplometopus (Hoplometopus)) voigtmanni"`, `"Aforia ((Aforia) moskalevi"`.
+- `"Leptochloris [monomial]"`: a note in square brackets that the NSL format turned into a name
+  (`"Leptochloris monomial"`).
+
+In the NSL format, some `canonical_name` values still include part of the authorship or an
+annotation, so they don't match the same name elsewhere:
+
+- `"Conus complanatus Sowerby"`, `"Conus turbinatus Sowerby"`, `"Tellina hilaris Sowerby"`,
+  `"Delena gloriosa Rainbow"`, `"Thynnus cathreinii Dalla"`, `"Termes lignarium de"`,
+  `"Pediculus setosus von"`, `"Limopsis philippii A."`, `"Trigonia jukesii A."`,
+  `"Perotrochus 'aff. teramachii Kuroda'"`, `"Palaemon sundaicus var. De Mani"`,
+  `"Ophiothrix aristulata Investigatoris"`, `"Scarabaeus novae Hollandiae"`,
+  `"Columbella Deshayes, 1844"`, `"Hypora, 1864"`, `"Epimeria Chevreux"`, `"Enneamera von"`,
+  `"Suphalomitus van der"`, `"Cheiraster Luidiaster"`
+- `"Ategumia adipalis kwangtungialis (Bocchoris aptalis)"`,
+  `"Ategumia adipalis nigromarginalis (Bocchoris adipalis)"`,
+  `"Pseudoceros sp. 4 of Newman & Cannon (2003)"`
+- Stray brackets: `"Enoplometopus) voigtmanni"`, `"Mangilia) jousseaumei"`,
+  `"Aforia ((Aforia)) moskalevi"`
+- A control character: `"Mesomyzostoma lobus<U+009D>"`
+- Informal group names recorded as species-level names: `"Otiocerus group"`, `"Sikiana subgroup"`,
+  `"Zoraida subgroup"`, `"Genus A"`
+- Two name-file records for `"Percalates colonorum"`, differing only in the spelling of the author
+  (`Günther` / `Gunther`).
+
+## Items for curator attention {#for-curator-attention}
+
+In rough order of impact:
+
+1. **Missing taxa in the NSL format:** all of Temnocephalidae, and 31 Tortricidae genera
+   (see [Cross-check](#cross-check)).
+2. **461 names are listed as synonyms of two or more taxa with no way to choose between them**, in
+   both formats, and 295 more can only be resolved using the NSL format's "primary synonym" label
+   (see [Names that lead to more than one accepted name](#multiple-accepted-names)). Please also
+   confirm where "primary synonym", "synonym" and "Generic combination" belong in the precedence
+   order.
+3. **The NSL format has no misapplied status.** Usages the AFD format marks as misapplied or part
+   (`sensu`, `auctt.`, `non`, `(part)`) are plain "synonym" records in the NSL format.
+4. **23 names lead to different accepted names in the two formats** (see
+   [Possible errors](#different-accepted-names)).
+5. **Excluded/vagrant/intercepted records in the NSL format point to their parent taxon** through
+   `accepted_name_usage_id`. Is this intended? It is the only place the field doesn't mean "accepted
+   name of this record". We have assumed it shouldn't be read as synonymy.
+6. **`CONCEPT_GUID` changes between AFD-format files** (already acknowledged).
+7. **Twelve valid names appear twice**, with different `CONCEPT_GUID`s, in both formats. See
+   [Possible errors in input data](#possible-errors) for the full list.
+8. **Formatting errors** in both formats (see [Other formatting errors](#possible-errors) and the
+   table of [data issues](#possible-errors)), including authorship left inside NSL canonical names.
+9. **Each taxon's own name is repeated inside its `SYNONYMS` field** in about 70,800 cases. This is
+   harmless for us since we remove them, but it is new compared with the previous AFD-format file and
+   may not be intended.
+10. **`generic_name` in the NSL taxon file** gives the accepted name's genus for synonym records. Is
+    this the intended meaning of the column?
+11. **Two species are placed in different subgenera in the two formats**: *Leioproctus ciliatus*
+    (*Colletellus* in the NSL format, *Goniocolletes* in the AFD format) and *Megachile adusta*
+    (*Hackeriapis* / *Austrochile*). The NSL format also lists the genus *Trigona* only as a synonym of
+    the mollusc genus *Gomphina* (plus an "included" record). See
+    [Test against a real name list](#real-name-list).
+12. **675 genera have a second genus-rank record, of the same name, pointing to their own nominotypical
+    subgenus** (e.g. genus *Acritus* as "primary synonym" of subgenus *Acritus (Acritus)*), alongside
+    the accepted genus record. What are these records meant to say? As they stand, the same genus name
+    is both accepted and a synonym. (See [Interpretation choices](#interpretation-choices).)
+
+## Reproducing this
+
+```r
+library(taxonAlign)
+
+afd_format <- load_taxonomic_resources(
+  "AFD", path = "data/AFD_2026-10-07/Anamalia_all_ranks.csv"
+)$AFD
+
+afd_nsl <- load_NSL_resources(
+  "animals", path = "data/AFD_NSL_export_20260929"
+)
+
+# either (or both) can then be used for alignment, e.g.
+resources <- prepare_taxonomic_resources(afd_nsl)
+create_taxonomic_update_lookup(c("Pardalotus striatus", "Tinea vetula"), resources)
+```

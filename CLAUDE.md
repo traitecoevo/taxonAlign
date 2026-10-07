@@ -32,9 +32,9 @@ a reference table -- sourced from [taxadb](https://docs.ropensci.org/taxadb/)'s 
 versioned snapshots of GBIF/ITIS/COL/etc., a better fit than `generate_GBIF_taxonomic_reference_list()`
 for a genuinely large taxon group (no live pagination, no 100,000-row offset ceiling), with `country`
 filtering (still GBIF-only) reusing that function's own internal helpers rather than duplicating them.
-`load_Australian_NSL(taxon_group = ...)` (see Architecture #4) is a fourth: a standalone loader for the
-Australian National Species List's own per-group export pairs (`"algae"`, `"bryophytes"`, `"fungi"`,
-`"lichens"`, eventually `"animals"`), combining each group's "taxon" and "names" files with taxa always
+`load_NSL_resources(taxon_group = ...)` (see Architecture #4) is a fourth: a standalone loader for the
+Australian National Species List's own per-group export pairs (`"animals"` -- the AFD's own NSL
+export -- plus `"algae"`, `"bryophytes"`, `"fungi"`, `"lichens"`), combining each group's "taxon" and "names" files with taxa always
 taking priority over names. Writing a query in that source's own `"Genus subg. Subgenusname"`
 infrageneric-name syntax is now recognised by `match_taxa()` too (`match_02x`, issue #25), alongside the
 zoological/AFD-style `"Genus (Subgenus)"` bracket convention issue #14 already added.
@@ -130,15 +130,16 @@ naming conventions confirmed against the real `inst/extdata/AFD.csv` (e.g. the h
 `test-match_taxa_helpers.R` also gained direct `fuzzy_match()` unit tests for the same distance-type/
 first-letter/tie-breaking behaviour, one level below the full `align_taxa()` pipeline.
 
-`test-load_Australian_NSL.R` covers `load_Australian_NSL()` (issue #25's underlying feature -- see
-Architecture #4 below) against a small, hand-built National Species List (NSL) taxon/names CSV pair
-(`helper-nsl-fixtures.R`) -- entirely offline, no need for the real, much larger
+`test-load_NSL_resources.R` covers `load_NSL_resources()` (issue #25's underlying feature -- see
+Architecture #4 below) against two small, hand-built National Species List (NSL) taxon/names fixture
+pairs (`helper-nsl-fixtures.R`) -- one in the plant-side camelCase-CSV shape, one in the animals
+export's pipe-delimited snake_case shape -- entirely offline, no need for the real, much larger
 `inst/extdata/Australian_*/` files. Covers the taxa-take-priority-over-names combining rule, genus
 derivation by rank, the subgenus marker-stripping fix, caching, and a full
 `prepare_taxonomic_resources()` → `create_taxonomic_update_lookup()` run including a marker-form
 subgenus query (`match_02x`, see Architecture #2 below).
 
-463 expectations, all passing as of the last `devtools::test()` run in an environment with `taxadb`/
+559 expectations, all passing as of the last `devtools::test()` run in an environment with `taxadb`/
 `duckdb`/`APCalign` installed and network access available (this now includes both
 `test-apc_equivalence.R`'s live tests and `gbif_snapshot_url`'s one live test against the real
 source.coop file below -- neither skips under a plain `devtools::test()` run when those conditions
@@ -150,7 +151,7 @@ has to dodge.)
 `test-apc_equivalence.R` (issue #10) is one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
 against, so it's skipped unless `APCalign` is installed, network access is available, and it isn't
-running under `R CMD check --as-cran` (both true in the environment the 463 figure above came from,
+running under `R CMD check --as-cran` (both true in the environment the 559 figure above came from,
 so it's already folded into that count there, not a separate add-on). This has also failed
 intermittently across several local runs (`load_APC()` → `dplyr::mutate()` on a `NULL`
 `APC$family_accepted`, i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning
@@ -1119,8 +1120,38 @@ Architecture of the matching engine itself:
   `"Lasioglossum (Homalictus) sp."`, where AFD itself treats `"Homalictus"` as its own genus rather
   than a `Lasioglossum` subgenus, resolves to `"Lasioglossum sp. [Lasioglossum (Homalictus) sp.]"`:
   genus rank, with the disputed subgenus visibly preserved for a human to judge, not silently erased.
+- **Subgenus written into species-level names: either reference convention, either query
+  convention.** AFD's CSV export writes `"Pardalotus (Pardalotinus) striatus"`; NSL/most sources write
+  `"Pardalotus striatus"`. Before this fix, a *reference* in the bracketed convention broke plain-binomial
+  queries badly (`stripped_canonical`/`binomial` were built from the bracketed form, so
+  `"Leioproctus (Leioproctus) lanceolatus"`'s binomial was "leioproctus leioproctus"): `"Leioproctus
+  lanceolatus"` fell to genus, `"Pardalotus striatus"` hit a subspecies synonym's binomial. Bracketed
+  *queries* were already fine (`match_11a`/`11b` strip `"(...)"` from `original_name`). Fix, user-chosen
+  design ("option 2", generic rather than AFD-loader-only): `prepare_taxonomic_resources()` sets
+  `display_name` = the name as the reference writes it, then rewrites `canonical_name` for
+  species-level rows to the subgenus-free form (`strip_subgenus_from_name()`, `match_taxa_helpers.R`)
+  *before* every derived matching key is computed -- so all of `match_taxa()` runs on subgenus-free
+  names and needed no changes. Afterwards `align_taxa()` puts `display_name` back into `aligned_name`
+  (`restore_display_names()`, keyed on `taxon_ID`, prefix replacement so `"Geobasileus sp."` ->
+  `"Acanthiza (Geobasileus) sp."`), and `update_taxa()` reports `accepted_name` from `display_name`.
+  Subgenus-rank `display_name` is always `"Genus (Subgenus)"` (user requirement: every subgenus-rank
+  output in that form), while `canonical_name` stays the bare subgenus name the plain subgenus-name
+  matching and `subgenus_v2` need. `load_NSL_resources()` rebuilds the bracketed form for ICZN
+  species-level names from the parent chain (`add_NSL_subgenus()`) so both AFD exports give identical
+  output -- verified on 22 real queries, both conventions, both exports. Known behaviour, not changed:
+  a query with a *wrong* subgenus (`"Leioproctus (Wrongsub) lanceolatus"`) silently resolves to the
+  species under its real subgenus; a matched *synonym* keeps whatever form its reference wrote (NSL
+  synonym records have no parent link). Tests: `test-subgenus_conventions.R`.
+- **Higher-rank synthesis used to duplicate every explicit row whose rank was capitalised** (found
+  while doing the above): `already_present` compared the raw `taxon_rank` (`"Genus"` in NSL exports)
+  to the lowercase column name, so 19,347 NSL synonym genera (e.g. *Geobasileus*, a primary synonym of
+  subgenus *Acanthiza (Geobasileus)*) got a synthesised *accepted* genus row that outranked the real
+  synonym row. Now compared via `APCalign::standardise_taxon_rank()`. Still open (not changed, a design
+  question): genus values with *no* explicit row anywhere (NSL 7,443; CSV 12,283, almost all from
+  synonym names only, since the CSV export has no genus-synonym records at all) are still synthesised
+  as `"accepted"` genera.
 - **`match_02x` (issue #25): a second, marker-abbreviation input syntax for the bracketed-subgenus
-  concept.** Found loading the new National Species List (NSL) reference data (`load_Australian_NSL()`,
+  concept.** Found loading the new National Species List (NSL) reference data (`load_NSL_resources()`,
   see Architecture #4 below): NSL writes an infrageneric name as `"Genus subg. Subgenusname"` (e.g.
   `"Hygrocybe subg. Cuphophyllus"`), never as the zoological/AFD-style `"Genus (Subgenus)"` bracket
   `match_02a`/`match_02y`/`match_12a` (issue #14) already handle. Without this block, such a query fell
@@ -1134,7 +1165,7 @@ Architecture of the matching engine itself:
   looks that up against the *same* `resources$subgenus_v2$genus_and_subgenus` table `match_02y` already
   uses -- exact match, then fuzzy match, then the same genus-only `match_special_case_to_genus()`
   fallback -- rather than duplicating that lookup table under a second name. This only works because
-  `load_Australian_NSL()`'s own loader fix (see Architecture #4) stores the *bare* subgenus name in
+  `load_NSL_resources()`'s own loader fix (see Architecture #4) stores the *bare* subgenus name in
   `canonical_name` (e.g. `"Cuphophyllus"`, not the full marker-prefixed string) -- `subgenus_v2`'s own
   construction (`genus_and_subgenus = paste0(genus, " (", canonical_name, ")")`) assumes exactly that,
   the same way it already does for AFD's bare subgenus names.
@@ -1238,6 +1269,128 @@ Errors immediately, naming the known datasets, on an unrecognised `taxonomic_dat
     several raw columns (`SUB_GENUS`, `SUB_SPECIES`, and others this function doesn't use) are sparsely
     populated enough that `readr`'s sample-based type-guessing can mis-infer them as logical, which
     would break every string operation the moment a real (non-blank) value showed up.
+- **AFD's 2026 CSV export (`data/AFD_2026-10-07/Anamalia_all_ranks.csv`) is read by the same
+  `load_AFD()`, not a second function** -- checked column-by-column against the old `AFD.csv` first:
+  `FULL_NAME` renamed to `VALID_NAME` (renamed back on read), `SUBSPECIES_COUNT_IN_SPECIES`/
+  `LAST_MODIFIED`/the distribution columns dropped (none used), still one row per species/subspecies
+  despite the "all ranks" filename (no higher-rank rows), Animalia only (now incl. Chordata; no
+  protists). Only ~20% of `CONCEPT_GUID`s carry over from the old file, so IDs aren't stable across
+  AFD exports. Four new data quirks handled, all also harmless on the old file:
+  - `COMPLETE_NAME`/`SYNONYMS` now write changed-combination authorship in parentheses
+    (`"Otobothrium curtum (Linton, 1909)"`) -- `strip_afd_authorship()`'s patterns accept an optional
+    `(...)`.
+  - Multi-author/particle-prefixed citations where only the *last* author is in the `AUTHOR`
+    dictionary left debris (`"Gymnothorax griffini Whitley &"`, `"Platydemus manokwari de"`) in ~2k
+    synonyms -- `tidy_afd_authorship_debris()` cleans up afterwards (truncate at a capitalised token
+    after a lowercase epithet; strip a residual year; strip trailing particles/`&`/commas).
+  - Subsequent usages written with `"; "` between name and citation (`"Phalaena inquinalis; Swinhoe,
+    1892"`) used to orphan `"Swinhoe, 1892"` as a bogus synonym -- `rejoin_afd_synonym_fragments()`
+    re-attaches it (~176 cases new, 6 old). Also dropped: synonyms whose stripped name equals the
+    accepted name (a self-reference with different authorship formatting).
+  - Two kinds of "Unplaced" row (382 total): `"Unplaced Synonym(s)"` holders (`SPECIES`/`SUB_SPECIES =
+    "Unplaced"`, 79) and species awaiting generic placement (`GENUS = "Unplaced"`, `VALID_NAME` e.g.
+    `"Unplaced vetula"`, 303). Neither becomes an accepted row; their synonyms (510, for the latter
+    usually the original combination, e.g. `"Tinea vetula"`) are kept as self-referential
+    `taxonomic_status = "unplaced"` names (mirroring NSL's own "unplaced"). `"Unplaced"`/`"Unplaced to
+    Family"` values in hierarchy columns are never turned into higher-rank rows. Stray control
+    characters/tabs in names are squished out.
+  - `VALID_NAME` keeps the subgenus in brackets (`"Pardalotus (Pardalotinus) striatus"`, 11,183
+    accepted sp/ssp), kept as-is in `canonical_name` -- see the "Subgenus written into species-level
+    names" bullet in Architecture #2 for how matching/output handle it. 3,305 SYNONYMS entries are just
+    the accepted name minus its subgenus (`"Clivina tenuis"` under `"Clivina (Clivina) tenuis"`) and are
+    dropped as self-listings (`strip_subgenus_from_name()` comparison).
+- **Further CSV-loader fixes from the full name-level reconciliation against the NSL export**
+  (`ignore/AFD_export_comparison.R`; goal: every name agrees, or each genuine discrepancy is listed in
+  `vignettes/AFD-data-processing.qmd`):
+  - `CHANGED_COMBINATION_NAMES` (~15k entries, never read before, in either export version) is now
+    read as `taxonomic_status = "Generic combination"` (NSL's label for the same records) via the
+    generalised `afd_synonym_rows(afd, column, status, id_suffix)`; a name in both columns is kept
+    once, as a synonym.
+  - Synonym `taxon_rank` was always `"species"`, so trinomial synonyms claimed a two-word `binomial`
+    key in `prepare_taxonomic_resources()` (the real cause of `"Pardalotus striatus"` resolving via
+    the synonym *P. s. kingi*). Now `"subspecies"` for 3+ words, ignoring a subgenus.
+  - `clean_afd_name_annotations()` strips `[sic]`, leading `?`/`(?)`, whole-name `[...]`, quoted
+    manuscript authors and stray quotes; `tidy_afd_authorship_debris()` also strips malformed trailing
+    parenthesised authorship (`"(, )"`, `"(Milne Edwards, )"`, `"(1876, Bergh)"`, `"(Turner, 1908))"`,
+    unclosed `"(Adams"`); `rejoin_afd_synonym_fragments()` allows a lowercase particle
+    (`"; van Eecke, 1925"`).
+  - `taxonAlign_taxonomic_status_priority` gained AFD's statuses (objective/primary synonym,
+    "synonym", "Generic combination", replacement name, excluded variants) -- unknown statuses sorted
+    after `"included"`, so an NSL names-file record could beat a real taxon-file record.
+  - Latest full result: 237,885 of 242,163 species-level names identical (incl. 1,792 synonyms of
+    more than one taxon, listed identically -- how to report that ambiguity is still open); 40 differ
+    (listed in the qmd); 1,453 CSV-only, 2,785 NSL-only (mostly protists/vagrants/missing
+    Tortricidae+Temnocephalidae). Not yet clean: ~193 CSV-only and 165 NSL-only still unexplained,
+    some still formatting variants (`"Enicospilus? flavivenae"`, `"Carenum cyaneum non"`,
+    `"Tinea lactella [Denis"`). `LITERATURE_NAMES` (misspellings/misidentifications as free text,
+    CSV-only information) deliberately not read yet.
+- **Rounds 2-4 of the AFD format vs NSL format reconciliation** (terminology: the user calls them
+  the "AFD format" and the "NSL format" -- both are CSV-style files, so never "CSV export"):
+  - `clean_afd_name_annotations()` now also handles uncertainty marks anywhere (`"Genus? sp"`,
+    `"(Ceratia ?)"`), square brackets around part of a name (content kept, as NSL does), HTML tags,
+    year outside the bracket, unbalanced doubled `"))"` (only when brackets don't balance -- a blanket
+    collapse broke genuinely nested ones), and quote marks only at word edges (`strip_name_quotes()`,
+    shared with the NSL loader; an apostrophe inside a word, `"d'arci"`, is kept). Accepted names
+    (`VALID_NAME`) get the same quote stripping plus trailing `,`/`;` removal (not `.` -- that broke
+    every `"Genus sp."` name; caught only because the comparison numbers got *worse*).
+  - **Misapplication/part markers become statuses**: `strip_afd_usage_markers()`/`afd_usage_status()`
+    read `sensu`, `auct.`/`auctt.`/`auctorum`, `non`/`nec`, `(part)`/`[pars]` -> "misapplied",
+    "pro parte synonym", "pro parte misapplied" (added to the priority vector). The NSL format drops
+    these markers and labels the same usages plain "synonym" (50 of 58) -- a curator item. The NSL
+    loader (`clean_NSL_canonical_names()`) reads the few markers left in NSL canonical names too, but
+    only to sharpen a plain "synonym".
+  - `strip_subgenus_from_name()` now accepts any bracket content (`"Nassa (Alectryon, Aciculina) x"`).
+  - Result (round 4): 238,009 of 241,998 names agree; 23 differ; 1,308 AFD-format-only (all
+    explained: Temnocephalidae/Tortricidae, NSL names-file-only, 59 listed); 2,658 NSL-only (Protista,
+    vagrants, 38 listed). Remaining one-sided names are mostly NSL `canonical_name` values with
+    authorship left in (`"Conus complanatus Sowerby"`), reported, deliberately not "fixed" in the
+    loader (user: only discrepancies in *their* lists should remain, so data errors are reported, not
+    hidden).
+  - **Names leading to more than one accepted name** (1,893): the comparison script now ranks each
+    name's records by `taxonAlign_taxonomic_status_priority`. 997 resolve to themselves (accepted and
+    also a synonym elsewhere), 54 resolve identically, 295 only via NSL's "primary synonym" vs
+    "synonym" (AFD format has only "synonym"), 461 tie in both formats. User's position: without finer
+    statuses there's no resolution -- flag ties with the curators (done, full lists in the qmd).
+    taxonAlign's matching still silently picks the first record on a tie -- needs a flag in output
+    (not yet designed). The placement of "primary synonym"/"synonym"/"Generic combination" in the
+    priority vector is our assumption, awaiting curator confirmation (50 outcomes depend only on
+    synonym > Generic combination).
+- **Names leading to more than one accepted name ("splits") are now handled in `update_taxa()`**
+  (`R/resolve_synonym_splits.R`, `build_split_table()`), following APCalign's `taxonomic_splits`
+  convention at the user's request: `taxonomic_splits = "most_likely_species"` (default) suggests one
+  name as `"X [alternative possible names: Y (status) | Z (status)]"` plus a new
+  `alternative_possible_names` column (also in `create_taxonomic_update_lookup()`'s slim output);
+  `"collapse_to_higher_taxon"` gives `"Genus sp. [collapsed names: ...]"` when all candidates share a
+  genus. Order: status precedence, then (ties) shared epithet, same rank (word count), accepted name
+  published no later than the synonym, oldest, then source order -- the last is APCalign's own final
+  tie-break and is what keeps `test-apc_equivalence.R`'s "Justicia procumbens" ->
+  "Rostellularia adscendens subsp. dallachyi" passing (alphabetical broke it). Epithet/older-than rules
+  were chosen by testing against NSL's own resolutions (99%/93% agreement; "oldest" 57%, "newest"
+  40%). Skipped when matched with authorship (`alignment_code` contains "with_authorship", e.g.
+  homonyms), and for a species listed under its own nominotypical subspecies. **User's position:**
+  remaining ties are curator data problems (467 are ties within the NSL format itself; the 295
+  AFD-format-only ties vanish once the AFD publishes only the NSL format) -- the tie-break rules are a
+  stopgap, don't keep refining them. 1,709 of 1,893 such names now get the same suggestion from both
+  formats.
+- **Real-name-list test done** (2026-10-07): the full AusInvertTraits name list
+  (`ignore/AusInvertTraits_taxonomic_updates.csv`, 5,154 names) aligned against each format separately
+  -- 5,116 (99.3%) get the same `suggested_name`; the 36 distinct names that differ are all explained
+  and listed in `vignettes/AFD-data-processing.qmd`'s "Test against a real name list" (genus-level
+  synonymy the AFD format lacks, subgenus placement disagreements, NSL-only names, fuzzy matches to
+  names in neither). Scratch scripts for it are not in the repo; the run takes ~10 min. Fixes it
+  forced: (1) `match_02b` required exactly two spaces, so every plain `"Genus sp."` skipped exact
+  matching (APCalign's own rule is one space) -- now one or two; (2) splits (`build_split_table()`)
+  narrowed, at the user's insistence, to species/infraspecific *synonyms* leading to 2+ accepted taxa
+  only -- accepted names, genera and authorship matches never go through it ("don't go down rabbit
+  holes with splits"); (3) `prepare_taxonomic_resources()`'s higher-rank synthesis: a value seen on an
+  accepted row is accepted; a value seen only on synonym rows becomes a *synonym* of the accepted
+  value(s) its rows lead to (e.g. genus "Conoderus" -> "Monocrepidus"; one synonym row per target);
+  only an orphan with no links is "unplaced" (user: "synonyms should not be called unplaced... an
+  unplaced name is a dead end"); bare rank words ("Genus") are never synthesised, and "Genus A"-style
+  rank-word + placeholder-code names are dropped (narrowly -- APC phrase names like "Genus sp. Yalgoo
+  (...)" are real); (4) the AFD loader treats "Incertae sedis" as a placeholder like "Unplaced".
+  NSL's 675 genus records pointing to their own nominotypical subgenus (*Acritus* -> *Acritus
+  (Acritus)*) are a curator question, not something to interpret.
 - **`"APC"`**: `load_APC()` is a thin wrapper flattening `APCalign::load_taxonomic_resources()`'s
   several accepted/synonym/genus/family pieces into one combined table -- the exact combining logic
   originally prototyped inline in `test-apc_equivalence.R` (issue #10), now shared from here instead
@@ -1252,17 +1405,17 @@ Errors immediately, naming the known datasets, on an unrecognised `taxonomic_dat
   inherently network-dependent (like the rest of `test-apc_equivalence.R`), so its coverage lives there
   instead, gated the same way.
 
-### 4. Australian National Species List (NSL) reference loader — `R/load_Australian_NSL.R` (active, exported; internal helpers `@noRd`)
+### 4. Australian National Species List (NSL) reference loader — `R/load_NSL_resources.R` (active, exported; internal helpers `@noRd`)
 
-`load_Australian_NSL(taxon_group, ...)` reads/reshapes the [National Species
-List](https://www.anbg.gov.au/chah/nsl/)'s bundled per-group export pairs -- `"algae"`,
-`"bryophytes"`, `"fungi"`, `"lichens"` today, `"animals"` once its files exist -- into taxonAlign's
+`load_NSL_resources(taxon_group, ...)` reads/reshapes the [National Species
+List](https://www.anbg.gov.au/chah/nsl/)'s per-group export pairs -- `"animals"`, `"algae"`,
+`"bryophytes"`, `"fungi"`, `"lichens"` -- into taxonAlign's
 flat, `prepare_taxonomic_resources()`-ready schema. Complements `load_taxonomic_resources()`/
 `generate_GBIF_taxonomic_reference_list()` the same way, for this source, but is a **standalone
 exported function**, not wired into `load_taxonomic_resources()`'s `"AFD"`/`"APC"` switch -- it takes
 one group at a time and returns a flat tibble directly (mirroring
 `generate_GBIF_taxonomic_reference_list()`'s own contract), so combining several groups is just
-`prepare_taxonomic_resources(list(load_Australian_NSL("fungi"), load_Australian_NSL("lichens")))`, the
+`prepare_taxonomic_resources(list(load_NSL_resources("fungi"), load_NSL_resources("lichens")))`, the
 same pattern as combining any other two sources. Revisit folding it into `load_taxonomic_resources()`'s
 registry if that starts to feel like the wrong split in practice.
 
@@ -1272,7 +1425,7 @@ registry if that starts to feel like the wrong split in practice.
   index, including names never promoted to a full taxon concept, but carrying no
   `acceptedNameUsageID` of its own at all). Confirmed empirically, not assumed: every taxon-file row's
   `scientificNameID` is also present in the names file (100% overlap across all four groups checked),
-  i.e. the names file is a strict superset at the name level. `load_Australian_NSL()` combines them by
+  i.e. the names file is a strict superset at the name level. `load_NSL_resources()` combines them by
   dropping, from the names file's contribution, every row whose `scientificNameID` already appears in
   the taxon file, then binding taxon rows first -- so a name never enters the combined result twice,
   and the taxon file's real synonymy always wins over the names file's self-referential (no-forward-
@@ -1323,7 +1476,42 @@ registry if that starts to feel like the wrong split in practice.
   served from elsewhere (e.g. a downloaded, versioned GitHub release) instead of being bundled
   in-package. No download mechanism is implemented yet; that's issue #24's own scope, not this
   function's.
-- Test coverage: `tests/testthat/test-load_Australian_NSL.R` covers the combining rule, genus
+- **The `"animals"` export (AFD's own NSL export, `data/AFD_NSL_export_20260929/`) differs in shape,
+  not concept, from the plant-side groups**: pipe-delimited `.txt`, snake_case columns, `_taxon_`/
+  `_name_` filename markers. `read_NSL_file()` sniffs the delimiter from the header and
+  `standardise_NSL_column_names()` converts camelCase to snake_case, so every reshaping step sees one
+  schema; `find_NSL_file()` matches `[-_]taxon[-_]`/`[-_]names?[-_]`, `.csv` or `.txt`. Three further
+  animals-specific differences:
+  - Subgenus canonical names use the zoological `"Acanthiza (Geobasileus)"` form, not `"subg."` --
+    `strip_NSL_subgenus_marker()` handles both.
+  - The taxon file's `generic_name` is the *accepted* name's genus (a synonym under a different genus
+    gets the wrong one), so genus is still derived from the name itself; `derive_NSL_genus()` also
+    masks any single-word non-genus-rank name (zoological "Section" is above genus, botanical
+    "sect." below) and the zoological ranks added to `taxonAlign_NSL_above_genus_ranks` (cohort,
+    infra-/parv-/subter- ranks, "Higher Taxon", "Generic Aggregate" -- written `"Subtribe Clerina"`).
+  - Excluded/vagrant/intercepted taxa (`taxonAlign_NSL_non_synonymy_statuses`) point
+    `accepted_name_usage_id` at their *parent* genus/family (e.g. vagrant `"Pernis ptilorhynchus"` ->
+    `"Accipitridae"`), so `update_taxa()` would "update" a valid species to a family -- made
+    self-referential instead. The plant-side groups' "excluded" rows were already self-referential.
+- **Independent cross-check of the two AFD formats** (the reason both loaders exist -- the user's
+  stated goal is an independent check that the AFD team transferred data between formats correctly).
+  Comparing `load_taxonomic_resources("AFD", path = <2026 CSV>)` against
+  `load_NSL_resources("animals", ...)`, subgenus brackets removed from both sides' names first:
+  accepted species/subspecies 129,749 shared, 345-350 CSV-only, 1,821 NSL-only (1,820 of those are
+  Protista, which the CSV export doesn't include). Synonymy: 96,539 synonym names in both, 96,538
+  resolving to the same accepted name (the one exception, `"Bathypallenopsis oscitans"`, is two
+  different usages of the same name that NSL only partly carries). **Real transfer gaps found in the
+  NSL export**: Temnocephalidae entirely missing (90 spp., 13 genera), and 32 Tortricidae genera
+  (244 spp., e.g. *Epiphyas*, *Homona*, *Adoxophyes*) missing -- worth reporting to the AFD team.
+  All of this (every transformation, with exact counts, plus a numbered list of data issues to raise)
+  is written up for the AFD curators in `vignettes/AFD-data-processing.qmd` (same not-a-formal-vignette,
+  `eval: false`, render-directly treatment as `development-history.qmd`) -- keep it in sync if either
+  loader's rules change, since it's the record of "exactly what work is being done" that the user
+  reports back to the curators. The curators already acknowledge that `CONCEPT_GUID` isn't stable
+  across exports. Both raw exports currently live under `data/`, which isn't where R expects raw files (`data/` is for
+  `.rda` datasets; `R CMD check` will complain) -- pass `path` explicitly until issue #24's release
+  scheme settles where they go.
+- Test coverage: `tests/testthat/test-load_NSL_resources.R` covers the combining rule, genus
   derivation, the subgenus-marker fix, caching, and a full `prepare_taxonomic_resources()` →
   `create_taxonomic_update_lookup()` run, against a small, hand-built NSL-*shaped* fixture pair
   (`helper-nsl-fixtures.R`) -- entirely offline, no need for the real, much larger
