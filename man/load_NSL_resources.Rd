@@ -7,6 +7,7 @@
 load_NSL_resources(
   taxon_group,
   path = NULL,
+  version = NULL,
   refresh_cache = FALSE,
   cache_dir = tools::R_user_dir("taxonAlign", "cache"),
   quiet = FALSE
@@ -16,14 +17,18 @@ load_NSL_resources(
 \item{taxon_group}{Character scalar naming the group to load: one of \code{"animals"}, \code{"algae"},
 \code{"bryophytes"}, \code{"fungi"}, \code{"lichens"}.}
 
-\item{path}{Directory containing that group's taxon/names file pair. Defaults to the bundled copy,
-\code{system.file("extdata", paste0("Australian_", taxon_group), package = "taxonAlign")} -- override to
-point at wherever you've put your own copy.}
+\item{path}{Optional directory holding your own copy of the group's taxon/names file pair (as
+exported from the NSL). When \code{NULL} (the default), the files are downloaded from a taxonAlign data
+release instead (see \code{version}).}
 
-\item{refresh_cache}{Logical; if \code{TRUE}, re-reshapes the raw files even if a cached copy exists.
-Defaults to \code{FALSE}.}
+\item{version}{Data release to download, a date (\code{"YYYY-MM-DD"}); see \code{\link[=data_release_versions]{data_release_versions()}}.
+Defaults to the latest release, or, with no internet connection, the newest release already
+downloaded. Ignored when \code{path} is given. Naming the release makes an alignment reproducible.}
 
-\item{cache_dir}{Directory the reshaped result is cached in. Defaults to
+\item{refresh_cache}{Logical; if \code{TRUE}, re-downloads (for a release) and re-reshapes the raw
+files even if cached copies exist. Defaults to \code{FALSE}.}
+
+\item{cache_dir}{Directory downloaded release files and the reshaped result are cached in. Defaults to
 \code{tools::R_user_dir("taxonAlign", "cache")}.}
 
 \item{quiet}{Logical; suppress progress messages. Defaults to \code{FALSE}.}

@@ -5,3 +5,5 @@
 # scratch/holding area for retired ported-prototype files -- see CLAUDE.md; not package content
 ^ignore$
 ^\.claude$
+# scripts that build the data releases (issue #24) -- not package content
+^data-raw$

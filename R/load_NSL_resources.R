@@ -93,12 +93,15 @@ taxonAlign_NSL_non_synonymy_statuses <- c(
 #'
 #' @param taxon_group Character scalar naming the group to load: one of `"animals"`, `"algae"`,
 #'  `"bryophytes"`, `"fungi"`, `"lichens"`.
-#' @param path Directory containing that group's taxon/names file pair. Defaults to the bundled copy,
-#'  `system.file("extdata", paste0("Australian_", taxon_group), package = "taxonAlign")` -- override to
-#'  point at wherever you've put your own copy.
-#' @param refresh_cache Logical; if `TRUE`, re-reshapes the raw files even if a cached copy exists.
-#'  Defaults to `FALSE`.
-#' @param cache_dir Directory the reshaped result is cached in. Defaults to
+#' @param path Optional directory holding your own copy of the group's taxon/names file pair (as
+#'  exported from the NSL). When `NULL` (the default), the files are downloaded from a taxonAlign data
+#'  release instead (see `version`).
+#' @param version Data release to download, a date (`"YYYY-MM-DD"`); see [data_release_versions()].
+#'  Defaults to the latest release, or, with no internet connection, the newest release already
+#'  downloaded. Ignored when `path` is given. Naming the release makes an alignment reproducible.
+#' @param refresh_cache Logical; if `TRUE`, re-downloads (for a release) and re-reshapes the raw
+#'  files even if cached copies exist. Defaults to `FALSE`.
+#' @param cache_dir Directory downloaded release files and the reshaped result are cached in. Defaults to
 #'  `tools::R_user_dir("taxonAlign", "cache")`.
 #' @param quiet Logical; suppress progress messages. Defaults to `FALSE`.
 #'
@@ -109,6 +112,7 @@ taxonAlign_NSL_non_synonymy_statuses <- c(
 #' @export
 load_NSL_resources <- function(taxon_group,
                                path = NULL,
+                               version = NULL,
                                refresh_cache = FALSE,
                                cache_dir = tools::R_user_dir("taxonAlign", "cache"),
                                quiet = FALSE) {
@@ -121,19 +125,27 @@ load_NSL_resources <- function(taxon_group,
   }
 
   if (is.null(path)) {
-    path <- system.file("extdata", paste0("Australian_", taxon_group), package = "taxonAlign")
-  }
-  if (path == "" || !dir.exists(path)) {
-    stop(
-      "Couldn't find the NSL reference folder for \"", taxon_group, "\"",
-      if (nzchar(path)) paste0(" at \"", path, "\"") else "",
-      ". Pass `path` to point at the directory holding its taxon/names file pair.",
-      call. = FALSE
+    # from a data release: one parquet file per NSL export, stored verbatim (see data-raw/build_data_release.R)
+    version <- resolve_data_release_version(version, cache_dir, quiet = quiet)
+    taxon_file <- download_data_release_asset(
+      paste0("nsl_", taxon_group, "_taxon.parquet"), version, cache_dir, refresh_cache, quiet
     )
+    names_file <- download_data_release_asset(
+      paste0("nsl_", taxon_group, "_names.parquet"), version, cache_dir, refresh_cache, quiet
+    )
+    path <- paste0("taxonAlign data release ", version)
+  } else {
+    if (!dir.exists(path)) {
+      stop(
+        "Couldn't find the NSL reference folder for \"", taxon_group, "\" at \"", path, "\". ",
+        "Pass `path` to point at the directory holding its taxon/names file pair, or leave it out to ",
+        "download the files from a taxonAlign data release.",
+        call. = FALSE
+      )
+    }
+    taxon_file <- find_NSL_file(path, "taxon", taxon_group)
+    names_file <- find_NSL_file(path, "names?", taxon_group)
   }
-
-  taxon_file <- find_NSL_file(path, "taxon", taxon_group)
-  names_file <- find_NSL_file(path, "names?", taxon_group)
 
   if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
   cache_key <- paste(
@@ -184,13 +196,20 @@ find_NSL_file <- function(dir, marker, taxon_group) {
   candidates
 }
 
-# Reads one NSL export file, sniffing the delimiter from its header line (the animals export is
+# Reads one NSL export file -- a parquet file from a taxonAlign data release, or an export as
+# downloaded from the NSL, sniffing the delimiter from its header line (the animals export is
 # pipe-delimited, the plant-side groups comma-delimited) and normalising column names to snake_case.
 # Every column is forced to character on read -- matches load_AFD()'s own reasoning: readr's sample-
 # based type-guessing can mis-infer a sparsely-populated column (e.g. infraspecific_epithet) as
 # logical, which breaks the moment a real value shows up.
 #' @noRd
 read_NSL_file <- function(file) {
+  if (tolower(tools::file_ext(file)) == "parquet") {
+    raw <- dplyr::as_tibble(arrow::read_parquet(file))
+    raw[] <- lapply(raw, as.character)
+    names(raw) <- standardise_NSL_column_names(names(raw))
+    return(raw)
+  }
   header <- readLines(file, n = 1, warn = FALSE)
   delim <- if (grepl("|", header, fixed = TRUE)) "|" else ","
   raw <- readr::read_delim(

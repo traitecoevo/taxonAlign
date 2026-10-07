@@ -124,6 +124,11 @@ gbif_rank_order <- c(
 #'  ranks, such as species and subspecies under `"genus"`) are returned.
 #' @param include_synonyms Logical; if `FALSE`, only accepted names are returned.
 #'  Defaults to `TRUE`.
+#' @param exclude_extinct Logical; if `TRUE` (the default), taxa GBIF flags as extinct are left out,
+#'  together with synonyms whose accepted taxon is flagged extinct. GBIF's occurrence records include
+#'  fossil specimens, so without this a `country` filter keeps fossil taxa (e.g. Palaeozoic
+#'  brachiopods) as if they were part of the living fauna -- names that can only produce spurious
+#'  matches. A taxon with no extinct flag in GBIF (no information either way) is kept.
 #' @param cache_dir Directory used to cache downloaded taxonomy/occurrence data.
 #'  Defaults to a per-user cache directory (see [tools::R_user_dir()]) so the cache
 #'  persists across sessions.
@@ -181,6 +186,7 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
                                                country = NULL,
                                                rank = NULL,
                                                include_synonyms = TRUE,
+                                               exclude_extinct = TRUE,
                                                cache_dir = tools::R_user_dir("taxonAlign", "cache"),
                                                refresh_cache = FALSE,
                                                max_cache_age_days = 30,
@@ -257,6 +263,7 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
   )
   full_tree[setdiff(expected_int_cols, names(full_tree))] <- NA_integer_
   full_tree[setdiff(expected_chr_cols, names(full_tree))] <- NA_character_
+  if (!"extinct" %in% names(full_tree)) full_tree$extinct <- NA
 
   if (!is.null(country)) {
     # scoping the occurrence lookup per requested taxon (rather than per
@@ -273,6 +280,14 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
     full_tree <- dplyr::filter(
       full_tree,
       .data$key %in% occ_keys | .data$acceptedKey %in% occ_keys
+    )
+  }
+
+  if (exclude_extinct) {
+    extinct_keys <- full_tree$key[full_tree$extinct %in% TRUE]
+    full_tree <- dplyr::filter(
+      full_tree,
+      !(.data$extinct %in% TRUE) & !(.data$acceptedKey %in% extinct_keys)
     )
   }
 

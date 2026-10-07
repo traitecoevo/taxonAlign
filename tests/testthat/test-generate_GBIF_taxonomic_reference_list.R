@@ -718,3 +718,30 @@ test_that("a clade with no synonyms at all doesn't error when acceptedKey is ent
   expect_false(anyNA(out$accepted_name_usage_ID))
   expect_equal(out$accepted_name_usage_ID, out$taxon_ID) # every row self-referential (all accepted)
 })
+
+test_that("taxa GBIF flags as extinct, and their synonyms, are left out unless exclude_extinct = FALSE", {
+  local_mocked_bindings(
+    name_backbone = function(name, ...) gbif_backbone_match(1, "Fossilgenus Sm.", rank = "GENUS"),
+    name_lookup = function(higherTaxonKey, ...) {
+      rows <- dplyr::bind_rows(
+        gbif_taxon_row(2, parentKey = 1, scientificName = "Fossilgenus vivus", rank = "SPECIES"),
+        gbif_taxon_row(3, parentKey = 1, scientificName = "Fossilgenus mortuus", rank = "SPECIES"),
+        gbif_taxon_row(4, parentKey = 1, acceptedKey = 3, scientificName = "Oldgenus mortuus",
+                       rank = "SPECIES", taxonomicStatus = "SYNONYM"),
+        gbif_taxon_row(5, parentKey = 1, scientificName = "Fossilgenus ignotus", rank = "SPECIES")
+      )
+      rows$extinct <- c(FALSE, TRUE, NA, NA)
+      gbif_lookup_page(rows)
+    },
+    name_usage = function(key, ...) list(data = gbif_taxon_row(1, scientificName = "Fossilgenus Sm.", rank = "GENUS")),
+    .package = "rgbif"
+  )
+  out <- generate_GBIF_taxonomic_reference_list("Fossilgenus", cache_dir = withr::local_tempdir(), quiet = TRUE)
+  # the extinct species and its synonym go; a species with no flag either way stays
+  expect_setequal(out$canonical_name, c("Fossilgenus Sm.", "Fossilgenus vivus", "Fossilgenus ignotus"))
+
+  all <- generate_GBIF_taxonomic_reference_list(
+    "Fossilgenus", exclude_extinct = FALSE, cache_dir = withr::local_tempdir(), quiet = TRUE
+  )
+  expect_true(all(c("Fossilgenus mortuus", "Oldgenus mortuus") %in% all$canonical_name))
+})

@@ -2,8 +2,10 @@
 
 export(align_taxa)
 export(create_taxonomic_update_lookup)
+export(data_release_versions)
 export(generate_GBIF_taxonomic_reference_list)
 export(generate_taxadb_taxonomic_reference_list)
+export(load_GBIF_AU_resources)
 export(load_NSL_resources)
 export(load_taxonomic_resources)
 export(prepare_taxonomic_resources)

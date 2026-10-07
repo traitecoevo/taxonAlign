@@ -11,6 +11,7 @@ generate_GBIF_taxonomic_reference_list(
   country = NULL,
   rank = NULL,
   include_synonyms = TRUE,
+  exclude_extinct = TRUE,
   cache_dir = tools::R_user_dir("taxonAlign", "cache"),
   refresh_cache = FALSE,
   max_cache_age_days = 30,
@@ -47,6 +48,12 @@ ranks, such as species and subspecies under \code{"genus"}) are returned.}
 
 \item{include_synonyms}{Logical; if \code{FALSE}, only accepted names are returned.
 Defaults to \code{TRUE}.}
+
+\item{exclude_extinct}{Logical; if \code{TRUE} (the default), taxa GBIF flags as extinct are left out,
+together with synonyms whose accepted taxon is flagged extinct. GBIF's occurrence records include
+fossil specimens, so without this a \code{country} filter keeps fossil taxa (e.g. Palaeozoic
+brachiopods) as if they were part of the living fauna -- names that can only produce spurious
+matches. A taxon with no extinct flag in GBIF (no information either way) is kept.}
 
 \item{cache_dir}{Directory used to cache downloaded taxonomy/occurrence data.
 Defaults to a per-user cache directory (see \code{\link[tools:R_user_dir]{tools::R_user_dir()}}) so the cache
