@@ -3,20 +3,21 @@
 # notes. Publishing is a separate step (see the end of this file).
 #
 # Run from the package root:
-#   Rscript data-raw/build_data_release.R <release_date> <out_dir> <animals_dir> <gbif_extant_rds>...
+#   Rscript data-raw/build_data_release.R <release_date> <out_dir> <animals_dir> <gbif_au_rds>...
 # e.g.
 #   Rscript data-raw/build_data_release.R 2026-10-08 ~/taxonAlign_release_2026-10-08 \
 #     data/AFD_NSL_export_20260929 \
-#     ignore/gbif_au_invertebrates_extant.rds ignore/gbif_vertebrates_au_extant.rds
+#     ignore/gbif_au_animals_with_extinct.rds
 #
 # - algae, bryophytes, fungi, lichens: downloaded fresh from their public NSL export URLs
 # - animals: the AFD's NSL-format export, supplied directly by the AFD (not yet public on NSL)
-# - GBIF: the August 2026 GBIF Australia lists, extinct taxa and their synonyms removed
+# - GBIF: the August 2026 GBIF Australia lists (all taxa, with GBIF's `extinct` flag as a column;
+#   load_GBIF_AU_resources() returns extant taxa unless asked otherwise)
 
 suppressMessages(library(dplyr))
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 4) stop("usage: build_data_release.R <release_date> <out_dir> <animals_dir> <gbif_extant_rds>...")
+if (length(args) < 4) stop("usage: build_data_release.R <release_date> <out_dir> <animals_dir> <gbif_au_rds>...")
 release <- args[1]
 out_dir <- path.expand(args[2])
 animals_dir <- args[3]
@@ -87,13 +88,14 @@ for (kind in c("taxon", "names")) {
   )
 }
 
-# ---- GBIF Australia, extant animals ------------------------------------------------------------------
+# ---- GBIF Australia, animals --------------------------------------------------------------------------
 gbif <- bind_rows(lapply(gbif_files, readRDS))
+stopifnot("extinct" %in% names(gbif))
 add_asset(
-  "gbif_au_extant.parquet", gbif,
-  source = paste("GBIF Backbone Taxonomy, taxa with occurrence records in Australia plus their synonyms;",
-                 "taxa GBIF flags as extinct, and their synonyms, removed. Built with taxonAlign's",
-                 "generate_GBIF_taxonomic_reference_list(country = \"AU\")."),
+  "gbif_au_animals.parquet", gbif,
+  source = paste("GBIF Backbone Taxonomy, taxa with occurrence records in Australia plus their synonyms,",
+                 "with GBIF's extinct flag (load_GBIF_AU_resources() returns extant taxa by default). Built",
+                 "with taxonAlign's generate_GBIF_taxonomic_reference_list(country = \"AU\")."),
   source_file = paste(basename(gbif_files), collapse = "; "),
   retrieved = "2026-08 (GBIF backbone and occurrence records accessed via the GBIF API, August 2026)",
   licence = "CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",

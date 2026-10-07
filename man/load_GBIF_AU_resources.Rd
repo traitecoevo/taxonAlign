@@ -6,6 +6,7 @@
 \usage{
 load_GBIF_AU_resources(
   version = NULL,
+  include_extinct = FALSE,
   path = NULL,
   refresh_cache = FALSE,
   cache_dir = tools::R_user_dir("taxonAlign", "cache"),
@@ -17,7 +18,10 @@ load_GBIF_AU_resources(
 Defaults to the latest release, or, with no internet connection, the newest release already
 downloaded. Ignored when \code{path} is given.}
 
-\item{path}{Optional path to your own copy of the release file (\code{gbif_au_extant.parquet}).}
+\item{include_extinct}{Logical; if \code{TRUE}, also return taxa GBIF flags as extinct, and their
+synonyms. Defaults to \code{FALSE}.}
+
+\item{path}{Optional path to your own copy of the release file (\code{gbif_au_animals.parquet}).}
 
 \item{refresh_cache}{Logical; if \code{TRUE}, re-downloads the release file even if it's cached.
 Defaults to \code{FALSE}.}
@@ -30,16 +34,21 @@ Defaults to \code{FALSE}.}
 \value{
 A flat tibble with the columns \code{\link[=generate_GBIF_taxonomic_reference_list]{generate_GBIF_taxonomic_reference_list()}} returns
 (\code{taxon_ID}, \code{accepted_name_usage_ID}, \code{canonical_name}, \code{taxon_rank}, \code{taxonomic_status},
-\code{taxonomic_dataset} = \code{"GBIF"}, ...).
+\code{extinct}, \code{taxonomic_dataset} = \code{"GBIF"}, ...).
 }
 \description{
 Downloads the GBIF Australia reference list from a taxonAlign data release: every animal taxon in
-the GBIF backbone with occurrence records in Australia, plus its synonyms, with taxa GBIF flags as
-extinct (and their synonyms) removed. It's the same shape as
+the GBIF backbone with occurrence records in Australia, plus its synonyms. It's the same shape as
 \code{\link[=generate_GBIF_taxonomic_reference_list]{generate_GBIF_taxonomic_reference_list()}}'s output -- built with it, with \code{country = "AU"} -- so
 it can be passed straight to \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}, alone or with other references.
 }
 \details{
+GBIF's occurrence records include fossil specimens, so the full list includes fossil taxa, which
+only produce spurious matches against modern names. By default, taxa GBIF flags as extinct (and
+their synonyms) are therefore left out. GBIF's flag doesn't distinguish fossils from recent
+extinctions, though -- the thylacine (\emph{Thylacinus cynocephalus}) is flagged extinct too -- so
+\code{include_extinct = TRUE} returns everything, with the \code{extinct} column showing which are which.
+
 Building this list live from GBIF takes many hours (millions of backbone records), so a fixed,
 dated copy is released instead; naming the release makes an alignment reproducible. See the
 release notes for when the GBIF data were retrieved.

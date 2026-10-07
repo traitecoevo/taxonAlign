@@ -20,9 +20,11 @@ knitr::opts_chunk$set(
 `taxonAlign` helps you:
 
 1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference
-   tables -- your own, one built live from the GBIF backbone taxonomy or from a cached
-   [taxadb](https://docs.ropensci.org/taxadb/) snapshot, a known source like the Australian Faunal
-   Directory or the Australian Plant Census via `load_taxonomic_resources()`, or any mix of these.
+   tables -- the Australian National Species List lists (animals from the Australian Faunal
+   Directory, algae, bryophytes, fungi, lichens) or a GBIF list of Australian animals, from a dated
+   taxonAlign data release; your own; one built live from the GBIF backbone taxonomy or from a cached
+   [taxadb](https://docs.ropensci.org/taxadb/) snapshot; the Australian Plant Census; or any mix of
+   these.
 2. **Fuzzy-match a list of raw taxon names** against that reference, resolving misspellings,
    synonyms, and names only identifiable to a higher rank (`genus sp.`), to maximise how many of
    your names align successfully.
@@ -47,9 +49,12 @@ pak::pak("traitecoevo/taxonAlign")
 
 | Function | What it does |
 |---|---|
+| `load_NSL_resources()` | Load an Australian National Species List list -- `"animals"` (the Australian Faunal Directory), `"algae"`, `"bryophytes"`, `"fungi"` or `"lichens"` -- from a dated taxonAlign data release (downloaded once, then kept on your computer). |
+| `load_GBIF_AU_resources()` | Load the GBIF list of animals recorded in Australia, with their synonyms, from a taxonAlign data release (extant taxa only unless `include_extinct = TRUE`). |
+| `data_release_versions()` | List the available data releases; name one with `version =` to make an alignment reproducible. |
 | `generate_GBIF_taxonomic_reference_list()` | Build a reference table from the *live* GBIF backbone taxonomy for a taxon (optionally filtered by country and/or minimum rank) -- best for a small clade. |
 | `generate_taxadb_taxonomic_reference_list()` | Build a reference table from [taxadb](https://docs.ropensci.org/taxadb/)'s pre-cached snapshot of GBIF, ITIS, or another supported authority -- fast for a large clade, at the cost of the snapshot possibly being out of date. |
-| `load_taxonomic_resources()` | Fetch/reshape a known reference dataset into the same flat schema -- currently the Australian Faunal Directory (`"AFD"`) and the Australian Plant Census (`"APC"`, via `APCalign`). |
+| `load_taxonomic_resources()` | Fetch/reshape a known reference dataset into the same flat schema -- the Australian Plant Census (`"APC"`, via `APCalign`), or a CSV in the Australian Faunal Directory's own export format (`"AFD"`). |
 | `prepare_taxonomic_resources()` | Combine one or more reference tables (yours, GBIF's, a known source, or any mix) into the structure the matching functions need. |
 | `align_taxa()` | Match a list of raw taxon names against a prepared reference, via exact and fuzzy matching. |
 | `update_taxa()` | Resolve a matched (possibly synonymous) name forward to its current accepted name. |
@@ -83,16 +88,18 @@ create_taxonomic_update_lookup(
 `Cynthia cardui` -- the name this species was described under updates to the current accepted name, `taxonomic_status_aligned` records that it was a synonym, and the
 misspelling (`carduii`, one letter off) is corrected via fuzzy matching.
 
-For a known source instead of a live GBIF fetch, `load_taxonomic_resources()` fetches/reshapes a fixed
-dataset -- the Australian Faunal Directory or the Australian Plant Census -- into the same schema:
+For Australian taxa, load one of the released reference lists instead of a live GBIF fetch. Each is
+downloaded the first time and stored on your computer, so after that it works offline; naming the
+release (`version`) makes an alignment reproducible:
 
 ```{r}
 #| eval: false
-afd <- load_taxonomic_resources("AFD")  # reads/reshapes a local AFD export -- see ?load_taxonomic_resources
-apc <- load_taxonomic_resources("APC")  # wraps APCalign::load_taxonomic_resources()
+animals <- load_NSL_resources("animals")                            # latest release
+fungi   <- load_NSL_resources("fungi", version = "2026-10-07")      # a named release
+gbif_au <- load_GBIF_AU_resources()
 
-# combine a known source with your own data, or two known sources together
-resources <- prepare_taxonomic_resources(list(afd = afd$AFD, mine = my_reference))
+# combine references: when a name appears in more than one, the first listed wins
+resources <- prepare_taxonomic_resources(list(afd = animals, gbif = gbif_au))
 ```
 
 See [`vignettes/get-started.qmd`](vignettes/get-started.qmd) for a full walkthrough of every function,

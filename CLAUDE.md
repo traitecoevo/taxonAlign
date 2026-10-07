@@ -139,7 +139,7 @@ derivation by rank, the subgenus marker-stripping fix, caching, and a full
 `prepare_taxonomic_resources()` → `create_taxonomic_update_lookup()` run including a marker-form
 subgenus query (`match_02x`, see Architecture #2 below).
 
-571 expectations, all passing as of the last `devtools::test()` run in an environment with `taxadb`/
+578 expectations, all passing as of the last `devtools::test()` run in an environment with `taxadb`/
 `duckdb`/`APCalign` installed and network access available (this now includes both
 `test-apc_equivalence.R`'s live tests and `gbif_snapshot_url`'s one live test against the real
 source.coop file below -- neither skips under a plain `devtools::test()` run when those conditions
@@ -151,7 +151,7 @@ has to dodge.)
 `test-apc_equivalence.R` (issue #10) is one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
 against, so it's skipped unless `APCalign` is installed, network access is available, and it isn't
-running under `R CMD check --as-cran` (both true in the environment the 571 figure above came from,
+running under `R CMD check --as-cran` (both true in the environment the 578 figure above came from,
 so it's already folded into that count there, not a separate add-on). This has also failed
 intermittently across several local runs (`load_APC()` → `dplyr::mutate()` on a `NULL`
 `APC$family_accepted`, i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning
@@ -1529,26 +1529,39 @@ actually changes -- **no "outdated data" warning** (user: it implies laziness, a
 often doesn't change for long periods).
 - Assets: `nsl_<group>_{taxon,names}.parquet` -- each NSL export **verbatim** (every column as text,
   only empty fields missing), per the store-raw-data philosophy; `load_NSL_resources()` reshapes on
-  load. `gbif_au_extant.parquet` -- the August 2026 GBIF Australia archive in taxonAlign's schema
-  (user chose the existing archive over a fresh raw fetch), extinct taxa + their synonyms removed.
-  `manifest.csv` (source URL/file, retrieval date, rows, source md5, licence, citation).
-- `data_release_versions()` (exported) lists published date-tagged releases via the GitHub API,
-  session-cached; `resolve_data_release_version()`: explicit > latest online > newest locally cached
-  (offline) > clear error; `download_data_release_asset()` caches under
-  `<cache_dir>/data_release/<version>/`. `load_NSL_resources(path = NULL, version = NULL)` now downloads
-  from a release when no `path` is given (no longer defaults to `inst/extdata/`);
-  `load_GBIF_AU_resources(version, path)` is the GBIF equivalent. `read_NSL_file()` reads parquet too.
-- `arrow` and `jsonlite` are full Imports (user decision, as APCalign).
-- `data-raw/build_data_release.R <date> <out_dir> <animals_dir> <gbif_extant_rds>...` builds every
+  load. `gbif_au_animals.parquet` -- the August 2026 GBIF Australia archive in taxonAlign's schema
+  (user chose the existing archive over a fresh raw fetch), **all taxa kept, with an `extinct`
+  column**; `load_GBIF_AU_resources(include_extinct = FALSE)` returns extant only by default (user's
+  design, 2026-10-07). `manifest.csv` (source URL/file, retrieval date, rows, source md5, licence,
+  citation).
+- **GBIF's `extinct` flag doesn't distinguish fossils from recent extinctions** -- the thylacine,
+  pig-footed bandicoot and paradise parrot are flagged exactly like *Diprotodon*. Hence keeping
+  everything in the release with the column, rather than dropping. `generate_GBIF_taxonomic_reference_list()`
+  likewise outputs an `extinct` column (a synonym takes its accepted taxon's flag) and has
+  `exclude_extinct = TRUE` by default. Flags for the archive came from the raw fetch cache
+  (`ignore/gbif_cache_backup/`, invertebrates: TRUE/FALSE) and, for vertebrates (no raw cache), from a
+  `name_lookup(isExtinct = TRUE)` query per Australian vertebrate family (931 families, ~5 min; family
+  keys from `ignore/gbif_vertebrates_worldwide.rds`) -- the first attempt, paging all of Chordata, was
+  hopelessly slow (GBIF deep paging). Vertebrates therefore only have TRUE/NA. Combined table:
+  `ignore/gbif_au_animals_with_extinct.rds` (419,088 records; 20,244 extinct).
+- **Offline behaviour** (user requirement, from APCalign's failure mode of searching for new versions
+  when offline): a named release already downloaded never touches the network; without `version`,
+  `data_release_versions()` asks GitHub once per session via `curl` with a 5s connect / 10s total
+  timeout, any failure -> newest local release; `get_data_release_assets()` falls back to the newest
+  complete local release if the latest can't be downloaded (never for an explicitly named version).
+  Release tags are dates, never numbers. `curl` added to Imports.
+- `data_release_versions()` (exported) lists published date-tagged releases (drafts excluded,
+  pre-releases included); `download_data_release_asset()` caches under
+  `<cache_dir>/data_release/<version>/`. `load_NSL_resources(path = NULL, version = NULL)` downloads
+  from a release when no `path` is given; `read_NSL_file()` reads parquet too.
+- `arrow`, `curl`, `jsonlite` are full Imports (user decision for arrow, as APCalign).
+- `data-raw/build_data_release.R <date> <out_dir> <animals_dir> <gbif_au_rds>...` builds every
   asset + manifest + release notes (downloads the four public NSL groups fresh); publish with
-  `gh release create <date> --draft ...` then `--draft=false` as a separate go-ahead. `data-raw/` is
-  build-ignored.
-- GBIF extinct flags: `generate_GBIF_taxonomic_reference_list(exclude_extinct = TRUE)` (new default)
-  drops taxa GBIF flags `extinct` and their synonyms -- occurrence records include fossil specimens,
-  so a `country` filter otherwise keeps fossil taxa that only produce spurious matches. For the August
-  archive the flags came from the raw fetch cache (`ignore/gbif_cache_backup/`, invertebrates: 17,159
-  records removed) and, for vertebrates (no raw cache left), from a separate paged GBIF query of
-  backbone Chordata with `isExtinct = TRUE`, split by taxonomic group because deep paging is very slow.
+  `gh release create <date> --draft ...`; user agreed: draft -> review -> publish as **pre-release** for
+  testers -> mark final. `data-raw/` is build-ignored.
+- **First release: `2026-10-07`, created as a draft** (all 12 assets, ~145MB). Not yet published;
+  testers also need the loader code pushed. get-started.qmd's release examples are `eval: false`
+  until it's published -- flip them on and re-render then.
 - Tests: `test-data_release.R` (GitHub API and downloads mocked; release-parquet load equals
   original-file load).
 

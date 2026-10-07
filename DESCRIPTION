@@ -14,6 +14,7 @@ Roxygen: list(markdown = TRUE)
 Imports:
     APCalign,
     arrow,
+    curl,
     dplyr,
     jsonlite,
     parallel,

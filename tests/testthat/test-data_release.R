@@ -3,11 +3,11 @@
 
 test_that("data_release_versions keeps published, date-tagged releases, most recent first", {
   local_mocked_bindings(
-    fromJSON = function(...) data.frame(
+    curl_fetch_memory = function(...) list(status_code = 200, content = charToRaw(jsonlite::toJSON(data.frame(
       tag_name = c("2026-01-10", "v0.1.0", "2026-10-08", "2026-12-01"),
       draft = c(FALSE, FALSE, FALSE, TRUE)
-    ),
-    .package = "jsonlite"
+    )))),
+    .package = "curl"
   )
   withr::defer(rm(list = ls(.taxonAlign_release_cache), envir = .taxonAlign_release_cache))
   expect_equal(data_release_versions(refresh = TRUE), c("2026-10-08", "2026-01-10"))
@@ -43,8 +43,7 @@ test_that("load_NSL_resources reads a group from data release parquet files", {
   arrow::write_parquet(sample_nsl_animals_taxon_raw(), file.path(release, "nsl_animals_taxon.parquet"))
   arrow::write_parquet(sample_nsl_animals_names_raw(), file.path(release, "nsl_animals_names.parquet"))
   local_mocked_bindings(
-    resolve_data_release_version = function(version, ...) "2026-10-08",
-    download_data_release_asset = function(asset, ...) file.path(release, asset)
+    get_data_release_assets = function(assets, ...) stats::setNames(file.path(release, assets), assets)
   )
   out <- load_NSL_resources("animals", cache_dir = withr::local_tempdir(), quiet = TRUE)
 
@@ -54,11 +53,49 @@ test_that("load_NSL_resources reads a group from data release parquet files", {
   expect_equal(out, from_files)
 })
 
-test_that("load_GBIF_AU_resources reads the release file", {
+test_that("load_GBIF_AU_resources reads the release file, extant taxa only unless asked", {
   f <- withr::local_tempfile(fileext = ".parquet")
-  gbif <- tibble::tibble(taxon_ID = 1:2, accepted_name_usage_ID = 1:2, canonical_name = c("Aus", "Aus bus"),
-                         taxon_rank = c("genus", "species"), taxonomic_status = "accepted", taxonomic_dataset = "GBIF")
+  gbif <- tibble::tibble(taxon_ID = 1:3, accepted_name_usage_ID = 1:3,
+                         canonical_name = c("Aus", "Aus bus", "Thylacinus cynocephalus"),
+                         taxon_rank = c("genus", "species", "species"), taxonomic_status = "accepted",
+                         extinct = c(NA, FALSE, TRUE), taxonomic_dataset = "GBIF")
   arrow::write_parquet(gbif, f)
-  expect_equal(load_GBIF_AU_resources(path = f, quiet = TRUE), gbif)
+  expect_equal(load_GBIF_AU_resources(path = f, quiet = TRUE), gbif[1:2, ])
+  expect_equal(load_GBIF_AU_resources(path = f, include_extinct = TRUE, quiet = TRUE), gbif)
   expect_error(load_GBIF_AU_resources(path = "/no/such/file.parquet"), "Couldn't find")
+})
+
+test_that("data_release_versions returns nothing, rather than erroring or hanging, when GitHub can't be reached", {
+  local_mocked_bindings(curl_fetch_memory = function(...) stop("Could not resolve host"), .package = "curl")
+  withr::defer(rm(list = ls(.taxonAlign_release_cache), envir = .taxonAlign_release_cache))
+  expect_equal(data_release_versions(refresh = TRUE), character(0))
+})
+
+test_that("a named release that's already downloaded is used without touching the network", {
+  cache <- withr::local_tempdir()
+  dir.create(file.path(cache, "data_release", "2026-10-08"), recursive = TRUE)
+  writeLines("x", file.path(cache, "data_release", "2026-10-08", "gbif_au_animals.parquet"))
+  local_mocked_bindings(data_release_versions = function(...) stop("network used"))
+  local_mocked_bindings(curl_fetch_memory = function(...) stop("network used"), .package = "curl")
+  expect_equal(
+    unname(get_data_release_assets("gbif_au_animals.parquet", "2026-10-08", cache)),
+    file.path(cache, "data_release", "2026-10-08", "gbif_au_animals.parquet")
+  )
+})
+
+test_that("if the latest release can't be downloaded, the newest complete local copy is used", {
+  cache <- withr::local_tempdir()
+  for (v in c("2026-01-10", "2026-03-01")) {
+    dir.create(file.path(cache, "data_release", v), recursive = TRUE)
+  }
+  # only the older local release has the file
+  writeLines("x", file.path(cache, "data_release", "2026-01-10", "gbif_au_animals.parquet"))
+  local_mocked_bindings(
+    resolve_data_release_version = function(version, ...) if (is.null(version)) "2026-10-08" else version,
+    download_data_release_asset = function(...) stop("download failed")
+  )
+  expect_message(p <- get_data_release_assets("gbif_au_animals.parquet", NULL, cache), "most recent locally cached")
+  expect_equal(unname(p), file.path(cache, "data_release", "2026-01-10", "gbif_au_animals.parquet"))
+  # an explicitly requested release is never swapped for another
+  expect_error(get_data_release_assets("gbif_au_animals.parquet", "2026-10-08", cache), "download failed")
 })

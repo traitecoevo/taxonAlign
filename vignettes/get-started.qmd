@@ -16,9 +16,11 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 `taxonAlign` helps with two related jobs:
 
 1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference tables --
-   your own data, a list built live from the GBIF backbone taxonomy, a cached snapshot from
-   [taxadb](https://docs.ropensci.org/taxadb/) (GBIF, ITIS, and others), a known source like the
-   Australian Faunal Directory (AFD) or the Australian Plant Census (APC), or any mix of these.
+   the Australian National Species List lists (animals, algae, bryophytes, fungi, lichens) or a GBIF
+   list for Australian animals, downloaded from a dated taxonAlign data release; your own data; a list
+   built live from the GBIF backbone taxonomy; a cached snapshot from
+   [taxadb](https://docs.ropensci.org/taxadb/) (GBIF, ITIS, and others); the Australian Plant Census
+   (APC); or any mix of these.
 2. **Align and update a list of raw taxon names** against that reference -- matching misspellings,
    synonyms, and names only identifiable to a higher rank (`genus sp.`), then resolving each match
    forward to its current accepted name.
@@ -41,8 +43,78 @@ library(dplyr)
 ## Building a taxonomic reference
 
 Every matching/aligning function needs a `resources` object, built by `prepare_taxonomic_resources()`
-from one or more taxonomic reference tables. There are three ways to get a reference table in the
+from one or more taxonomic reference tables. There are several ways to get a reference table in the
 first place.
+
+### From a taxonAlign data release (Australian lists)
+
+For Australian taxa, the simplest starting point is one of the reference lists published as
+taxonAlign **data releases**: dated, fixed copies of each list, so that an alignment can be repeated
+exactly later by naming the release it used. Each release contains:
+
+| Reference | Function | Source |
+|---|---|---|
+| Animals (Australian Faunal Directory) | `load_NSL_resources("animals")` | The AFD's National Species List (NSL) export |
+| Algae | `load_NSL_resources("algae")` | NSL export (AAL taxa, AANI names) |
+| Bryophytes | `load_NSL_resources("bryophytes")` | NSL export (CAB taxa, ABNI names) |
+| Fungi | `load_NSL_resources("fungi")` | NSL export (AFL taxa, AFNI names) |
+| Lichens | `load_NSL_resources("lichens")` | NSL export (ALC taxa, ALNI names) |
+| Animals recorded in Australia (GBIF) | `load_GBIF_AU_resources()` | GBIF backbone taxonomy: taxa with Australian occurrence records, plus their synonyms |
+
+`data_release_versions()` lists the releases available, most recent first:
+
+```{r}
+#| eval: false
+data_release_versions()
+#> [1] "2026-10-07"
+```
+
+Each list is downloaded the first time you use it and stored on your computer (in
+`tools::R_user_dir("taxonAlign", "cache")`), so after that it loads without downloading again, and
+works offline:
+
+```{r}
+#| eval: false
+animals <- load_NSL_resources("animals")
+fungi   <- load_NSL_resources("fungi")
+gbif_au <- load_GBIF_AU_resources()
+
+resources <- prepare_taxonomic_resources(animals)
+```
+
+GBIF's occurrence records include fossil specimens, so `load_GBIF_AU_resources()` leaves out taxa GBIF
+flags as extinct, which would otherwise produce spurious matches. GBIF's flag doesn't distinguish
+fossils from recent extinctions, though (the thylacine is flagged extinct too), so
+`include_extinct = TRUE` returns everything, with an `extinct` column showing which are which.
+
+Each NSL list combines the group's two NSL exports: the *taxon* file (accepted names and their
+synonyms, with links between them) and the *names* file (every name recorded for the group). The taxon
+file always takes priority; names found only in the names file are added so they can still be
+recognised, but they're never "updated" to anything, since the names file doesn't link them to an
+accepted name.
+
+**Naming the release.** Without `version`, the latest release is used. To make an analysis
+reproducible, name the release instead -- the same release always gives the same result:
+
+```{r}
+#| eval: false
+animals <- load_NSL_resources("animals", version = "2026-10-07")
+```
+
+**Working offline.** A named release that has already been downloaded is loaded straight from your
+computer, without going online at all. Without `version`, taxonAlign checks GitHub once per session
+(with a short time limit) for the latest release; if it can't (no internet, a slow connection), it
+uses the most recent release already on your computer. Releases are only published when a source
+actually changes, so an older release isn't necessarily out of date.
+
+If you have your own copy of an NSL export (for example, downloaded from the group's NSL export page,
+such as `https://fungi.biodiversity.org.au/nsl/services/export/index`), point `path` at the folder
+holding its taxon and names files instead:
+
+```{r}
+#| eval: false
+fungi_now <- load_NSL_resources("fungi", path = "my_downloads/fungi_export")
+```
 
 ### From your own data
 
@@ -115,21 +187,27 @@ Real GBIF data can include a handful of "doubtful" or incompletely-classified re
 canonical name at all -- `prepare_taxonomic_resources()` drops these automatically (with a warning),
 since a name with no usable label could never be matched against anyway.
 
-### From a known source (AFD, APC)
+GBIF's occurrence records include fossil specimens, so a `country` filter would otherwise keep fossil
+taxa. Taxa GBIF flags as extinct, and their synonyms, are left out by default
+(`exclude_extinct = TRUE`); as above, that includes recently extinct species, and
+`exclude_extinct = FALSE` keeps them, with an `extinct` column. For all Australian animals at once, use the released list
+(`load_GBIF_AU_resources()`, above) rather than building it live, which takes many hours.
 
-`load_taxonomic_resources()` fetches and reshapes a fixed set of *known* datasets into the same flat
-schema -- currently the Australian Faunal Directory (`"AFD"`) and a wrapper around
-`APCalign::load_taxonomic_resources()` (`"APC"`). Unlike the GBIF function, these aren't built from a
-taxon name -- they're a whole dataset at once:
+### From the Australian Plant Census, or the AFD's own export format
+
+`load_taxonomic_resources()` reshapes two further known datasets into the same flat schema: the
+Australian Plant Census (`"APC"`, a wrapper around `APCalign::load_taxonomic_resources()`), and the
+Australian Faunal Directory's own CSV export format (`"AFD"`; the NSL-format export above is the
+recommended source for the AFD, but this reads a CSV downloaded from the AFD directly):
 
 ```{r}
 #| eval: false
-afd <- load_taxonomic_resources("AFD")   # reads/reshapes a local AFD export (see ?load_taxonomic_resources)
-apc <- load_taxonomic_resources("APC")   # wraps APCalign::load_taxonomic_resources()
+apc <- load_taxonomic_resources("APC")
+afd_csv <- load_taxonomic_resources("AFD", path = "my_downloads/afd_export.csv")
 ```
 
-`load_taxonomic_resources()` always returns a named list, even for one dataset, so both pieces above
-can be combined directly.
+`load_taxonomic_resources()` always returns a named list, even for one dataset, so it can be combined
+with other references directly.
 
 ### From taxadb (a pre-cached snapshot of GBIF, ITIS, and others)
 
@@ -165,7 +243,12 @@ each table in hand:
 
 ```{r}
 #| eval: false
-resources <- prepare_taxonomic_resources(list(mine = my_reference, gbif = gbif_resources))
+# your own list first, then the AFD, then GBIF for anything neither of those has
+resources <- prepare_taxonomic_resources(list(
+  mine = my_reference,
+  afd = load_NSL_resources("animals"),
+  gbif = load_GBIF_AU_resources()
+))
 ```
 
 If you'd rather be walked through it -- especially useful when you're adding sources one at a time
@@ -199,6 +282,14 @@ align_taxa("Aporocera viridipennis", resources)  # exact match, a synonym
 align_taxa("Aporocera viridipenis", resources)   # one letter missing -- fuzzy match
 align_taxa("Xylotoles costatus mixtus", resources) # a subspecies
 align_taxa("Chrysomelidae", resources)            # family only
+```
+
+A subgenus can be written into a name or left out; either way matches, whichever way your reference
+writes it:
+
+```{r}
+align_taxa(c("Aporocera t-viride", "Aporocera (Aporocera) t-viride"), resources) |>
+  select(original_name, aligned_name, taxon_rank)
 ```
 
 A name that can't be resolved to anything is left `NA`, not an error:
@@ -283,6 +374,30 @@ update_taxa(aligned, resources) |>
 `accepted_name` is the current accepted name (`NA` if it couldn't be resolved); `suggested_name` falls
 back to `aligned_name` when there's no `accepted_name`, so it's never `NA` for anything that matched at
 all.
+
+### A synonym of more than one taxon
+
+Sometimes a name is listed as a synonym of two or more accepted taxa -- for example, when a species
+has since been split into several. The name alone can't say which is meant. Following APCalign's
+convention, `update_taxa()` suggests the most likely one (by the synonyms' taxonomic status, then a
+few tie-breaking rules) and lists the others in brackets, and in `alternative_possible_names`:
+
+```{r}
+split_reference <- tibble::tribble(
+  ~canonical_name,        ~scientific_name,                   ~taxon_rank, ~taxonomic_status,     ~genus,       ~taxon_ID, ~accepted_name_usage_ID,
+  "Newgenus alba",        "Newgenus alba (Smith, 1900)",      "species",   "accepted",            "Newgenus",   "a1",      "a1",
+  "Newgenus pallida",     "Newgenus pallida Jones, 1950",     "species",   "accepted",            "Newgenus",   "a2",      "a2",
+  "Oldgenus alba",        "Oldgenus alba Smith, 1900",        "species",   "nomenclatural synonym", "Oldgenus", "s1",      "a1",
+  "Oldgenus alba",        "Oldgenus alba Smith, 1900",        "species",   "misapplied",          "Oldgenus",   "s2",      "a2"
+) |>
+  mutate(taxonomic_dataset = "EXAMPLE")
+
+create_taxonomic_update_lookup("Oldgenus alba", prepare_taxonomic_resources(split_reference)) |>
+  select(original_name, suggested_name, alternative_possible_names)
+```
+
+With `taxonomic_splits = "collapse_to_higher_taxon"`, a name whose candidates all share a genus is
+reported at genus rank instead (`"Newgenus sp. [collapsed names: ...]"`).
 
 ## The one-call pipeline: `create_taxonomic_update_lookup()`
 

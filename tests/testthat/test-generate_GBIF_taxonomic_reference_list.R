@@ -629,7 +629,7 @@ test_that("generate_GBIF_taxonomic_reference_list returns the documented columns
     names(out),
     c("taxon_ID", "parent_key", "accepted_name_usage_ID", "scientific_name",
       "scientific_name_authorship", "canonical_name", "taxon_rank", "taxonomic_status",
-      "kingdom", "phylum", "class", "order", "family", "genus", "taxonomic_dataset")
+      "kingdom", "phylum", "class", "order", "family", "genus", "extinct", "taxonomic_dataset")
   )
   expect_equal(unique(out$taxonomic_dataset), "GBIF")
   expect_setequal(out$taxon_ID, c(1L, 2L, 3L))
@@ -744,4 +744,7 @@ test_that("taxa GBIF flags as extinct, and their synonyms, are left out unless e
     "Fossilgenus", exclude_extinct = FALSE, cache_dir = withr::local_tempdir(), quiet = TRUE
   )
   expect_true(all(c("Fossilgenus mortuus", "Oldgenus mortuus") %in% all$canonical_name))
+  # the extinct column shows which are which; a synonym takes its accepted taxon's flag
+  expect_equal(all$extinct[match(c("Fossilgenus vivus", "Fossilgenus mortuus", "Oldgenus mortuus", "Fossilgenus ignotus"), all$canonical_name)],
+               c(FALSE, TRUE, TRUE, NA))
 })

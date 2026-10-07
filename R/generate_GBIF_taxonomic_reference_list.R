@@ -128,7 +128,10 @@ gbif_rank_order <- c(
 #'  together with synonyms whose accepted taxon is flagged extinct. GBIF's occurrence records include
 #'  fossil specimens, so without this a `country` filter keeps fossil taxa (e.g. Palaeozoic
 #'  brachiopods) as if they were part of the living fauna -- names that can only produce spurious
-#'  matches. A taxon with no extinct flag in GBIF (no information either way) is kept.
+#'  matches. Note that GBIF's flag doesn't distinguish fossils from recent extinctions: the thylacine
+#'  (*Thylacinus cynocephalus*) is flagged extinct too. Set `exclude_extinct = FALSE` to keep them all;
+#'  the `extinct` column then shows which are which. A taxon with no extinct flag in GBIF (no
+#'  information either way) is always kept.
 #' @param cache_dir Directory used to cache downloaded taxonomy/occurrence data.
 #'  Defaults to a per-user cache directory (see [tools::R_user_dir()]) so the cache
 #'  persists across sessions.
@@ -164,7 +167,8 @@ gbif_rank_order <- c(
 #'  equal to `taxon_ID` itself for a row that is already accepted, matching how APC downloads
 #'  fill this in), `scientific_name` (the full name, with authorship), `scientific_name_authorship`,
 #'  `canonical_name` (the name without authorship), `taxon_rank`, `taxonomic_status`, `kingdom`,
-#'  `phylum`, `class`, `order`, `family`, `genus` and `taxonomic_dataset` (always `"GBIF"`).
+#'  `phylum`, `class`, `order`, `family`, `genus`, `extinct` (GBIF's flag: `TRUE` extinct, `FALSE`
+#'  extant, `NA` no information) and `taxonomic_dataset` (always `"GBIF"`).
 #'
 #' @examples
 #' \dontrun{
@@ -283,12 +287,13 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
     )
   }
 
+  # a synonym shares its accepted taxon's extinct status when it has no flag of its own
+  full_tree$extinct <- as.logical(full_tree$extinct)
+  accepted_extinct <- full_tree$extinct[match(full_tree$acceptedKey, full_tree$key)]
+  full_tree$extinct <- dplyr::if_else(accepted_extinct %in% TRUE, TRUE, full_tree$extinct)
+
   if (exclude_extinct) {
-    extinct_keys <- full_tree$key[full_tree$extinct %in% TRUE]
-    full_tree <- dplyr::filter(
-      full_tree,
-      !(.data$extinct %in% TRUE) & !(.data$acceptedKey %in% extinct_keys)
-    )
+    full_tree <- dplyr::filter(full_tree, !(.data$extinct %in% TRUE))
   }
 
   if (!include_synonyms) {
@@ -319,6 +324,8 @@ generate_GBIF_taxonomic_reference_list <- function(taxon_name,
       order = .data$order,
       family = .data$family,
       genus = .data$genus,
+      # GBIF's own flag: TRUE = extinct (fossil or recent), FALSE = extant, NA = no information
+      extinct = .data$extinct,
       taxonomic_dataset = "GBIF"
     ) |>
     dplyr::distinct(.data$taxon_ID, .keep_all = TRUE) |>

@@ -126,14 +126,12 @@ load_NSL_resources <- function(taxon_group,
 
   if (is.null(path)) {
     # from a data release: one parquet file per NSL export, stored verbatim (see data-raw/build_data_release.R)
-    version <- resolve_data_release_version(version, cache_dir, quiet = quiet)
-    taxon_file <- download_data_release_asset(
-      paste0("nsl_", taxon_group, "_taxon.parquet"), version, cache_dir, refresh_cache, quiet
+    files <- get_data_release_assets(
+      paste0("nsl_", taxon_group, c("_taxon", "_names"), ".parquet"), version, cache_dir, refresh_cache, quiet
     )
-    names_file <- download_data_release_asset(
-      paste0("nsl_", taxon_group, "_names.parquet"), version, cache_dir, refresh_cache, quiet
-    )
-    path <- paste0("taxonAlign data release ", version)
+    taxon_file <- files[[1]]
+    names_file <- files[[2]]
+    path <- paste0("taxonAlign data release ", basename(dirname(taxon_file)))
   } else {
     if (!dir.exists(path)) {
       stop(

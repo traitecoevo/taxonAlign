@@ -53,7 +53,10 @@ Defaults to \code{TRUE}.}
 together with synonyms whose accepted taxon is flagged extinct. GBIF's occurrence records include
 fossil specimens, so without this a \code{country} filter keeps fossil taxa (e.g. Palaeozoic
 brachiopods) as if they were part of the living fauna -- names that can only produce spurious
-matches. A taxon with no extinct flag in GBIF (no information either way) is kept.}
+matches. Note that GBIF's flag doesn't distinguish fossils from recent extinctions: the thylacine
+(\emph{Thylacinus cynocephalus}) is flagged extinct too. Set \code{exclude_extinct = FALSE} to keep them all;
+the \code{extinct} column then shows which are which. A taxon with no extinct flag in GBIF (no
+information either way) is always kept.}
 
 \item{cache_dir}{Directory used to cache downloaded taxonomy/occurrence data.
 Defaults to a per-user cache directory (see \code{\link[tools:R_user_dir]{tools::R_user_dir()}}) so the cache
@@ -98,7 +101,8 @@ no APCalign equivalent), \code{accepted_name_usage_ID} (the \code{taxon_ID} of t
 equal to \code{taxon_ID} itself for a row that is already accepted, matching how APC downloads
 fill this in), \code{scientific_name} (the full name, with authorship), \code{scientific_name_authorship},
 \code{canonical_name} (the name without authorship), \code{taxon_rank}, \code{taxonomic_status}, \code{kingdom},
-\code{phylum}, \code{class}, \code{order}, \code{family}, \code{genus} and \code{taxonomic_dataset} (always \code{"GBIF"}).
+\code{phylum}, \code{class}, \code{order}, \code{family}, \code{genus}, \code{extinct} (GBIF's flag: \code{TRUE} extinct, \code{FALSE}
+extant, \code{NA} no information) and \code{taxonomic_dataset} (always \code{"GBIF"}).
 }
 \description{
 Builds a table of taxon names sourced from the

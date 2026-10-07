@@ -380,8 +380,8 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     warning(
       n_dropped, " row(s) in `taxonomic_resources` have a `canonical_name` that's just the bare name ",
       "of their own rank, or a rank word plus a placeholder code (e.g. \"Genus\", \"Genus A\"), and were dropped -- these are ",
-      "a real GBIF placeholder-naming artifact for undescribed taxa, and could never be usefully ",
-      "matched against anyway.",
+      "placeholder names for undescribed taxa (seen in GBIF and in the AFD's NSL export), and could ",
+      "never be usefully matched against anyway.",
       call. = FALSE
     )
   }

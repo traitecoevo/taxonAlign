@@ -1450,32 +1450,30 @@ discrepancy between the formats.
 ## GBIF names not in the AFD {#gbif-not-in-afd}
 
 We compared the GBIF backbone taxonomy for animals recorded in Australia with the NSL format. The GBIF
-data are 419,088 records (accepted names and synonyms, all ranks), fetched in August 2026: every taxon
-with GBIF occurrence records in Australia, plus its synonyms. A GBIF name counts as present in the AFD
-if the same name appears anywhere in the NSL format (taxon or name file, any rank or status), ignoring
-how a subgenus is written.
+data (fetched in August 2026) are every taxon with GBIF occurrence records in Australia, plus its
+synonyms. Because GBIF's occurrence records include fossil specimens, taxa GBIF flags as extinct (and
+their synonyms) are left out: 20,244 of the 419,088 records. GBIF's flag doesn't distinguish fossils
+from recent extinctions, so this also leaves out a few historically extinct species the AFD lists,
+such as the thylacine. That leaves 398,844 records. A GBIF name counts as present in the AFD if the
+same name appears anywhere in the NSL format (taxon or name file, any rank or status), ignoring how a
+subgenus is written.
 
-**171,504 GBIF records (about 167,000 distinct names) are not in the AFD.** The full list, with GBIF's
+**152,704 GBIF records (148,196 distinct names) are not in the AFD.** The full list, with GBIF's
 classification for each name, is in the file `GBIF_AU_names_not_in_AFD.csv`. Each name is placed in
 one of five groups:
 
 | Group | Records | Meaning |
 |---|---|---|
-| Synonym of a taxon the AFD has | 81,746 | GBIF lists the name as a synonym of an accepted name that is in the AFD: a synonym the AFD doesn't record |
-| Synonym of a taxon the AFD doesn't have | 53,628 | Neither the name nor its accepted name is in the AFD |
-| Accepted taxon not in the AFD | 30,620 | Accepted in GBIF, not in the AFD (19,197 species, 8,363 genera, 2,076 families, …) |
-| Possible spelling variant of an AFD name | 4,431 | Differs from an AFD name in the same genus by one letter, or only in its ending (e.g. *Physa kreffti* / *Physa kreftii*, *Eosphora ehrenbergi* / *ehrenbergii*). Most are spelling or gender-agreement variants; a few may be different species (e.g. *Sargus rubescens* / *rufescens*) |
-| Doubtful name in GBIF | 1,079 | GBIF itself marks the name as doubtful |
+| Synonym of a taxon the AFD has | 78,779 | GBIF lists the name as a synonym of an accepted name that is in the AFD: a synonym the AFD doesn't record |
+| Synonym of a taxon the AFD doesn't have | 47,082 | Neither the name nor its accepted name is in the AFD |
+| Accepted taxon not in the AFD | 21,998 | Accepted in GBIF, not in the AFD (14,527 species, 5,413 genera, 1,153 families, …) |
+| Possible spelling variant of an AFD name | 4,378 | Differs from an AFD name in the same genus by one letter, or only in its ending (e.g. *Physa kreffti* / *Physa kreftii*, *Eosphora ehrenbergi* / *ehrenbergii*). Most are spelling or gender-agreement variants; a few may be different species (e.g. *Sargus rubescens* / *rufescens*) |
+| Doubtful name in GBIF | 467 | GBIF itself marks the name as doubtful |
 
-The accepted taxa not in the AFD are mostly Arthropoda (10,091), Mollusca (7,982) and Chordata
-(4,298). Two cautions about this group:
-
-- **GBIF's Australian filter is based on occurrence records, which include fossils.** Many of these
-  are likely to be extinct taxa; for example, the 1,287 Brachiopoda include fossil genera such as
-  *Producta* and *Phragmophora*. GBIF's fossil status isn't in our archive, so we haven't separated
-  these out.
-- **Occurrence records can be misidentified or from non-native populations**, so a GBIF taxon
-  "recorded in Australia" isn't necessarily part of the Australian fauna.
+The accepted taxa not in the AFD are mostly Arthropoda (8,541), Mollusca (5,153) and Chordata (3,349).
+GBIF's Australian filter is based on occurrence records, which can be misidentified or come from
+non-native populations, so a GBIF taxon "recorded in Australia" isn't necessarily part of the
+Australian fauna. Some fossil taxa may also remain where GBIF has no extinct flag for them.
 
 ## Possible errors in input data {#possible-errors}
 
