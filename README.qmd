@@ -17,6 +17,50 @@ knitr::opts_chunk$set(
 <!-- badges: start -->
 <!-- badges: end -->
 
+## What you can use these packages for
+
+- **Align taxon names to any taxonomic reference you choose** -- correcting misspellings, updating
+  synonyms to the currently accepted name, and matching names only identified to genus, family or any
+  other rank. *(taxonAlign)*
+- **Generate a taxonomic reference list for any taxon group, from any region** -- for example, as the
+  taxonomic reference for a [traits.build](https://github.com/traitecoevo/traits.build) database -- from
+  GBIF, the Catalogue of Life, the World Checklist of Vascular Plants, or your own table.
+  *([taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep))*
+- **Work directly with Australia's National Species Lists** for animals, fungi, vascular plants,
+  bryophytes, lichens and algae -- both packages are designed around them. The animal, fungi,
+  bryophyte, lichen and algae lists are published as dated, ready-to-use reference lists; vascular
+  plants come from the Australian Plant Census. *(both)*
+
+## Two packages
+
+The work is split between two packages:
+
+- **[taxonAlign](https://github.com/traitecoevo/taxonAlign)** aligns names and updates them to the
+  currently accepted name. It also downloads the ready-made reference lists (the National Species
+  Lists, and GBIF's list of Australian animals) from dated data releases. If your taxa are covered by
+  one of those lists, or you already have a reference table in taxonAlign's format, it's all you need.
+- **[taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep)** builds reference
+  lists -- from GBIF, the Catalogue of Life, the World Checklist of Vascular Plants, the Australian
+  Plant Census, or your own table -- and builds taxonAlign's data releases.
+
+## Installation
+
+Neither package is on CRAN. To align and update names, install taxonAlign:
+
+``` r
+# install.packages("pak")
+pak::pak("traitecoevo/taxonAlign")
+```
+
+To build your own reference lists as well, install taxonAlign.dataprep, which installs taxonAlign
+along with it:
+
+``` r
+pak::pak("traitecoevo/taxonalign-dataprep")
+```
+
+## About this package
+
 `taxonAlign` helps you:
 
 1. **Fuzzy-match a list of raw taxon names** against a taxonomic reference, resolving misspellings,
@@ -33,21 +77,6 @@ It's inspired by [APCalign](https://traitecoevo.github.io/APCalign/)'s approach 
 names to the Australian Plant Census, generalised so the reference doesn't have to be APC/APNI and
 the taxa don't have to be plants and names of any taxonomic rank present in your reference (species, genus,
 family, or anything else) can be matched.
-
-Building a reference from other sources -- a live GBIF fetch, a [taxadb](https://docs.ropensci.org/taxadb/)
-snapshot, the Australian Plant Census, the Australian Faunal Directory's own export, or your own
-table with different column names -- is the job of the companion package
-[taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep), which also builds the
-released lists.
-
-## Installation
-
-`taxonAlign` isn't on CRAN. Install the development version from GitHub:
-
-``` r
-# install.packages("pak")
-pak::pak("traitecoevo/taxonAlign")
-```
 
 ## Workflow
 

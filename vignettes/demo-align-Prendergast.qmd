@@ -23,8 +23,7 @@ up: misspellings (`"Hymnoptera"`), morphospecies codes (`"Chrysomelidae sp."`), 
 We align the raw animal names against two different references, at both species level
 (`Animal species binomial name`) and order level (`Animal order`), and look at what kinds of matches
 get made in each case: first the [Australian Faunal Directory](https://biodiversity.org.au/afd/home)
-(AFD) -- the one taxonomic reference bundled with `taxonAlign`, with real, comprehensive coverage of
-Australian invertebrates -- then a live-GBIF-fetched reference covering every Australian animal, not
+(AFD), as released in its National Species List format -- then a live-GBIF-fetched reference covering every Australian animal, not
 just invertebrates.
 
 ```{r setup}
@@ -35,8 +34,7 @@ library(dplyr)
 ## Building the AFD reference
 
 ```{r}
-# the AFD's own CSV export, reshaped by the companion package taxonAlign.dataprep
-afd <- taxonAlign.dataprep::load_AFD("../inst/extdata/AFD.csv", quiet = TRUE)
+afd <- load_taxonomic_resources("NSL_animals", version = "2026-10-07", quiet = TRUE)
 afd_resources <- prepare_taxonomic_resources(afd)
 ```
 
@@ -232,7 +230,7 @@ gbif_resources <- prepare_taxonomic_resources(gbif_animals)
 
 `r format(nrow(gbif_animals), big.mark = ",")` rows, spanning every Australian animal GBIF has a
 record for (vertebrate and invertebrate alike) -- about
-`r round(nrow(gbif_animals) / nrow(afd$AFD), 1)`x the size of the AFD reference above.
+`r round(nrow(gbif_animals) / nrow(afd$NSL_animals), 1)`x the size of the AFD reference above.
 
 ### Aligning by species binomial name
 

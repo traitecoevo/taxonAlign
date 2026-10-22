@@ -81,12 +81,16 @@ download_data_release_asset <- function(asset, version, cache_dir, refresh_cache
   dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
   url <- paste0("https://github.com/", taxonAlign_data_release_repo, "/releases/download/", version, "/", asset)
   if (!quiet) message("Downloading ", asset, " (data release ", version, ")...")
+  # into a temporary file first, so a failed download (e.g. `refresh_cache = TRUE` while offline)
+  # never removes or truncates a copy that's already cached
+  partial <- paste0(dest, ".part")
   ok <- tryCatch(
-    utils::download.file(url, dest, mode = "wb", quiet = TRUE) == 0,
+    utils::download.file(url, partial, mode = "wb", quiet = TRUE) == 0,
     error = function(e) FALSE, warning = function(w) FALSE
   )
+  if (ok) ok <- file.rename(partial, dest)
   if (!ok) {
-    unlink(dest)
+    unlink(partial)
     stop(
       "Couldn't download ", asset, " from taxonAlign data release ", version, " (", url, "). ",
       "Check the version exists (see `data_release_versions()`) and that you're online.",
@@ -117,4 +121,28 @@ get_data_release_assets <- function(assets, version, cache_dir, refresh_cache = 
     }
   )
   stats::setNames(unname(paths), assets)
+}
+
+#' Download files from a taxonAlign data release
+#'
+#' Downloads (or finds already cached) any files from a data release -- the ready datasets
+#' [load_taxonomic_resources()] reads, or the verbatim source exports stored alongside them (e.g.
+#' `"nsl_fungi_taxon.parquet"`), which `taxonAlign.dataprep` rebuilds references from. Most users
+#' never need this directly. [data_release_versions()] lists the releases; each release's
+#' `manifest.csv` lists its files.
+#'
+#' @param files Character vector of file names in the release.
+#' @inheritParams load_taxonomic_resources
+#'
+#' @return A named character vector of local file paths, one per file. Downloaded files are cached
+#'  under `<cache_dir>/data_release/<version>/`; if the latest release can't be downloaded, the newest
+#'  release already cached that has every file is used instead (never when `version` is given).
+#'
+#' @export
+download_data_release_files <- function(files,
+                                        version = NULL,
+                                        refresh_cache = FALSE,
+                                        cache_dir = tools::R_user_dir("taxonAlign", "cache"),
+                                        quiet = FALSE) {
+  get_data_release_assets(files, version, cache_dir, refresh_cache, quiet)
 }

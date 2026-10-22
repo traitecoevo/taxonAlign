@@ -19,12 +19,14 @@ example name below is real, drawn from actually running this package against rea
 development.
 
 The package has since been split in two (issue #26): taxonAlign now does the matching and updating,
-and the functions that build a reference from a particular source (`load_AFD()`,
-`generate_GBIF_taxonomic_reference_list()`, ...) live in the companion package
-[taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep). The code below calls them
-from there. The AFD and iNaturalist exports it reads aren't distributed with either package; point the
-paths at your own copies to run it, substituting in the invertebrate database's taxon list with one
-from your project.
+and the functions that build a reference (`generate_GBIF_taxonomic_reference_list()`, `load_NSL()`,
+...) live in the companion package [taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep).
+The AFD export used below, the AFD's own CSV format, has since been superseded by its National Species
+List format, released as `load_taxonomic_resources("NSL_animals")`; the reader for the CSV format,
+`load_AFD()`, now lives only in taxonAlign.dataprep's `AFD-data-processing` vignette, for comparisons
+between the two. The AFD and iNaturalist exports aren't distributed with either package; point the
+paths at your own copies to run the code, substituting in the invertebrate database's taxon list with
+one from your project.
 
 ## Why this package exists
 
@@ -50,12 +52,12 @@ engine handles *every* taxonomic rank present in that reference, reflecting both
 
 ## Building the reference: AFD + iNaturalist
 
-`load_AFD()` reads and reshapes the real, ~117,000-row AFD export into `taxonAlign`'s flat schema.
+`load_AFD()` (see above) reads and reshapes the real, ~117,000-row AFD export into `taxonAlign`'s flat schema.
 
 ```{r}
 library(taxonAlign)
 
-afd <- taxonAlign.dataprep::load_AFD("AFD.csv")
+afd <- load_AFD("AFD.csv")
 nrow(afd)
 #> [1] 310050
 ```
@@ -265,7 +267,46 @@ worldwide version built the same way without the country filter -- confirming th
 dataset built once could serve *any* country's alignment need, with the country filter applied locally
 and cheaply afterward.
 
-The plan is to eventually deliver the gbif taxonomic dataset together with a function that will allow it to be further filtered by taxon group or country. 
+The plan is to eventually deliver the gbif taxonomic dataset together with a function that will allow it to be further filtered by taxon group or country.
+
+### A faster route that turned up afterward
+
+Most of the multi-day fetch above may not need repeating. The obvious shortcut, a ready-made copy of
+the GBIF backbone, was tried first: [taxadb](https://docs.ropensci.org/taxadb/) keeps one, and
+`generate_taxadb_taxonomic_reference_list()` reads it. But in August 2026 taxadb's copy turned out to
+be from December 2022, about four years old, and agreed with the live fetch on only 85% of names --
+not good enough to replace it.
+
+While the live fetch was finishing, taxadb's maintainer uploaded a current (2026) GBIF backbone
+snapshot to source.coop, as a single parquet file, before connecting it to the taxadb package itself
+([ropensci/taxadb#123](https://github.com/ropensci/taxadb/issues/123)). Against the live fetch, it
+agreed on about 99.9% of names. `generate_taxadb_taxonomic_reference_list()`'s `gbif_snapshot_url`
+argument reads that file directly
+([issue #23](https://github.com/traitecoevo/taxonAlign/issues/23)):
+
+```{r}
+# every animal in the 2026 GBIF backbone with an Australian occurrence record
+gbif_au_animals <- taxonAlign.dataprep::generate_taxadb_taxonomic_reference_list(
+  "Animalia", rank = "kingdom", country = "AU",
+  gbif_snapshot_url = "https://data.source.coop/cboettig/taxadb/2026/dwc_gbif_part_0.parquet",
+  facet_limit = 3e5   # the default (1e5) is too small for all Australian animals (~220,000)
+)
+```
+
+By the time the first data release was built (October 2026), this route existed, but the release's
+`GBIF_AU` list was still built from the archived live fetch -- the snapshot wasn't considered.
+**When `GBIF_AU` is next rebuilt, the snapshot should be the first option.** It replaces only the
+slow part, fetching the taxonomy itself; two things stay the same:
+
+- The country filter still comes from GBIF's occurrence records, via GBIF's API, either way (that part
+  is quick).
+- The snapshot has no extinct flag, so extinct taxa still need flagging separately, as for the
+  current release (a `name_lookup(isExtinct = TRUE)` query per family took about five minutes for
+  Australian vertebrates).
+
+The maintainer hasn't yet checked the snapshot against the taxadb package, and it's a single undated
+"2026" file rather than a versioned release, so compare a snapshot-built list against the previous
+release before publishing one.
 
 ## Lessons for whoever reads this next
 
@@ -280,6 +321,9 @@ The plan is to eventually deliver the gbif taxonomic dataset together with a fun
 - **A reference built for one purpose tends to be useful for another.** The GBIF reference built to
   validate this package against a real name list is, unmodified, also a candidate worldwide taxonomic
   resource in its own right.
+- **Revisit a slow, hard-won approach when a faster one appears.** The current GBIF snapshot
+  (above) turned up partway through the project, but nobody went back to it when the first data
+  release was built, so the release still used the old route.
 
 See `CLAUDE.md` for the full technical detail behind every claim in this document, and the closed
 issues on the [GitHub repository](https://github.com/traitecoevo/taxonAlign/issues?q=is%3Aissue) for

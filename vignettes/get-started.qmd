@@ -26,9 +26,9 @@ reference, not just species. A real list of raw names is rarely all species anyw
 identifications only ever make it to genus, family, or a "morphospecies" code -- so every example
 below deliberately mixes ranks, not just species names.
 
-Building a reference from other sources -- a live GBIF fetch, a [taxadb](https://docs.ropensci.org/taxadb/)
-snapshot, the Australian Plant Census, the Australian Faunal Directory's own export, or your own
-table with different column names -- is the job of the companion package
+Building a reference from other sources -- the World Checklist of Vascular Plants, the Catalogue of
+Life, a live GBIF fetch, a [taxadb](https://docs.ropensci.org/taxadb/) snapshot, the Australian Plant
+Census, or your own table with different column names -- is the job of the companion package
 [taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep), which also builds the
 released lists. You only need it if you're building a reference yourself.
 
@@ -42,8 +42,8 @@ library(dplyr)
 
 ## Choosing a taxonomic reference
 
-Every matching/aligning function needs a taxonomic reference to match against: a released list, your
-own table, or several combined.
+Every matching/aligning function needs a taxonomic reference to match against: a released list, a
+global taxonomic resource, your own table, or several combined.
 
 ### A released reference list
 
@@ -110,6 +110,60 @@ computer, without going online at all. Without `version`, taxonAlign checks GitH
 (with a short time limit) for the latest release; if it can't (no internet, a slow connection), it
 uses the most recent release already on your computer. Releases are only published when a source
 actually changes, so an older release isn't necessarily out of date.
+
+### Download global taxonomic resources
+
+For taxa the released lists don't cover, or a reference that covers the whole world, the companion
+package [taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep) downloads the major
+global taxonomic resources and reshapes them into taxonAlign's format. Install it with
+`pak::pak("traitecoevo/taxonalign-dataprep")`.
+
+| Function | Reference | Best for |
+|---|---|---|
+| `load_CoL()` | Catalogue of Life, from [ChecklistBank](https://www.checklistbank.org) | A reference to every taxon in every kingdom (~5.5 million names) |
+| `load_WCVP()` | World Checklist of Vascular Plants (Royal Botanic Gardens, Kew) | Every vascular plant name worldwide (~1.45 million) |
+| `generate_taxadb_taxonomic_reference_list()` | GBIF backbone taxonomy (or ITIS, NCBI and others), from [taxadb](https://docs.ropensci.org/taxadb/)'s pre-built snapshot | A large group -- a class or a phylum -- quickly |
+| `generate_GBIF_taxonomic_reference_list()` | GBIF backbone taxonomy, fetched live from GBIF | A small group -- a genus or family -- always current |
+| `filter_to_country()` | Any of the above | Keeping only the taxa GBIF has occurrence records of in one or more countries |
+
+Each returns one table in taxonAlign's format, which goes straight into the matching functions:
+
+```{r}
+#| eval: false
+library(taxonAlign.dataprep)
+
+# every vascular plant name worldwide, then only those GBIF has Australian records of
+wcvp_au <- load_WCVP() |> filter_to_country("AU")
+create_taxonomic_update_lookup(my_plant_names, wcvp_au)
+
+# the Catalogue of Life, pinned to one release (COL26.10) so the alignment can be repeated
+col <- load_CoL(316595)
+
+# every insect in GBIF's backbone taxonomy with an Australian occurrence record
+insecta_au <- generate_taxadb_taxonomic_reference_list("Insecta", rank = "class", country = "AU")
+
+# one genus, live from GBIF
+aporocera <- generate_GBIF_taxonomic_reference_list("Aporocera", country = "AU")
+```
+
+A few things worth knowing:
+
+- **The WCVP and Catalogue of Life are large downloads** (~90MB and ~170MB). Each is downloaded once
+  and cached, so later calls load from your computer, offline. Name a version (`load_WCVP(16)`,
+  `load_CoL(316595)`) to make an alignment repeatable.
+- **A worldwide list matches more names than you may want**: a misspelt Australian plant name can
+  fuzzy-match a species that only grows in South America. `filter_to_country()` avoids this. It keeps
+  each taxon's accepted name and all its synonyms, even where GBIF and the reference disagree on which
+  name is accepted, so old names in your list still update.
+- **taxadb's own GBIF snapshot can be several years old.** Pass `gbif_snapshot_url` to query a current
+  GBIF snapshot instead. taxadb is only needed for this one function: install it with
+  `install.packages("taxadb")`.
+- **For Australian vascular plants**, `load_APC()` loads the Australian Plant Census, the National
+  Species List for vascular plants.
+
+taxonAlign.dataprep's own
+[getting-started vignette](https://github.com/traitecoevo/taxonalign-dataprep/blob/main/vignettes/get-started.qmd)
+covers each of these in detail.
 
 ### Your own reference table
 

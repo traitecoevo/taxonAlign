@@ -138,3 +138,28 @@ test_that("if the latest release can't be downloaded, the newest complete local 
   # an explicitly requested release is never swapped for another
   expect_error(get_data_release_assets("gbif_au_animals.parquet", "2026-10-08", cache), "download failed")
 })
+
+test_that("download_data_release_files returns cached release files without touching the network", {
+  cache <- withr::local_tempdir()
+  dir.create(file.path(cache, "data_release", "2026-10-08"), recursive = TRUE)
+  writeLines("x", file.path(cache, "data_release", "2026-10-08", "nsl_fungi_taxon.parquet"))
+  local_mocked_bindings(curl_fetch_memory = function(...) stop("network used"), .package = "curl")
+  expect_equal(
+    download_data_release_files("nsl_fungi_taxon.parquet", "2026-10-08", cache_dir = cache),
+    c(nsl_fungi_taxon.parquet = file.path(cache, "data_release", "2026-10-08", "nsl_fungi_taxon.parquet"))
+  )
+})
+
+test_that("a failed re-download leaves the cached copy as it was", {
+  cache <- withr::local_tempdir()
+  dest <- file.path(cache, "data_release", "2026-10-08", "nsl_fungi_taxon.parquet")
+  dir.create(dirname(dest), recursive = TRUE)
+  writeLines("cached", dest)
+  local_mocked_bindings(download.file = function(url, destfile, ...) {
+    writeLines("", destfile)
+    stop("Could not resolve host")
+  }, .package = "utils")
+  expect_error(download_data_release_asset("nsl_fungi_taxon.parquet", "2026-10-08", cache, refresh_cache = TRUE, quiet = TRUE), "Couldn't download")
+  expect_equal(readLines(dest), "cached")
+  expect_false(file.exists(paste0(dest, ".part")))
+})

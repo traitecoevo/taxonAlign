@@ -37,8 +37,8 @@ hyphen).
 |---|---|
 | `align_taxa()`, `update_taxa()`, `create_taxonomic_update_lookup()`, `match_taxa()` | `generate_GBIF_taxonomic_reference_list()`, `generate_taxadb_taxonomic_reference_list()` |
 | `prepare_taxonomic_resources()` (non-interactive) | `build_taxonomic_reference()` (was `prepare_taxonomic_resources(interactive = TRUE)`) |
-| `load_taxonomic_resources(datasets, version)` -- *released* data only | `load_AFD(path)`, `load_APC()` (were `load_taxonomic_resources("AFD"/"APC")`) |
-| `data_release_versions()`, `data_release_datasets()` | `load_NSL(taxon_group, path)` (was `load_NSL_resources()`) |
+| `load_taxonomic_resources(datasets, version)` -- *released* data only | `load_APC()` (was `load_taxonomic_resources("APC")`) |
+| `data_release_versions()`, `data_release_datasets()`, `download_data_release_files()` | `load_NSL(taxon_group, version)` (was `load_NSL_resources()`; reads the release's verbatim exports by default, `path` optional) |
 | `taxonomic_reference_schema()`, `check_taxonomic_reference()` | `data-raw/build_data_release.R`; the GitHub Releases themselves |
 
 Decisions made with the user while splitting (don't re-litigate):
@@ -54,6 +54,16 @@ Decisions made with the user while splitting (don't re-litigate):
   is `"traitecoevo/taxonalign-dataprep"`). The old `2026-10-07` draft on this repo's own Releases has the
   old asset layout (no ready files, `gbif_au_animals.parquet`, a manifest without `dataset`/`type`) and is
   superseded; `data_release_datasets()` errors clearly on a manifest that old.
+- **`load_AFD()` was removed** (user, 2026-10-22: "as long as we can load the NSL version through
+  `load_NSL` ... remove load_AFD"): the AFD-format CSV isn't released, so a loader for it couldn't build
+  off a release, and the AFD is now loaded via `load_NSL("animals")` / `"NSL_animals"`. Its code is kept,
+  for continuing AFD-format vs NSL-format comparisons for the curators, as the appendix of dataprep's
+  `vignettes/AFD-data-processing.qmd` (user: "it will just live in a vignette").
+- **Data-side loaders build off the releases, no path needed** (user: "these should build off the
+  releases just like load_taxonomic_resources would ... and does in APCalign"): dataprep's `load_NSL()`
+  downloads the release's verbatim `nsl_<group>_{taxon,names}.parquet` by default (`version =`), via
+  taxonAlign's exported `download_data_release_files()` (exported for exactly this, rather than
+  duplicating the download/offline-fallback logic in dataprep).
 - **Dataset-specific names** for the data-side functions (Will's suggestion), and
   `load_taxonomic_resources()` reused here for released data, as an homage to APCalign's own.
 - **The format contract** is `taxonomic_reference_schema()` (required columns, Darwin Core names,
@@ -67,8 +77,8 @@ Decisions made with the user while splitting (don't re-litigate):
   directly; a prepared list is never mistaken for one, since its `species` element is itself a list.
 - Both packages default to the same cache dir, `tools::R_user_dir("taxonAlign", "cache")` -- kept so the
   large, resumable GBIF fetch cache built up there isn't orphaned.
-- dataprep vendors `extract_genus()` and `strip_subgenus_from_name()` (`R/utils.R`) -- keep them
-  identical to this repo's `R/match_taxa_helpers.R` versions.
+- dataprep vendors `extract_genus()` (`R/utils.R`) -- keep it identical to this repo's
+  `R/match_taxa_helpers.R` version.
 - `inst/extdata/AFD.csv` was untracked (`git rm --cached`; still on disk, `inst/extdata/` now gitignored
   and build-ignored) -- nothing here reads it any more. The raw exports under `data/AFD_*` and
   `inst/extdata/Australian_*` also stay on disk, untracked; they're dataprep's inputs.
@@ -140,7 +150,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-384 expectations, all passing as of the last `devtools::test()` run (2026-10-22, just after the split), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (218 expectations) holds the tests that moved with the builders.
+388 expectations, all passing as of the last `devtools::test()` run (2026-10-22, just after the split), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (233 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -163,8 +173,8 @@ Sections are numbered as they were before the split, so the many cross-reference
 up: #2 (matching engine) and #5 (released data) are here; #1 (live GBIF builder), #1b (taxadb
 builder), #3 (AFD-format/APC loaders) and #4 (NSL loader) are in taxonalign-dataprep's CLAUDE.md,
 with the old function names mapped as in the table above (`load_taxonomic_resources("AFD")` ->
-`load_AFD()`, `load_NSL_resources()` -> `load_NSL()`, `load_GBIF_AU_resources()` ->
-`load_taxonomic_resources("GBIF_AU")`).
+`load_AFD()` (since removed; its code is in dataprep's AFD-data-processing vignette),
+`load_NSL_resources()` -> `load_NSL()`, `load_GBIF_AU_resources()` -> `load_taxonomic_resources("GBIF_AU")`).
 
 ### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/update_taxa.R`, `R/create_taxonomic_update_lookup.R`, `R/match_taxa_helpers.R` (active; everything but `match_taxa()` and the helpers is exported)
 
@@ -850,6 +860,9 @@ warning** (user: it implies laziness, and the GBIF backbone often doesn't change
   timeout, any failure -> newest local release; `get_data_release_assets()` falls back to the newest
   complete local release if the latest can't be downloaded (never for an explicitly named version).
   Release tags are dates, never numbers. Files cache under `<cache_dir>/data_release/<version>/`.
+  A download goes to `<file>.part` first and is renamed only on success, so a failed re-download
+  (`refresh_cache = TRUE` offline) never deletes or truncates a cached copy -- found when a failed
+  re-download wrote *through* a symlinked cache entry and emptied the file it pointed at.
 - `data_release_versions()` lists published date-tagged releases (drafts excluded, pre-releases
   included) -- so a *draft* release is only usable by naming `version` after downloading its files into
   the cache by hand (`gh release download <tag> --repo traitecoevo/taxonalign-dataprep -D
