@@ -24,12 +24,11 @@ align_taxa(
 \arguments{
 \item{original_name}{Character vector of raw taxon names to align.}
 
-\item{resources}{The nested list of reference tibbles produced by
-\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}. A plain (already fully-formatted) taxonomic reference tibble is
-also accepted directly -- it's run through \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} automatically -- which
-saves the extra call for a single reference table that doesn't need any interactive column
-mapping; call \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} yourself first if it does (e.g. \code{interactive = TRUE})
-or if you're combining more than one reference table.}
+\item{resources}{The taxonomic reference to align against: the nested list produced by
+\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}, or a reference table (or a list of them, such as
+\code{\link[=load_taxonomic_resources]{load_taxonomic_resources()}}'s output), which is run through \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}
+automatically. Preparing it yourself first saves repeating that work when aligning several name
+lists against the same reference.}
 
 \item{identifier}{A dataset, location or other identifier associated with each name in
 \code{original_name} -- used only to disambiguate \verb{genus sp.}-style aligned names (see

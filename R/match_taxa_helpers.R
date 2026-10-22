@@ -270,19 +270,22 @@ validate_resources_shape <- function(resources) {
     stop(
       "`resources` doesn't look like the output of `prepare_taxonomic_resources()` (expected a ",
       "nested list with a `resources$species$accepted` element; got ", class(resources)[1], "). Did ",
-      "you pass a raw taxonomic reference table (e.g. from `generate_GBIF_taxonomic_reference_list()`) ",
-      "directly, instead of running it through `prepare_taxonomic_resources()` first?",
+      "you mean to pass a taxonomic reference table (or a list of them, e.g. from ",
+      "`load_taxonomic_resources()`)? Those are prepared automatically.",
       call. = FALSE
     )
   }
 }
 
 # `align_taxa()`/`update_taxa()`/`create_taxonomic_update_lookup()` all need `resources` in the
-# nested-by-rank shape `prepare_taxonomic_resources()` builds. A plain data frame is run through
-# `prepare_taxonomic_resources()` automatically (non-interactively); an already-nested list is only
-# shape-validated, not re-split.
+# nested-by-rank shape `prepare_taxonomic_resources()` builds. A plain data frame, or a list of them
+# (e.g. load_taxonomic_resources()'s output), is run through `prepare_taxonomic_resources()`
+# automatically; an already-nested list is only shape-validated, not re-split. (A prepared list is
+# never mistaken for a list of tables: its `species` element is itself a list.)
 ensure_prepared_resources <- function(resources) {
-  if (is.data.frame(resources)) {
+  is_table_list <- is.list(resources) && length(resources) > 0 &&
+    all(vapply(resources, is.data.frame, logical(1)))
+  if (is.data.frame(resources) || is_table_list) {
     return(prepare_taxonomic_resources(resources))
   }
   validate_resources_shape(resources)

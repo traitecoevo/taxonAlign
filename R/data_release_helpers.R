@@ -1,21 +1,21 @@
-# Versioned data releases (issue #24). Reference data that taxonAlign doesn't fetch live -- the
-# National Species List exports and the GBIF Australia (extant) list -- is published as files attached
-# to dated GitHub Releases on this repo, so a result can be reproduced by naming the release it used.
-# The mechanism follows APCalign's own (`traitecoevo/APCalign`): release tags are bare dates
+# Versioned data releases (issue #24). Reference data -- the National Species List exports and the
+# GBIF Australia list -- is published as files attached to dated GitHub Releases, so a result can be
+# reproduced by naming the release it used. Releases are built and published by the companion
+# taxonAlign.dataprep package (issue #26), on its own repo; taxonAlign only downloads them. The
+# mechanism follows APCalign's own (`traitecoevo/APCalign`): release tags are bare dates
 # ("2026-10-15"), assets are downloaded from the plain public release URL, cached locally, and the
 # newest locally cached release is used when there's no internet connection.
 
-taxonAlign_data_release_repo <- "traitecoevo/taxonAlign"
+taxonAlign_data_release_repo <- "traitecoevo/taxonalign-dataprep"
 
 # session cache for the release list, so the GitHub API isn't queried on every load
 .taxonAlign_release_cache <- new.env(parent = emptyenv())
 
 #' List the available taxonAlign data releases
 #'
-#' taxonAlign's reference data (the National Species List exports read by [load_NSL_resources()] and
-#' the GBIF Australia list read by [load_GBIF_AU_resources()]) is published as dated releases, so
-#' that an alignment can be reproduced exactly by naming the release it used. This lists the
-#' releases available online, most recent first.
+#' The reference data [load_taxonomic_resources()] loads is published as dated releases, so that an
+#' alignment can be reproduced exactly by naming the release it used. This lists the releases
+#' available online, most recent first; [data_release_datasets()] lists what's in one.
 #'
 #' @param refresh Logical; if `TRUE`, query GitHub again rather than reusing the list already
 #'  fetched in this session. Defaults to `FALSE`.
@@ -66,7 +66,7 @@ resolve_data_release_version <- function(version, cache_dir, quiet = FALSE) {
   }
   stop(
     "Couldn't reach GitHub to find the latest taxonAlign data release, and no release is cached ",
-    "locally. Connect to the internet, or pass `path` to load your own copy of the files.",
+    "locally. Connect to the internet, or pass `path` to load your own copy of the release files.",
     call. = FALSE
   )
 }

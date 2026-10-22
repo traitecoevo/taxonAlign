@@ -1,12 +1,20 @@
-test_that("prepare_taxonomic_resources errors clearly when required columns are missing", {
+test_that("prepare_taxonomic_resources errors clearly when required columns are missing, naming the table", {
   expect_error(
     prepare_taxonomic_resources(dplyr::tibble(canonical_name = "Boronia serrulata")),
-    "missing required column"
+    "table 1.*missing required column"
   )
 })
 
+test_that("prepare_taxonomic_resources reads a CSV file path", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  readr::write_csv(sample_taxonomic_resources(), path)
+
+  resources <- prepare_taxonomic_resources(path)
+  expect_true("Boronia serrulata" %in% resources$species$accepted$canonical_name)
+})
+
 test_that("prepare_taxonomic_resources gives a clear, actionable error when taxonomic_resources is missing", {
-  expect_error(prepare_taxonomic_resources(), "generate_GBIF_taxonomic_reference_list")
+  expect_error(prepare_taxonomic_resources(), "load_taxonomic_resources")
 })
 
 test_that("prepare_taxonomic_resources combines multiple tables whose taxon_ID columns have different types", {

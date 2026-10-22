@@ -69,7 +69,7 @@ test_that("create_taxonomic_update_lookup forwards include_bracketed_info to ali
 })
 
 test_that("create_taxonomic_update_lookup gives a clear, actionable error when resources is missing", {
-  expect_error(create_taxonomic_update_lookup("Boronia serrulata"), "prepare_taxonomic_resources")
+  expect_error(create_taxonomic_update_lookup("Boronia serrulata"), "load_taxonomic_resources")
 })
 
 test_that("create_taxonomic_update_lookup accepts a flat, already-formatted resources tibble directly", {

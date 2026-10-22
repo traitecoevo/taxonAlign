@@ -579,7 +579,7 @@ match_taxa <- function(
   # handle via the zoological/AFD-style "Genus (Subgenus)" bracket. Exactly three whitespace-delimited
   # tokens, middle one "subg."/"subg" (case-insensitive), nothing beyond the subgenus name itself.
   # Built around the *same* `resources$subgenus_v2$genus_and_subgenus` lookup match_02y already uses --
-  # `load_NSL_resources()` stores a *bare* subgenus name in `canonical_name` (via
+  # taxonAlign.dataprep's `load_NSL()` stores a *bare* subgenus name in `canonical_name` (via
   # `strip_NSL_subgenus_marker()`) precisely so a "Genus subg. Name" resource row slots into that
   # existing bracket-equivalence machinery unchanged. Without this block, such a query falls through to
   # the generic higher-rank loop (match_12b), which only ever compares `word_one_stripped` (just

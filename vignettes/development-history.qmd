@@ -18,8 +18,13 @@ This document is not a tutorial -- [`get-started.qmd`](get-started.qmd) is that.
 example name below is real, drawn from actually running this package against real data during its
 development.
 
-The AFD, iNaturalist and GBIF reference exports this document uses are bundled with the package
-(`inst/extdata/`), so most of the code below can genuinely be run, substituting in the invertebrate database's taxon list with one from your project.
+The package has since been split in two (issue #26): taxonAlign now does the matching and updating,
+and the functions that build a reference from a particular source (`load_AFD()`,
+`generate_GBIF_taxonomic_reference_list()`, ...) live in the companion package
+[taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep). The code below calls them
+from there. The AFD and iNaturalist exports it reads aren't distributed with either package; point the
+paths at your own copies to run it, substituting in the invertebrate database's taxon list with one
+from your project.
 
 ## Why this package exists
 
@@ -45,13 +50,12 @@ engine handles *every* taxonomic rank present in that reference, reflecting both
 
 ## Building the reference: AFD + iNaturalist
 
-`load_taxonomic_resources("AFD")` reads and reshapes the real, ~117,000-row AFD export into
-`taxonAlign`'s flat schema.
+`load_AFD()` reads and reshapes the real, ~117,000-row AFD export into `taxonAlign`'s flat schema.
 
 ```{r}
 library(taxonAlign)
 
-afd <- load_taxonomic_resources("AFD")$AFD
+afd <- taxonAlign.dataprep::load_AFD("AFD.csv")
 nrow(afd)
 #> [1] 310050
 ```
@@ -64,7 +68,7 @@ AFD and APC, iNaturalist has no single canonical export shape worth building a p
 around), so this reshaping step is written out directly:
 
 ```{r}
-inat_raw <- readr::read_csv(system.file("extdata", "iNat_inverts_in_Australia.csv", package = "taxonAlign"))
+inat_raw <- readr::read_csv("iNat_inverts_in_Australia.csv")
 
 inat <- inat_raw |>
   dplyr::transmute(
@@ -197,7 +201,7 @@ aligned a second time, this time against AFD combined with a GBIF-backbone-deriv
 invertebrates, rather than reference lists from AFD + iNaturalist:
 
 ```{r}
-gbif_au <- readRDS(system.file("extdata", "gbif_au_invertebrates.rds", package = "taxonAlign"))
+gbif_au <- readRDS("gbif_au_invertebrates.rds")
 resources_gbif <- prepare_taxonomic_resources(list(AFD = afd, GBIF = gbif_au))
 
 updated_gbif <- create_taxonomic_update_lookup(
@@ -236,12 +240,12 @@ contain.
 
 ## The GBIF chapter
 
-`generate_GBIF_taxonomic_reference_list()` is the one piece of the package that doesn't need a
+`generate_GBIF_taxonomic_reference_list()` (now in taxonAlign.dataprep) is the one reference builder that doesn't need a
 pre-existing export at all -- it builds a reference directly from the live GBIF backbone taxonomy for
 any taxon:
 
 ```{r}
-gbif_reference <- generate_GBIF_taxonomic_reference_list("Vanessa cardui")
+gbif_reference <- taxonAlign.dataprep::generate_GBIF_taxonomic_reference_list("Vanessa cardui")
 ```
 
 Building a reference for *every* Australian invertebrate -- the scale a full trait database actually

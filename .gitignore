@@ -2,3 +2,6 @@
 inst/doc
 .DS_Store
 ignore/
+# raw reference exports -- read by taxonAlign.dataprep's loaders, not by this package (issue #26)
+inst/extdata/
+data/AFD_*/

@@ -15,8 +15,7 @@ A character vector of release versions (dates, \code{"YYYY-MM-DD"}), most recent
 if GitHub can't be reached.
 }
 \description{
-taxonAlign's reference data (the National Species List exports read by \code{\link[=load_NSL_resources]{load_NSL_resources()}} and
-the GBIF Australia list read by \code{\link[=load_GBIF_AU_resources]{load_GBIF_AU_resources()}}) is published as dated releases, so
-that an alignment can be reproduced exactly by naming the release it used. This lists the
-releases available online, most recent first.
+The reference data \code{\link[=load_taxonomic_resources]{load_taxonomic_resources()}} loads is published as dated releases, so that an
+alignment can be reproduced exactly by naming the release it used. This lists the releases
+available online, most recent first; \code{\link[=data_release_datasets]{data_release_datasets()}} lists what's in one.
 }

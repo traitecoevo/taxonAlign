@@ -5,8 +5,7 @@
 #'
 #' @param original_name Character vector of raw taxon names to align and update.
 #' @param resources The nested list of reference tibbles produced by
-#'  [prepare_taxonomic_resources()]. A plain (already fully-formatted) taxonomic reference tibble is
-#'  also accepted directly -- see `align_taxa()`'s `resources` documentation.
+#'  [prepare_taxonomic_resources()], or a reference table (or list of them) -- see [align_taxa()].
 #' @param identifier,fuzzy_abs_dist,fuzzy_rel_dist,fuzzy_matches,imprecise_fuzzy_matches,taxon_ranks_to_check,hybrids,intergrades_affinis,consider_english_name_endings,include_bracketed_info,progress
 #'  Forwarded to [align_taxa()]; see its documentation.
 #' @param taxonomic_splits Passed to [update_taxa()]: how to report a name that leads to more than one
@@ -42,9 +41,8 @@ create_taxonomic_update_lookup <- function(original_name,
 
   if (is.null(resources)) {
     stop(
-      "`resources` is required. Build one with `prepare_taxonomic_resources()`, using your own ",
-      "combined taxonomic reference table or one produced by `generate_GBIF_taxonomic_reference_list()`. ",
-      "See `?prepare_taxonomic_resources`.",
+      "`resources` is required: a released reference from `load_taxonomic_resources()`, or your own ",
+      "reference table (see `?taxonomic_reference_schema`).",
       call. = FALSE
     )
   }

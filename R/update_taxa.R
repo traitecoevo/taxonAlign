@@ -9,9 +9,8 @@
 #'  `accepted_name_usage_ID` columns (both `align_taxa()`'s default, `full = FALSE`, output and its
 #'  `full = TRUE` output include these).
 #' @param resources The nested list of reference tibbles produced by
-#'  [prepare_taxonomic_resources()] (the same one passed to `align_taxa()`). A plain (already
-#'  fully-formatted) taxonomic reference tibble is also accepted directly -- see `align_taxa()`'s
-#'  `resources` documentation.
+#'  [prepare_taxonomic_resources()] (the same one passed to `align_taxa()`), or a reference table (or
+#'  list of them) -- see [align_taxa()].
 #'
 #' @param taxonomic_splits How to report a name that leads to more than one accepted name:
 #'  `"most_likely_species"` (the default) suggests one and lists the others in brackets;
@@ -62,9 +61,8 @@ update_taxa <- function(aligned_data, resources = NULL,
 
   if (is.null(resources)) {
     stop(
-      "`resources` is required. Build one with `prepare_taxonomic_resources()`, using your own ",
-      "combined taxonomic reference table or one produced by `generate_GBIF_taxonomic_reference_list()`. ",
-      "See `?prepare_taxonomic_resources`.",
+      "`resources` is required: a released reference from `load_taxonomic_resources()`, or your own ",
+      "reference table (see `?taxonomic_reference_schema`).",
       call. = FALSE
     )
   }
@@ -91,7 +89,7 @@ update_taxa <- function(aligned_data, resources = NULL,
   # `taxonAlign_taxon_rank_specificity` in `prepare_taxonomic_resources.R`, which is what orders
   # `resources` itself this way): `match()` below is first-hit, so if `taxon_ID` were ever to repeat
   # across ranks (as it did before AFD's higher-rank `taxon_ID` fallback was namespaced by rank -- see
-  # `load_taxonomic_resources.R`), the more specific, more informative rank wins the tie rather than
+  # taxonAlign.dataprep's `load_AFD()`), the more specific, more informative rank wins the tie rather than
   # whichever rank happened to bind first.
   # `matching_taxa` keeps the subgenus-free names matching used (what the split lookup below must
   # compare); `all_taxa` reports accepted names as their reference writes them (with subgenus;

@@ -13,17 +13,11 @@ execute:
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
-`taxonAlign` helps with two related jobs:
-
-1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference tables --
-   the Australian National Species List lists (animals, algae, bryophytes, fungi, lichens) or a GBIF
-   list for Australian animals, downloaded from a dated taxonAlign data release; your own data; a list
-   built live from the GBIF backbone taxonomy; a cached snapshot from
-   [taxadb](https://docs.ropensci.org/taxadb/) (GBIF, ITIS, and others); the Australian Plant Census
-   (APC); or any mix of these.
-2. **Align and update a list of raw taxon names** against that reference -- matching misspellings,
-   synonyms, and names only identifiable to a higher rank (`genus sp.`), then resolving each match
-   forward to its current accepted name.
+`taxonAlign` aligns a list of raw taxon names against a taxonomic reference -- matching
+misspellings, synonyms, and names only identifiable to a higher rank (`genus sp.`) -- and then
+updates each match to its current accepted name. The reference can be one of the dated reference
+lists taxonAlign publishes (the Australian National Species List lists, and GBIF's Australian
+animals), your own table, or any mix of these.
 
 It's inspired by [APCalign](https://traitecoevo.github.io/APCalign/)'s approach to aligning taxon
 names to the Australian Plant Census, generalised so the reference doesn't have to be APC/APNI and
@@ -31,6 +25,12 @@ the taxa don't have to be plants -- every function here works for any taxonomic 
 reference, not just species. A real list of raw names is rarely all species anyway -- some
 identifications only ever make it to genus, family, or a "morphospecies" code -- so every example
 below deliberately mixes ranks, not just species names.
+
+Building a reference from other sources -- a live GBIF fetch, a [taxadb](https://docs.ropensci.org/taxadb/)
+snapshot, the Australian Plant Census, the Australian Faunal Directory's own export, or your own
+table with different column names -- is the job of the companion package
+[taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep), which also builds the
+released lists. You only need it if you're building a reference yourself.
 
 This vignette walks through every exported function, in the order you'd typically use them, then
 puts them together into the workflow you'd actually run on a real list of names.
@@ -40,65 +40,69 @@ library(taxonAlign)
 library(dplyr)
 ```
 
-## Building a taxonomic reference
+## Choosing a taxonomic reference
 
-Every matching/aligning function needs a `resources` object, built by `prepare_taxonomic_resources()`
-from one or more taxonomic reference tables. There are several ways to get a reference table in the
-first place.
+Every matching/aligning function needs a taxonomic reference to match against: a released list, your
+own table, or several combined.
 
-### From a taxonAlign data release (Australian lists)
+### A released reference list
 
-For Australian taxa, the simplest starting point is one of the reference lists published as
-taxonAlign **data releases**: dated, fixed copies of each list, so that an alignment can be repeated
-exactly later by naming the release it used. Each release contains:
+The simplest starting point is one of the reference lists published as taxonAlign **data
+releases**: dated, fixed copies of each list, so that an alignment can be repeated exactly later by
+naming the release it used. The first release contains:
 
-| Reference | Function | Source |
+| Dataset | Reference | Source |
 |---|---|---|
-| Animals (Australian Faunal Directory) | `load_NSL_resources("animals")` | The AFD's National Species List (NSL) export |
-| Algae | `load_NSL_resources("algae")` | NSL export (AAL taxa, AANI names) |
-| Bryophytes | `load_NSL_resources("bryophytes")` | NSL export (CAB taxa, ABNI names) |
-| Fungi | `load_NSL_resources("fungi")` | NSL export (AFL taxa, AFNI names) |
-| Lichens | `load_NSL_resources("lichens")` | NSL export (ALC taxa, ALNI names) |
-| Animals recorded in Australia (GBIF) | `load_GBIF_AU_resources()` | GBIF backbone taxonomy: taxa with Australian occurrence records, plus their synonyms |
+| `"NSL_animals"` | Animals (Australian Faunal Directory) | The AFD's National Species List (NSL) export |
+| `"NSL_algae"` | Algae | NSL export (AAL taxa, AANI names) |
+| `"NSL_bryophytes"` | Bryophytes | NSL export (CAB taxa, ABNI names) |
+| `"NSL_fungi"` | Fungi | NSL export (AFL taxa, AFNI names) |
+| `"NSL_lichens"` | Lichens | NSL export (ALC taxa, ALNI names) |
+| `"GBIF_AU"` | Animals recorded in Australia (GBIF) | GBIF backbone taxonomy: taxa with Australian occurrence records, plus their synonyms |
 
-`data_release_versions()` lists the releases available, most recent first:
+`data_release_versions()` lists the releases available, most recent first, and
+`data_release_datasets()` lists what's in one, with each dataset's source, retrieval date, licence and
+citation:
 
 ```{r}
 #| eval: false
 data_release_versions()
 #> [1] "2026-10-07"
+data_release_datasets("2026-10-07")
 ```
 
-Each list is downloaded the first time you use it and stored on your computer (in
-`tools::R_user_dir("taxonAlign", "cache")`), so after that it loads without downloading again, and
-works offline:
+`load_taxonomic_resources()` loads one or more datasets. Each is downloaded the first time you use it
+and stored on your computer (in `tools::R_user_dir("taxonAlign", "cache")`), so after that it loads
+without downloading again, and works offline. The result can go straight into any of the matching
+functions:
 
 ```{r}
 #| eval: false
-animals <- load_NSL_resources("animals")
-fungi   <- load_NSL_resources("fungi")
-gbif_au <- load_GBIF_AU_resources()
-
-resources <- prepare_taxonomic_resources(animals)
+animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"))
+create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), animals)
 ```
 
-GBIF's occurrence records include fossil specimens, so `load_GBIF_AU_resources()` leaves out taxa GBIF
-flags as extinct, which would otherwise produce spurious matches. GBIF's flag doesn't distinguish
-fossils from recent extinctions, though (the thylacine is flagged extinct too), so
-`include_extinct = TRUE` returns everything, with an `extinct` column showing which are which.
+When you load more than one dataset, the order you name them in is their priority: a name found in
+`"NSL_animals"` is matched there, and `"GBIF_AU"` is only used for names the AFD doesn't have.
+
+GBIF's occurrence records include fossil specimens, so taxa GBIF flags as extinct are left out by
+default, as they would otherwise produce spurious matches. GBIF's flag doesn't distinguish fossils
+from recent extinctions, though (the thylacine is flagged extinct too), so `include_extinct = TRUE`
+keeps everything, with an `extinct` column showing which are which.
 
 Each NSL list combines the group's two NSL exports: the *taxon* file (accepted names and their
 synonyms, with links between them) and the *names* file (every name recorded for the group). The taxon
 file always takes priority; names found only in the names file are added so they can still be
 recognised, but they're never "updated" to anything, since the names file doesn't link them to an
-accepted name.
+accepted name. Each release also holds the NSL exports themselves, unchanged, so every list can be
+traced back to exactly what was supplied.
 
 **Naming the release.** Without `version`, the latest release is used. To make an analysis
 reproducible, name the release instead -- the same release always gives the same result:
 
 ```{r}
 #| eval: false
-animals <- load_NSL_resources("animals", version = "2026-10-07")
+animals <- load_taxonomic_resources("NSL_animals", version = "2026-10-07")
 ```
 
 **Working offline.** A named release that has already been downloaded is loaded straight from your
@@ -107,21 +111,17 @@ computer, without going online at all. Without `version`, taxonAlign checks GitH
 uses the most recent release already on your computer. Releases are only published when a source
 actually changes, so an older release isn't necessarily out of date.
 
-If you have your own copy of an NSL export (for example, downloaded from the group's NSL export page,
-such as `https://fungi.biodiversity.org.au/nsl/services/export/index`), point `path` at the folder
-holding its taxon and names files instead:
-
-```{r}
-#| eval: false
-fungi_now <- load_NSL_resources("fungi", path = "my_downloads/fungi_export")
-```
-
-### From your own data
+### Your own reference table
 
 If you already have a taxonomic reference table -- your own species list, an export from a museum
-database, whatever -- `prepare_taxonomic_resources()` will take it as long as it has (or can be mapped
-to) eight required columns: `canonical_name`, `scientific_name`, `taxon_rank`, `taxonomic_status`,
-`taxonomic_dataset`, `genus`, `taxon_ID` and `accepted_name_usage_ID`.
+database, whatever -- taxonAlign will take it as long as it's in taxonAlign's reference format: eight
+required columns, `canonical_name`, `scientific_name`, `taxon_rank`, `taxonomic_status`,
+`taxonomic_dataset`, `genus`, `taxon_ID` and `accepted_name_usage_ID`. `taxonomic_reference_schema()`
+describes each:
+
+```{r}
+taxonomic_reference_schema() |> filter(required) |> select(column, description)
+```
 
 Here's a small, hand-built example spanning several ranks: two genera, a family, a subgenus, a species
 with two synonyms (one under a different genus entirely -- a real, common pattern when a species is
@@ -141,13 +141,24 @@ my_reference <- tibble::tribble(
   "Xylotoles costatus mixtus Someone, 1920",  "Xylotoles costatus mixtus", "subspecies", "accepted",       "MY_DATA",          "Xylotoles",  "sp5",    "sp5"
 )
 
+check_taxonomic_reference(my_reference)
+```
+
+`check_taxonomic_reference()` confirms the table is in the format (it errors, listing every problem,
+if it isn't) -- worth running on any reference you're going to share.
+
+You can pass a table like this straight to the matching functions, but for repeated use it's worth
+preparing it once with `prepare_taxonomic_resources()`, which the matching functions otherwise do
+themselves on every call:
+
+```{r}
 resources <- prepare_taxonomic_resources(my_reference)
 names(resources)
 ```
 
 `prepare_taxonomic_resources()` splits the combined table into a nested list -- one element per
 taxonomic rank present (here: `species`, `genus`, `subgenus`, `family`), with `species` further split
-into `accepted`/`synonym` sub-tables. This is the shape every other function in the package expects.
+into `accepted`/`synonym` sub-tables. This is the shape every other function in the package works on.
 
 Note that `my_reference` above gives an explicit `"genus"`-rank row for both `"Aporocera"` and
 `"Xylotoles"` -- but you don't actually have to. Naming a genus in the `genus` column of a species row
@@ -158,117 +169,22 @@ have an explicit row of its own, so `"Xylotoles sp. 1"` would still align to gen
 (`taxonomic_dataset_taxon_rank_canonical_name`, e.g. `"MY_DATA_genus_Xylotoles"`) since there's no
 natural ID to reuse.
 
-If your table doesn't have these columns under these exact names, pass `interactive = TRUE` and you'll
-be prompted (in the style of `traits.build`'s `metadata_add_traits()`) to map your own column names, or
-supply a fixed value, instead of erroring. If you don't even have a table loaded yet, you can omit
-`taxonomic_resources` entirely and you'll be prompted for a file path to start from:
+If your table's columns have other names, `taxonAlign.dataprep::build_taxonomic_reference()` walks
+you through mapping them onto the format (in the style of `traits.build`'s `metadata_add_traits()`).
 
-```{r}
-#| eval: false
-prepare_taxonomic_resources(interactive = TRUE)
-#> Enter the file path for your taxonomic reference: my_beetles.csv
-#> Does the data have a column for `taxon_rank`, or is every row the same value? ...
-```
+### Combining several references
 
-See `?prepare_taxonomic_resources` for the full set of prompts.
-
-### From the GBIF backbone taxonomy
-
-If you don't have your own reference, `generate_GBIF_taxonomic_reference_list()` builds one from the
-GBIF backbone taxonomy for any taxon name, optionally restricted to a country and/or a minimum rank.
-The whole subtree is fetched once and cached, so repeat calls are fast.
-
-```{r}
-gbif_resources <- generate_GBIF_taxonomic_reference_list("Aporocera", country = "AU") |>
-  prepare_taxonomic_resources()
-```
-
-Real GBIF data can include a handful of "doubtful" or incompletely-classified records with no
-canonical name at all -- `prepare_taxonomic_resources()` drops these automatically (with a warning),
-since a name with no usable label could never be matched against anyway.
-
-GBIF's occurrence records include fossil specimens, so a `country` filter would otherwise keep fossil
-taxa. Taxa GBIF flags as extinct, and their synonyms, are left out by default
-(`exclude_extinct = TRUE`); as above, that includes recently extinct species, and
-`exclude_extinct = FALSE` keeps them, with an `extinct` column. For all Australian animals at once, use the released list
-(`load_GBIF_AU_resources()`, above) rather than building it live, which takes many hours.
-
-### From the Australian Plant Census, or the AFD's own export format
-
-`load_taxonomic_resources()` reshapes two further known datasets into the same flat schema: the
-Australian Plant Census (`"APC"`, a wrapper around `APCalign::load_taxonomic_resources()`), and the
-Australian Faunal Directory's own CSV export format (`"AFD"`; the NSL-format export above is the
-recommended source for the AFD, but this reads a CSV downloaded from the AFD directly):
-
-```{r}
-#| eval: false
-apc <- load_taxonomic_resources("APC")
-afd_csv <- load_taxonomic_resources("AFD", path = "my_downloads/afd_export.csv")
-```
-
-`load_taxonomic_resources()` always returns a named list, even for one dataset, so it can be combined
-with other references directly.
-
-### From taxadb (a pre-cached snapshot of GBIF, ITIS, and others)
-
-`generate_GBIF_taxonomic_reference_list()` fetches live from GBIF's API -- practical for a small
-clade, but slow for a genuinely large one (a phylum, a large class). For a large group,
-`generate_taxadb_taxonomic_reference_list()` instead sources from
-[taxadb](https://docs.ropensci.org/taxadb/)'s own pre-built, locally-cached snapshot -- fast
-regardless of size, at the cost of the snapshot possibly being out of date (check
-`taxadb:::available_versions()` to see how current it is before relying on it for anything
-time-sensitive):
-
-```{r}
-#| eval: false
-# every taxon in the class Insecta that taxadb's GBIF snapshot has
-insecta <- generate_taxadb_taxonomic_reference_list("Insecta", rank = "class", provider = "gbif")
-
-# the same, restricted to taxa with an Australian GBIF occurrence record
-insecta_au <- generate_taxadb_taxonomic_reference_list(
-  "Insecta", rank = "class", provider = "gbif", country = "AU"
-)
-```
-
-Unlike the two functions above, `rank` here is required -- it tells the function which column
-(`kingdom`/`phylum`/`class`/`order`/`family`/`genus`) to filter on, since taxadb has no single
-"fetch below this name" concept the way a live GBIF/API-backed fetch does.
-
-### Combining multiple reference tables
-
-`prepare_taxonomic_resources()` also accepts a list of tables, combining them with a priority order:
-when the same name appears in more than one table, whichever table is listed *first* wins. This is how
-you'd combine a known source with your own data, or two known sources together, when you already have
-each table in hand:
+`prepare_taxonomic_resources()` (and the matching functions) also accept a list of tables, combining
+them with a priority order: when the same name appears in more than one table, whichever table is
+listed *first* wins. This is how you'd combine released lists with your own data:
 
 ```{r}
 #| eval: false
 # your own list first, then the AFD, then GBIF for anything neither of those has
-resources <- prepare_taxonomic_resources(list(
-  mine = my_reference,
-  afd = load_NSL_resources("animals"),
-  gbif = load_GBIF_AU_resources()
+resources <- prepare_taxonomic_resources(c(
+  list(mine = my_reference),
+  load_taxonomic_resources(c("NSL_animals", "GBIF_AU"))
 ))
-```
-
-If you'd rather be walked through it -- especially useful when you're adding sources one at a time
-rather than assembling them all up front -- `interactive = TRUE` handles the whole thing itself: it
-asks for the first table (a path, exactly as above), walks through its column mapping, then asks "Do
-you have any additional taxonomic reference(s) to include?" -- repeating for as many as you have. You
-never construct the combined list yourself; the function builds it internally as you go.
-
-```{r}
-#| eval: false
-prepare_taxonomic_resources(interactive = TRUE)
-#> Enter the file path for your taxonomic reference: my_beetles.csv
-#> ... (column mapping for my_beetles.csv) ...
-#> Do you have any additional taxonomic reference(s) to include? 1: Yes 2: No
-#> Selection: 1
-#> Enter the file path for the additional taxonomic reference: more_beetles.csv
-#> ... (column mapping for more_beetles.csv) ...
-#> Do you have any additional taxonomic reference(s) to include? 1: Yes 2: No
-#> Selection: 2
-#> Multiple taxonomic reference tables were supplied. Enter their priority order ...
 ```
 
 ## Matching raw names: `align_taxa()`

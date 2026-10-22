@@ -2,48 +2,73 @@
 % Please edit documentation in R/load_taxonomic_resources.R
 \name{load_taxonomic_resources}
 \alias{load_taxonomic_resources}
-\title{Load a known taxonomic reference dataset}
+\title{Load released taxonomic reference data}
 \usage{
 load_taxonomic_resources(
-  taxonomic_dataset,
+  datasets,
+  version = NULL,
+  include_extinct = FALSE,
   path = NULL,
   refresh_cache = FALSE,
   cache_dir = tools::R_user_dir("taxonAlign", "cache"),
-  quiet = FALSE,
-  ...
+  quiet = FALSE
 )
 }
 \arguments{
-\item{taxonomic_dataset}{Character vector naming one or more known datasets to load. Currently
-\code{"AFD"} and \code{"APC"}.}
+\item{datasets}{Character vector of datasets to load, e.g. \code{c("NSL_animals", "GBIF_AU")}.}
 
-\item{path}{For \code{"AFD"} only: path to the raw AFD CSV export. Defaults to the copy bundled with the
-package (\code{system.file("extdata", "AFD.csv", package = "taxonAlign")}). Ignored for \code{"APC"}.}
+\item{version}{Data release to load, a date (\code{"YYYY-MM-DD"}); see \code{\link[=data_release_versions]{data_release_versions()}}.
+Defaults to the latest release, or, with no internet connection, the newest release already
+downloaded.}
 
-\item{refresh_cache}{For \code{"AFD"} only: logical; if \code{TRUE}, re-reshapes the raw file even if a cached
-copy exists. Defaults to \code{FALSE}. Ignored for \code{"APC"} (\code{APCalign::load_taxonomic_resources()}
-manages its own caching).}
+\item{include_extinct}{Logical; if \code{TRUE}, also keep taxa flagged as extinct, and their synonyms.
+Defaults to \code{FALSE}.}
 
-\item{cache_dir}{For \code{"AFD"} only: directory the reshaped result is cached in. Defaults to
-\code{tools::R_user_dir("taxonAlign", "cache")}. Ignored for \code{"APC"}.}
+\item{path}{Optional directory holding your own copy of a release's files (\code{manifest.csv} and
+the \verb{<dataset>.parquet} files). \code{version} is then ignored.}
+
+\item{refresh_cache}{Logical; if \code{TRUE}, re-downloads the files even if they're cached. Defaults to
+\code{FALSE}.}
+
+\item{cache_dir}{Directory downloaded release files are cached in. Defaults to
+\code{tools::R_user_dir("taxonAlign", "cache")}.}
 
 \item{quiet}{Logical; suppress progress messages. Defaults to \code{FALSE}.}
-
-\item{...}{For \code{"APC"} only: forwarded to \code{\link[APCalign:load_taxonomic_resources]{APCalign::load_taxonomic_resources()}} (e.g.
-\code{stable_or_current_data}, \code{version}). Ignored for \code{"AFD"}.}
 }
 \value{
-A named list of flat tibbles, one per element of \code{taxonomic_dataset} (named by dataset),
-each already in the column shape \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} expects -- pass it (or a list
-combining it with your own tables) straight in, e.g.
-\code{prepare_taxonomic_resources(load_taxonomic_resources(c("AFD", "APC")))}.
+A named list of tibbles, one per dataset, each in taxonAlign's reference format (see
+\code{\link[=taxonomic_reference_schema]{taxonomic_reference_schema()}}). The release it came from is recorded in each tibble's
+\code{"data_release"} attribute.
 }
 \description{
-Fetches/reshapes a fixed set of \emph{known} taxonomic datasets into taxonAlign's flat,
-\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}-ready column schema -- complementing
-\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} the same way \code{\link[=generate_GBIF_taxonomic_reference_list]{generate_GBIF_taxonomic_reference_list()}} does for
-GBIF, but for sources that aren't fetched fresh from a live API: \code{"AFD"} (the Australian Faunal
-Directory) reads and reshapes a one-off raw CSV export; \code{"APC"} is a thin wrapper around
-\code{\link[APCalign:load_taxonomic_resources]{APCalign::load_taxonomic_resources()}} that flattens its several accepted/synonym/genus/family
-pieces into one combined table.
+Downloads one or more taxonomic reference datasets from a dated taxonAlign data release, ready to
+pass to \code{\link[=create_taxonomic_update_lookup]{create_taxonomic_update_lookup()}}, \code{\link[=align_taxa]{align_taxa()}} or \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}.
+Naming the release (\code{version}) makes an alignment reproducible. Downloaded files are cached, so each
+is only downloaded once.
+}
+\details{
+The datasets in the first release are the Australian National Species List exports --
+\code{"NSL_animals"} (the Australian Faunal Directory), \code{"NSL_algae"}, \code{"NSL_bryophytes"}, \code{"NSL_fungi"}
+and \code{"NSL_lichens"} -- and \code{"GBIF_AU"}, every animal taxon in the GBIF backbone with occurrence
+records in Australia, plus its synonyms. \code{\link[=data_release_datasets]{data_release_datasets()}} lists what a release holds, with
+each dataset's source, retrieval date, licence and citation.
+
+When several datasets are loaded, they're returned in the order given, which is the order they're
+preferred in when a name appears in more than one.
+
+Some datasets flag extinct taxa (an \code{extinct} column; currently \code{"GBIF_AU"}). GBIF's occurrence
+records include fossil specimens, so these are left out by default, as they only produce spurious
+matches against modern names. GBIF's flag doesn't distinguish fossils from recent extinctions,
+though -- the thylacine (\emph{Thylacinus cynocephalus}) is flagged extinct too -- so
+\code{include_extinct = TRUE} keeps everything, with the \code{extinct} column showing which are which.
+
+The releases are built by the \code{taxonAlign.dataprep} package, which also has the functions for
+building a reference from other sources (a live GBIF fetch, taxadb, the AFD's own export, APC).
+}
+\examples{
+\dontrun{
+animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"), version = "2026-10-07")
+create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), animals)
+}
+
 }

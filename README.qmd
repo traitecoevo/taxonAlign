@@ -19,22 +19,26 @@ knitr::opts_chunk$set(
 
 `taxonAlign` helps you:
 
-1. **Build a personalised taxonomic reference** by combining one or more taxonomic reference
-   tables -- the Australian National Species List lists (animals from the Australian Faunal
-   Directory, algae, bryophytes, fungi, lichens) or a GBIF list of Australian animals, from a dated
-   taxonAlign data release; your own; one built live from the GBIF backbone taxonomy or from a cached
-   [taxadb](https://docs.ropensci.org/taxadb/) snapshot; the Australian Plant Census; or any mix of
-   these.
-2. **Fuzzy-match a list of raw taxon names** against that reference, resolving misspellings,
+1. **Fuzzy-match a list of raw taxon names** against a taxonomic reference, resolving misspellings,
    synonyms, and names only identifiable to a higher rank (`genus sp.`), to maximise how many of
    your names align successfully.
-3. **Update outdated names to the currently accepted/valid name** as long as the taxonomic reference 
+2. **Update outdated names to the currently accepted/valid name**, as long as the taxonomic reference
    you are using includes synonyms and specifies the taxonomic status of all names.
+
+The reference can be one or more of the dated reference lists taxonAlign publishes -- the Australian
+National Species List lists (animals from the Australian Faunal Directory, algae, bryophytes, fungi,
+lichens) and a GBIF list of Australian animals -- your own table, or any mix of these.
 
 It's inspired by [APCalign](https://traitecoevo.github.io/APCalign/)'s approach to aligning taxon
 names to the Australian Plant Census, generalised so the reference doesn't have to be APC/APNI and
 the taxa don't have to be plants and names of any taxonomic rank present in your reference (species, genus,
 family, or anything else) can be matched.
+
+Building a reference from other sources -- a live GBIF fetch, a [taxadb](https://docs.ropensci.org/taxadb/)
+snapshot, the Australian Plant Census, the Australian Faunal Directory's own export, or your own
+table with different column names -- is the job of the companion package
+[taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep), which also builds the
+released lists.
 
 ## Installation
 
@@ -49,58 +53,57 @@ pak::pak("traitecoevo/taxonAlign")
 
 | Function | What it does |
 |---|---|
-| `load_NSL_resources()` | Load an Australian National Species List list -- `"animals"` (the Australian Faunal Directory), `"algae"`, `"bryophytes"`, `"fungi"` or `"lichens"` -- from a dated taxonAlign data release (downloaded once, then kept on your computer). |
-| `load_GBIF_AU_resources()` | Load the GBIF list of animals recorded in Australia, with their synonyms, from a taxonAlign data release (extant taxa only unless `include_extinct = TRUE`). |
-| `data_release_versions()` | List the available data releases; name one with `version =` to make an alignment reproducible. |
-| `generate_GBIF_taxonomic_reference_list()` | Build a reference table from the *live* GBIF backbone taxonomy for a taxon (optionally filtered by country and/or minimum rank) -- best for a small clade. |
-| `generate_taxadb_taxonomic_reference_list()` | Build a reference table from [taxadb](https://docs.ropensci.org/taxadb/)'s pre-cached snapshot of GBIF, ITIS, or another supported authority -- fast for a large clade, at the cost of the snapshot possibly being out of date. |
-| `load_taxonomic_resources()` | Fetch/reshape a known reference dataset into the same flat schema -- the Australian Plant Census (`"APC"`, via `APCalign`), or a CSV in the Australian Faunal Directory's own export format (`"AFD"`). |
-| `prepare_taxonomic_resources()` | Combine one or more reference tables (yours, GBIF's, a known source, or any mix) into the structure the matching functions need. |
-| `align_taxa()` | Match a list of raw taxon names against a prepared reference, via exact and fuzzy matching. |
+| `load_taxonomic_resources()` | Load one or more released reference lists -- `"NSL_animals"` (the Australian Faunal Directory), `"NSL_algae"`, `"NSL_bryophytes"`, `"NSL_fungi"`, `"NSL_lichens"`, `"GBIF_AU"` -- from a dated data release (downloaded once, then kept on your computer). |
+| `data_release_versions()`, `data_release_datasets()` | List the available data releases, and the datasets in one; name a release with `version =` to make an alignment reproducible. |
+| `taxonomic_reference_schema()`, `check_taxonomic_reference()` | The format a reference table needs to be in, and a check that a table is in it. |
+| `prepare_taxonomic_resources()` | Combine one or more reference tables (released, your own, or any mix) into the structure the matching functions work on. |
+| `align_taxa()` | Match a list of raw taxon names against a reference, via exact and fuzzy matching. |
 | `update_taxa()` | Resolve a matched (possibly synonymous) name forward to its current accepted name. |
 | `create_taxonomic_update_lookup()` | Run `align_taxa()` and `update_taxa()` together in one call -- the easiest way to go from raw names to a lookup table of accepted names. |
 
 ## Example
 
-First generated your taxonomic reference list, in this case, use `generate_GBIF_taxonomic_reference_list()` to fetch every name GBIF's backbone taxonomy has ever used for the painted lady butterfly, *Vanessa cardui*: its current accepted
-name, plus dozens of historical synonyms (it's been reclassified several times, including a long stint
-in the genus *Cynthia*).
+For Australian taxa, load one or more of the released reference lists. Each is downloaded the first
+time and stored on your computer, so after that it works offline; naming the release (`version`)
+makes an alignment reproducible. When a name appears in more than one list, the first listed wins:
+
+```{r}
+#| eval: false
+library(taxonAlign)
+
+animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"), version = "2026-10-07")
+create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), animals)
+```
+
+Any table in taxonAlign's reference format works the same way. Here's a tiny one for the painted lady
+butterfly, *Vanessa cardui*: its current accepted name, plus the name it was long known by, in the
+genus *Cynthia*:
 
 ```{r example}
 library(taxonAlign)
 
-gbif_reference <- generate_GBIF_taxonomic_reference_list("Vanessa cardui")
-resources <- prepare_taxonomic_resources(gbif_reference)
+my_reference <- tibble::tibble(
+  canonical_name = c("Vanessa cardui", "Cynthia cardui"),
+  scientific_name = c("Vanessa cardui (Linnaeus, 1758)", "Cynthia cardui (Linnaeus, 1758)"),
+  taxon_rank = "species", taxonomic_status = c("accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = c("Vanessa", "Cynthia"),
+  taxon_ID = c("1", "2"), accepted_name_usage_ID = c("1", "1")
+)
 ```
 
 `create_taxonomic_update_lookup()` then matches a list of raw names -- an already-correct name, a
-genuine historical synonym, and a misspelling -- and resolves each to its current accepted name in one
-call:
+historical synonym, and a misspelling -- and resolves each to its current accepted name in one call:
 
 ```{r}
 create_taxonomic_update_lookup(
   c("Vanessa cardui", "Cynthia cardui", "Vanessa carduii"),
-  resources
+  my_reference
 ) |>
   dplyr::select(original_name, aligned_name, accepted_name, taxonomic_status_aligned)
 ```
 
-`Cynthia cardui` -- the name this species was described under updates to the current accepted name, `taxonomic_status_aligned` records that it was a synonym, and the
-misspelling (`carduii`, one letter off) is corrected via fuzzy matching.
-
-For Australian taxa, load one of the released reference lists instead of a live GBIF fetch. Each is
-downloaded the first time and stored on your computer, so after that it works offline; naming the
-release (`version`) makes an alignment reproducible:
-
-```{r}
-#| eval: false
-animals <- load_NSL_resources("animals")                            # latest release
-fungi   <- load_NSL_resources("fungi", version = "2026-10-07")      # a named release
-gbif_au <- load_GBIF_AU_resources()
-
-# combine references: when a name appears in more than one, the first listed wins
-resources <- prepare_taxonomic_resources(list(afd = animals, gbif = gbif_au))
-```
+`Cynthia cardui` updates to the current accepted name, `taxonomic_status_aligned` records that it was
+a synonym, and the misspelling (`carduii`, one letter off) is corrected via fuzzy matching.
 
 See [`vignettes/get-started.qmd`](vignettes/get-started.qmd) for a full walkthrough of every function,
 including building your own reference table by hand, combining several sources, matching names of

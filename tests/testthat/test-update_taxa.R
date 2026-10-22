@@ -90,7 +90,7 @@ test_that("update_taxa errors clearly when aligned_data is missing required colu
 })
 
 test_that("update_taxa gives a clear, actionable error when resources is missing", {
-  expect_error(update_taxa(dplyr::tibble(aligned_name = "x")), "prepare_taxonomic_resources")
+  expect_error(update_taxa(dplyr::tibble(aligned_name = "x")), "load_taxonomic_resources")
 })
 
 test_that("update_taxa accepts a flat, already-formatted resources tibble directly", {

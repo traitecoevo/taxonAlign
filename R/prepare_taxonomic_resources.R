@@ -34,8 +34,8 @@ taxonAlign_required_cols <- c(
 # Column names known, with certainty, to never hold a hierarchy value -- excluded from the implied-
 # higher-rank-row synthesis scan below regardless of the "scan any extra column" default, since these
 # are metadata columns taxonAlign's own loaders always produce, not part of a user's own data.
-# `scientific_name_authorship` (`generate_GBIF_taxonomic_reference_list()`'s own output column) is the
-# motivating case: an author-citation string like "Plisko, 1965" would otherwise be synthesised into
+# `scientific_name_authorship` (an output column of taxonAlign.dataprep's
+# `generate_GBIF_taxonomic_reference_list()`) is the motivating case: an author-citation string like "Plisko, 1965" would otherwise be synthesised into
 # its own bogus taxon at a rank literally named "scientific_name_authorship". Extend this vector as
 # further known-metadata columns turn up, the same "extend, don't guess" convention
 # `taxonAlign_taxon_rank_specificity`/`taxonAlign_taxonomic_status_priority` already use -- a user's own
@@ -122,7 +122,7 @@ taxonAlign_taxonomic_status_priority <- c(
 # subgenus-alone convention (`resources$subgenus`) both exist for when a subgenus is genuinely intended.
 # No other pair of ranks in this vector shares this same-name ambiguity, so this is the only swap needed.
 #
-# Extends (and reverses the sense of) `gbif_rank_order` (`generate_GBIF_taxonomic_reference_list.R`,
+# Extends (and reverses the sense of) `gbif_rank_order` (taxonAlign.dataprep's `generate_GBIF_taxonomic_reference_list.R`,
 # broadest-to-narrowest, driving GBIF `rank`-filtering) -- not reused directly, since that vector's own
 # trailing "cultivar"/"other"/"unranked" placeholders are specific to GBIF-filtering and aren't
 # meaningful specificity-order entries here. Adds rank names real AFD/iNat/APCalign-standardised data
@@ -157,11 +157,12 @@ taxonAlign_taxon_rank_specificity <- c(
 
 #' Prepare a combined taxonomic reference table for name matching
 #'
-#' Takes one or more taxonomic reference tables (the user's own, one produced by
-#' [generate_GBIF_taxonomic_reference_list()], or any mix of these) and turns them into the single nested
-#' `resources` list that [align_taxa()]/`match_taxa()` expect: columns are normalised and any missing
-#' ones resolved (see `interactive`, below), tables are combined if more than one was supplied, and the
-#' result is split by rank (and, for species-level rows, by taxonomic status).
+#' Takes one or more taxonomic reference tables -- loaded with [load_taxonomic_resources()], built
+#' yourself, or any mix of these -- and turns them into the single nested `resources` list that
+#' [align_taxa()]/`match_taxa()` expect: tables are combined if more than one was supplied, and the
+#' result is split by rank (and, for species-level rows, by taxonomic status). [align_taxa()],
+#' [update_taxa()] and [create_taxonomic_update_lookup()] call this themselves when given a table (or
+#' a list of tables) rather than prepared `resources`; call it yourself to prepare once and reuse.
 #'
 #' Unlike [APCalign](https://traitecoevo.github.io/APCalign/)'s `load_taxonomic_resources()`, which
 #' only ever assembles the fixed APC/APNI combination, this function works on whatever combined
@@ -169,47 +170,20 @@ taxonAlign_taxon_rank_specificity <- c(
 #' just genus/species/family.
 #'
 #' @param taxonomic_resources A tibble, a path to a CSV file, or a (optionally named) list of either --
-#'  one element per taxonomic reference table to combine. Optional (`NULL`) when `interactive = TRUE`
-#'  -- you'll be prompted for a path to the first table, the same way you're prompted for every
-#'  additional one (see `interactive`, below). Each table needs (at least) the columns
+#'  one element per taxonomic reference table to combine. Each table must be in taxonAlign's
+#'  taxonomic reference format (see [taxonomic_reference_schema()]): at least the columns
 #'  `canonical_name`, `scientific_name`, `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`,
-#'  `genus`, `taxon_ID` and `accepted_name_usage_ID` -- the column names produced by
-#'  [generate_GBIF_taxonomic_reference_list()], and matching
-#'  [APCalign](https://traitecoevo.github.io/APCalign/)'s own naming convention exactly (see Details)
-#'  so there's one canonical name field, not two. A row whose `canonical_name` is `NA` has no usable
-#'  name and is dropped, with a warning (real data occasionally has this -- e.g. some GBIF records
-#'  genuinely lack a canonical name). `accepted_name_usage_ID` must be self-referential (equal to
-#'  `taxon_ID`) for already-accepted rows, not `NA` -- this is what lets `update_taxa()` resolve a
-#'  matched name forward to its current accepted name regardless of whether it matched an accepted
-#'  name or a synonym.
+#'  `genus`, `taxon_ID` and `accepted_name_usage_ID`, matching
+#'  [APCalign](https://traitecoevo.github.io/APCalign/)'s own naming convention (see Details). A row
+#'  whose `canonical_name` is `NA` has no usable name and is dropped, with a warning.
+#'  `accepted_name_usage_ID` must be self-referential (equal to `taxon_ID`) for already-accepted rows,
+#'  not `NA` -- this is what lets `update_taxa()` resolve a matched name forward to its current
+#'  accepted name regardless of whether it matched an accepted name or a synonym. To map a table with
+#'  other column names onto this format interactively, see `taxonAlign.dataprep::build_taxonomic_reference()`.
 #' @param taxon_ranks_to_check Optional character vector restricting which taxonomic ranks (besides
 #'  species/infraspecific ranks) are retained in the returned `resources` for higher-rank matching
 #'  (e.g. `c("genus", "family")`). Defaults to `NULL`, which keeps every rank present in
 #'  `taxonomic_resources`.
-#' @param interactive Logical; if `TRUE`, prompts (in the style of `traits.build`'s
-#'  `metadata_add_traits()`/`metadata_add_locations()`) for any of the required columns a table is
-#'  missing -- letting a column be picked from that table, or (for some fields) a fixed value typed in
-#'  or auto-generated -- rather than erroring. A table that's already complete is never interrupted;
-#'  one that isn't is first asked, once, whether it's already fully aligned regardless (e.g. it came
-#'  from an earlier `prepare_taxonomic_resources()`/`generate_GBIF_taxonomic_reference_list()` call, just
-#'  under column names `interactive` didn't recognise) before being walked through the per-field
-#'  prompts. Once every initially-supplied table is resolved, also asks whether there are any
-#'  additional taxonomic reference(s) to include -- repeating for as many as the user has -- so a
-#'  single file passed in via `taxonomic_resources` can grow into a combined set interactively, rather
-#'  than requiring the whole set to be assembled up front. When more than one table ends up in the
-#'  final set, also prompts once for a priority order across them. Defaults to `FALSE`, which errors
-#'  immediately (as before) if any required column is missing, and skips both of the prompts above.
-#' @param user_responses Optional named list bypassing the real prompts `interactive = TRUE` would
-#'  otherwise show -- for scripting or testing. Keyed by table name (matching `taxonomic_resources`'s
-#'  names, or `"table 1"`/`"table 2"`/... if unnamed), each holding the responses for that table's
-#'  missing fields (`already_aligned` (logical), `taxonomic_dataset`, `canonical_name`,
-#'  `scientific_name`, `taxon_rank`, `taxonomic_status`, `genus`, `taxon_ID`,
-#'  `accepted_name_usage_ID` -- see `?map_missing_taxonomic_resources_columns` for exact shapes), plus two
-#'  top-level elements: `initial_table` (a table/path bypassing the prompt for the first table, when
-#'  `taxonomic_resources` itself is `NULL`), `additional_tables` (an optionally-named list of further
-#'  tables/paths to add, bypassing the "any additional reference(s)?" prompt loop -- each is still
-#'  resolved via its own entry in `user_responses`, keyed the same way) and `priority_order`, when the
-#'  final set has more than one table. Ignored unless `interactive = TRUE`.
 #'
 #' @return A named list of tibbles (and, for `species`, a further named list split by
 #'  `taxonomic_status`): one element per taxonomic rank present in `taxonomic_resources` (after applying
@@ -221,13 +195,11 @@ taxonAlign_taxon_rank_specificity <- c(
 #' [APCalign::load_taxonomic_resources()] normalises APC/APNI's raw Darwin Core column names to its
 #' own convention -- e.g. a raw `canonicalName`/`taxonRank`/`taxonomicStatus`/`scientificName` column
 #' is renamed to `canonical_name`/`taxon_rank`/`taxonomic_status`/`scientific_name`. This keeps
-#' `canonical_name` the *only* name field taxonAlign ever refers to -- unlike the ported
-#' `AusInvertAlign` prototype this package originated from, which had a separate `taxon_name` fallback
-#' column, there's no second, ambiguous name field to keep in sync.
+#' `canonical_name` the *only* name field taxonAlign ever refers to.
 #'
 #' When multiple tables are supplied, priority is expressed purely through row order in the combined
 #' table: `match_taxa()`'s exact-match blocks use `match()` (first-hit semantics), so whichever table
-#' is row-bound first is preferred when a name exists in more than one.
+#' is supplied first is preferred when a name exists in more than one.
 #'
 #' Two matching conventions for subgenus names are supported side by side: some input name lists
 #' write the subgenus alone (e.g. `"Podosemum"`), others write the `Genus (Subgenus)` bracketed
@@ -238,103 +210,34 @@ taxonAlign_taxon_rank_specificity <- c(
 #'
 #' @export
 prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
-                                         taxon_ranks_to_check = NULL,
-                                         interactive = FALSE,
-                                         user_responses = NULL) {
+                                         taxon_ranks_to_check = NULL) {
 
   if (is.null(taxonomic_resources)) {
-    if (!interactive) {
-      stop(
-        "`taxonomic_resources` is required. Supply your own combined taxonomic reference table (or a path ",
-        "to one), or build one with `generate_GBIF_taxonomic_reference_list()`. Or pass ",
-        "`interactive = TRUE` to be prompted for one.",
-        call. = FALSE
-      )
-    }
-    # interactive = TRUE with nothing supplied yet -- prompt for the first table exactly the way
-    # additional tables are already asked for below (see the `repeat` loop), rather than requiring the
-    # caller to already have a table in hand before they can even start. Someone who *does* already
-    # have a table (a path, or a tibble they've loaded themselves) still just passes it as
-    # `taxonomic_resources` directly, as before -- this only fills the gap where they don't.
-    taxonomic_resources <- prompt_for_table_path(
-      "Enter the file path for your taxonomic reference: ", user_responses$initial_table
+    stop(
+      "`taxonomic_resources` is required. Load a released reference with `load_taxonomic_resources()`, ",
+      "or supply your own table (or a path to one) -- see `?taxonomic_reference_schema`.",
+      call. = FALSE
     )
   }
 
   tables <- normalise_taxonomic_resources_input(taxonomic_resources)
-
-  resolved <- purrr::imap(
-    tables,
-    function(data, label) resolve_taxonomic_resources_table(data, label, interactive, user_responses[[label]])
-  )
-
-  # Interactively, keep asking for one more taxonomic reference until the user says there isn't one --
-  # rather than requiring every table to be assembled into `taxonomic_resources` up front, this lets
-  # someone start with just the one file they have open and add others as they think of them.
-  # `user_responses$additional_tables` (a list of extra tables/paths, optionally named) bypasses the
-  # real loop for scripting/testing -- each entry is resolved exactly like any other table, using
-  # `user_responses[[its label]]` for its own missing-column prompts.
-  if (interactive) {
-    extra_tables <- user_responses$additional_tables
-    extra_index <- 0
-
-    repeat {
-      if (!is.null(extra_tables)) {
-        extra_index <- extra_index + 1
-        if (extra_index > length(extra_tables)) break
-        new_raw <- extra_tables[[extra_index]]
-        new_label <- names(extra_tables)[extra_index]
-      } else {
-        if (!prompt_yes_no("\nDo you have any additional taxonomic reference(s) to include?")) break
-        new_raw <- prompt_for_table_path("Enter the file path for the additional taxonomic reference: ")
-        new_label <- NULL
-      }
-
-      if (is.null(new_label) || new_label == "") new_label <- paste("table", length(resolved) + 1)
-      if (is.character(new_raw) && length(new_raw) == 1) new_raw <- read_taxonomic_resources_file(new_raw)
-
-      resolved[[new_label]] <- resolve_taxonomic_resources_table(
-        new_raw, new_label, interactive, user_responses[[new_label]]
-      )
-    }
-  }
+  resolved <- purrr::imap(tables, resolve_taxonomic_resources_table)
 
   # normalise taxon_ID/accepted_name_usage_ID to character on each table *before* combining --
   # bind_rows() below errors outright ("Can't combine ..$taxon_ID <character> and ..$taxon_ID <integer>")
-  # rather than coercing, whenever two supplied tables disagree on this column's type (e.g.
-  # generate_GBIF_taxonomic_reference_list()'s integer taxon_ID vs. AFD/APC's character URI/UUID
-  # strings). The later, single-table normalisation below (kept for the interactive-input path, which
-  # doesn't reach here) is too late to prevent this crash.
+  # rather than coercing, whenever two supplied tables disagree on this column's type (e.g. GBIF's
+  # integer taxon_ID vs. AFD/APC's character URI/UUID strings)
   resolved <- purrr::map(resolved, function(tbl) {
     tbl |> dplyr::mutate(
       taxon_ID = as.character(taxon_ID),
       accepted_name_usage_ID = as.character(accepted_name_usage_ID)
     )
   })
-
-  if (length(resolved) > 1) {
-    order <- if (interactive) {
-      prompt_priority_order(names(resolved), user_responses$priority_order)
-    } else {
-      # no prompt: the order tables were supplied in already *is* the priority
-      names(resolved)
-    }
-    taxonomic_resources <- dplyr::bind_rows(resolved[order])
-  } else {
-    taxonomic_resources <- resolved[[1]]
-  }
+  # no prompt: the order tables were supplied in *is* the priority
+  taxonomic_resources <- dplyr::bind_rows(resolved)
 
   # dummy placeholder for blank cells -- fuzzy matching doesn't cope with blank/duplicate cells
   zzz <- "zzzz zzzz"
-
-  taxonomic_resources <- taxonomic_resources |>
-    dplyr::mutate(
-      # normalise to character regardless of the source column's type (our own
-      # generate_GBIF_taxonomic_reference_list() gives integer taxon_IDs; real APC/AFD data gives URI/UUID
-      # strings) so downstream code never has to worry about integer-vs-character mismatches
-      taxon_ID = as.character(taxon_ID),
-      accepted_name_usage_ID = as.character(accepted_name_usage_ID)
-    )
 
   # A row with no usable name (canonical_name is NA -- real data occasionally has this, e.g. some GBIF
   # records genuinely lack a canonicalName) can never be matched *against* anyway, so it's dropped here
@@ -388,8 +291,8 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
 
   # Synthesise a row for every implied higher rank present as its own column on the combined table
   # (e.g. a `genus`/`family`/`order` column recorded on species rows), for whichever such value doesn't
-  # already have an explicit row of its own -- generalising what load_AFD() already does for AFD's own
-  # raw export (see afd_higher_rank_rows()) to *any* input table that happens to carry this kind of
+  # already have an explicit row of its own -- generalising what taxonAlign.dataprep's load_AFD() does
+  # for AFD's own raw export (see its afd_higher_rank_rows()) to *any* input table that happens to carry this kind of
   # column, so someone assembling their own reference doesn't have to remember to add an explicit row
   # for every genus/family/etc. their species rows already imply. Any column beyond the required 8 is
   # scanned this way, not just the standard Linnaean kingdom/phylum/class/order/family set, since real
@@ -655,41 +558,20 @@ read_taxonomic_resources_file <- function(path) {
   readr::read_csv(path, show_col_types = FALSE, progress = FALSE)
 }
 
-# Applies the column_rename step to one table, then either returns it as-is (already complete),
-# errors (interactive = FALSE), or interactively fills in whatever's missing (interactive = TRUE).
-resolve_taxonomic_resources_table <- function(data, table_label, interactive, user_responses) {
+# Applies the column_rename step to one table, then errors if any required column is still missing.
+resolve_taxonomic_resources_table <- function(data, table_label) {
 
   data <- data |> dplyr::rename(dplyr::any_of(taxonAlign_column_rename))
   missing_cols <- setdiff(taxonAlign_required_cols, names(data))
 
-  if (length(missing_cols) == 0) {
-    return(data)
-  }
-
-  if (!interactive) {
+  if (length(missing_cols) > 0) {
     stop(
       "`taxonomic_resources` (`", table_label, "`) is missing required column(s): ",
-      paste(missing_cols, collapse = ", "), ". See `?prepare_taxonomic_resources` for the expected ",
-      "input columns, or pass `interactive = TRUE` to be prompted for them.",
+      paste(missing_cols, collapse = ", "), ". See `?taxonomic_reference_schema` for the expected ",
+      "columns, or `taxonAlign.dataprep::build_taxonomic_reference()` to map your own columns onto them ",
+      "interactively.",
       call. = FALSE
     )
   }
-
-  # Give the user a chance to assert the table is already fully aligned before launching into the
-  # full per-field prompt sequence below -- e.g. it may already be in taxonAlign's target shape (from
-  # an earlier prepare_taxonomic_resources()/generate_GBIF_taxonomic_reference_list() call) just under
-  # column names the automatic column_rename step above doesn't recognise. Only asked here, once
-  # column_rename has already run and something is still missing -- a table that's already fully
-  # resolved (the common case for generate_GBIF_taxonomic_reference_list()'s own output) is never
-  # interrupted with this question at all.
-  if (prompt_already_aligned(table_label, user_responses$already_aligned)) {
-    stop(
-      "`", table_label, "` was indicated as already fully aligned, but is still missing required ",
-      "column(s): ", paste(missing_cols, collapse = ", "), ". Answer \"No\" (or omit ",
-      "`user_responses$already_aligned`) if it still needs column mapping.",
-      call. = FALSE
-    )
-  }
-
-  map_missing_taxonomic_resources_columns(data, missing_cols, table_label, user_responses)
+  data
 }

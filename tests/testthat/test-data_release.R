@@ -1,5 +1,5 @@
-# Versioned data releases (issue #24): version resolution, local caching, and loading NSL / GBIF
-# reference data from release parquet files -- entirely offline (GitHub and downloads mocked).
+# Versioned data releases (issues #24, #26): version resolution, local caching, and loading the ready
+# reference files from a release -- entirely offline (GitHub and downloads mocked).
 
 test_that("data_release_versions keeps published, date-tagged releases, most recent first", {
   local_mocked_bindings(
@@ -38,31 +38,70 @@ test_that("download_data_release_asset reuses an already-downloaded file", {
   expect_equal(download_data_release_asset("nsl_fungi_taxon.parquet", "2026-10-08", cache), dest)
 })
 
-test_that("load_NSL_resources reads a group from data release parquet files", {
-  release <- withr::local_tempdir()
-  arrow::write_parquet(sample_nsl_animals_taxon_raw(), file.path(release, "nsl_animals_taxon.parquet"))
-  arrow::write_parquet(sample_nsl_animals_names_raw(), file.path(release, "nsl_animals_names.parquet"))
-  local_mocked_bindings(
-    get_data_release_assets = function(assets, ...) stats::setNames(file.path(release, assets), assets)
+# A release directory in the shape taxonalign.dataprep builds: a manifest plus one ready file per
+# dataset (verbatim source files listed as "raw", which taxonAlign never reads).
+write_sample_release <- function(dir = withr::local_tempdir(.local_envir = parent.frame())) {
+  animals <- tibble::tibble(
+    canonical_name = c("Pardalotus", "Pardalotus striatus", "Pardalotus ornatus"),
+    scientific_name = c("Pardalotus Vieillot, 1816", "Pardalotus striatus (Gmelin, 1789)", "Pardalotus ornatus Temminck, 1826"),
+    taxon_rank = c("genus", "species", "species"), taxonomic_status = c("accepted", "accepted", "synonym"),
+    taxonomic_dataset = "AFD", genus = "Pardalotus", taxon_ID = c("g1", "s1", "s2"),
+    accepted_name_usage_ID = c("g1", "s1", "s1")
   )
-  out <- load_NSL_resources("animals", cache_dir = withr::local_tempdir(), quiet = TRUE)
+  gbif <- tibble::tibble(
+    canonical_name = c("Vanessa", "Vanessa cardui", "Thylacinus cynocephalus"),
+    scientific_name = canonical_name, taxon_rank = c("genus", "species", "species"),
+    taxonomic_status = "accepted", taxonomic_dataset = "GBIF", genus = c("Vanessa", "Vanessa", "Thylacinus"),
+    taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "3"), extinct = c(NA, FALSE, TRUE)
+  )
+  arrow::write_parquet(animals, file.path(dir, "NSL_animals.parquet"))
+  arrow::write_parquet(gbif, file.path(dir, "GBIF_AU.parquet"))
+  readr::write_csv(tibble::tibble(
+    dataset = c("NSL_animals", "GBIF_AU", NA), asset = c("NSL_animals.parquet", "GBIF_AU.parquet", "nsl_animals_taxon.parquet"),
+    type = c("ready", "ready", "raw"), rows = c(3, 3, 10), columns = c(8, 9, 30), source = "test", retrieved = "2026-10-07",
+    source_md5 = NA, licence = "CC BY", citation = "test"
+  ), file.path(dir, "manifest.csv"))
+  dir
+}
 
-  # the same result as loading the same export from its original pipe-delimited files
-  from_files <- load_NSL_resources("animals", path = write_sample_nsl_animals_dir(),
-                                   cache_dir = withr::local_tempdir(), quiet = TRUE)
-  expect_equal(out, from_files)
+test_that("data_release_datasets lists a release's ready datasets, not its verbatim source files", {
+  datasets <- data_release_datasets(path = write_sample_release())
+  expect_equal(datasets$dataset, c("NSL_animals", "GBIF_AU"))
+  expect_equal(datasets$rows, c(3L, 3L))
 })
 
-test_that("load_GBIF_AU_resources reads the release file, extant taxa only unless asked", {
-  f <- withr::local_tempfile(fileext = ".parquet")
-  gbif <- tibble::tibble(taxon_ID = 1:3, accepted_name_usage_ID = 1:3,
-                         canonical_name = c("Aus", "Aus bus", "Thylacinus cynocephalus"),
-                         taxon_rank = c("genus", "species", "species"), taxonomic_status = "accepted",
-                         extinct = c(NA, FALSE, TRUE), taxonomic_dataset = "GBIF")
-  arrow::write_parquet(gbif, f)
-  expect_equal(load_GBIF_AU_resources(path = f, quiet = TRUE), gbif[1:2, ])
-  expect_equal(load_GBIF_AU_resources(path = f, include_extinct = TRUE, quiet = TRUE), gbif)
-  expect_error(load_GBIF_AU_resources(path = "/no/such/file.parquet"), "Couldn't find")
+test_that("load_taxonomic_resources returns the named datasets, in the order asked for, extant only unless asked", {
+  release <- write_sample_release()
+  out <- load_taxonomic_resources(c("GBIF_AU", "NSL_animals"), path = release)
+  expect_named(out, c("GBIF_AU", "NSL_animals"))
+  expect_equal(out$GBIF_AU$canonical_name, c("Vanessa", "Vanessa cardui"))
+  expect_equal(attr(out$NSL_animals, "data_release"), release)
+
+  all_taxa <- load_taxonomic_resources("GBIF_AU", path = release, include_extinct = TRUE)
+  expect_true("Thylacinus cynocephalus" %in% all_taxa$GBIF_AU$canonical_name)
+
+  expect_error(load_taxonomic_resources("NSL_plants", path = release), "no dataset.*NSL_plants.*It has: NSL_animals, GBIF_AU")
+})
+
+test_that("load_taxonomic_resources downloads every file from the release the manifest came from", {
+  release <- write_sample_release()
+  asked <- list()
+  local_mocked_bindings(get_data_release_assets = function(assets, version, ...) {
+    asked <<- c(asked, list(version))
+    stats::setNames(file.path(release, assets), assets)
+  })
+  # (the manifest's folder name stands in for the release's version)
+  out <- load_taxonomic_resources("NSL_animals")
+  expect_null(asked[[1]])
+  expect_equal(asked[[2]], basename(release))
+  expect_equal(attr(out$NSL_animals, "data_release"), basename(release))
+})
+
+test_that("released datasets go straight into the matching functions, as a list", {
+  animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"), path = write_sample_release())
+  lookup <- create_taxonomic_update_lookup(c("Pardalotus ornatus", "Vanessa cardui"), animals)
+  expect_equal(lookup$suggested_name, c("Pardalotus striatus", "Vanessa cardui"))
+  expect_equal(lookup$taxonomic_dataset, c("AFD", "GBIF"))
 })
 
 test_that("data_release_versions returns nothing, rather than erroring or hanging, when GitHub can't be reached", {

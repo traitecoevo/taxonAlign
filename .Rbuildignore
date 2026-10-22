@@ -7,3 +7,7 @@
 ^\.claude$
 # scripts that build the data releases (issue #24) -- not package content
 ^data-raw$
+# raw reference exports kept locally for development -- not package content (issue #26)
+^inst/extdata$
+# raw AFD exports kept locally for development -- not package content (issue #26)
+^data/AFD_

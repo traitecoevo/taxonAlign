@@ -17,9 +17,8 @@ update_taxa(
 \code{full = TRUE} output include these).}
 
 \item{resources}{The nested list of reference tibbles produced by
-\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} (the same one passed to \code{align_taxa()}). A plain (already
-fully-formatted) taxonomic reference tibble is also accepted directly -- see \code{align_taxa()}'s
-\code{resources} documentation.}
+\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} (the same one passed to \code{align_taxa()}), or a reference table (or
+list of them) -- see \code{\link[=align_taxa]{align_taxa()}}.}
 
 \item{taxonomic_splits}{How to report a name that leads to more than one accepted name:
 \code{"most_likely_species"} (the default) suggests one and lists the others in brackets;

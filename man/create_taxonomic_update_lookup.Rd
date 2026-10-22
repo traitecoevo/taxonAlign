@@ -26,8 +26,7 @@ create_taxonomic_update_lookup(
 \item{original_name}{Character vector of raw taxon names to align and update.}
 
 \item{resources}{The nested list of reference tibbles produced by
-\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}. A plain (already fully-formatted) taxonomic reference tibble is
-also accepted directly -- see \code{align_taxa()}'s \code{resources} documentation.}
+\code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}}, or a reference table (or list of them) -- see \code{\link[=align_taxa]{align_taxa()}}.}
 
 \item{identifier, fuzzy_abs_dist, fuzzy_rel_dist, fuzzy_matches, imprecise_fuzzy_matches, taxon_ranks_to_check, hybrids, intergrades_affinis, consider_english_name_endings, include_bracketed_info, progress}{Forwarded to \code{\link[=align_taxa]{align_taxa()}}; see its documentation.}
 

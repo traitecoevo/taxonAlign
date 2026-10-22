@@ -35,7 +35,8 @@ library(dplyr)
 ## Building the AFD reference
 
 ```{r}
-afd <- load_taxonomic_resources("AFD", quiet = TRUE)
+# the AFD's own CSV export, reshaped by the companion package taxonAlign.dataprep
+afd <- taxonAlign.dataprep::load_AFD("../inst/extdata/AFD.csv", quiet = TRUE)
 afd_resources <- prepare_taxonomic_resources(afd)
 ```
 
@@ -204,7 +205,7 @@ blindly, especially for a name that might sit outside the reference's real cover
 
 ## Does a broader reference fix the vertebrate gap? Trying GBIF instead
 
-AFD is Australian-invertebrates-only by design. `taxonAlign` can also build a reference straight from
+AFD is Australian-invertebrates-only by design. `taxonAlign.dataprep` can also build a reference straight from
 GBIF's own backbone taxonomy, which covers every animal, not just invertebrates.
 
 ```{r}

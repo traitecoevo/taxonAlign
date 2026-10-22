@@ -1,13 +1,16 @@
 Package: taxonAlign
-Title: Combine multiple taxonomic references to create a personalised taxonomic resource for fuzzy matching of taxonomic names
+Title: Align and Update Taxonomic Names Against Any Taxonomic Reference
 Version: 0.0.0.9000
 Authors@R: c(
     person(given = "Elizabeth", family = "Wenk", role = c("aut", "ctb", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
     person(given = "Fonti", family = "Kar", role = c("aut", "cre"), email = "f.kar@unsw.edu.au", comment = c(ORCID = "0000-0002-2760-3974"))
     )
-Description: This package provides functions that enable users to:
-  1) create their own taxonomic resource by flexibly combining distinct taxonomic references together
-  and 2) to match taxonomic lists to the user's specified taxonomic resource to maximise alignment coverage.
+Description: Matches lists of raw taxon names, including misspelt, informal and
+  morphospecies names, to a taxonomic reference, and updates them to their currently accepted
+  names. The reference can be one or more released datasets (versioned, so results are
+  reproducible) or the user's own tables, in a documented format, at any combination of
+  taxonomic ranks. The companion package taxonAlign.dataprep builds and releases those
+  datasets, and helps users turn their own references into the format.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -17,21 +20,16 @@ Imports:
     curl,
     dplyr,
     jsonlite,
-    parallel,
     purrr,
     readr,
-    rgbif,
-    rlang,
+    stats,
     stringdist,
     stringr,
     tools,
     utils
 Suggests:
-    DBI,
-    duckdb,
     knitr,
     rmarkdown,
-    taxadb,
     testthat (>= 3.1.9),
     tibble,
     withr
