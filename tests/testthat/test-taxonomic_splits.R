@@ -69,3 +69,29 @@ test_that("a genus listed as a synonym of its own nominotypical subgenus isn't t
   expect_true(is.na(out$alternative_possible_names))
   expect_equal(out$suggested_name, "Acritus")
 })
+
+test_that("a name leading to the same accepted name in two combined references isn't a split", {
+  # the same old name, and the same accepted name, in two references -- each with its own IDs
+  one <- tibble::tribble(
+    ~canonical_name, ~scientific_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Nesoptilotis leucotis", "Nesoptilotis leucotis (Latham, 1801)", "species", "accepted", "Nesoptilotis", "a1", "a1",
+    "Lichenostomus leucotis", "Lichenostomus leucotis (Latham, 1801)", "species", "Generic combination", "Lichenostomus", "s1", "a1"
+  ) |> dplyr::mutate(taxonomic_dataset = "ONE")
+  two <- one |> dplyr::mutate(taxon_ID = c("b1", "t1"), accepted_name_usage_ID = c("b1", "b1"),
+                              taxonomic_status = c("accepted", "synonym"), taxonomic_dataset = "TWO")
+  out <- create_taxonomic_update_lookup("Lichenostomus leucotis", list(one, two))
+  expect_equal(out$suggested_name, "Nesoptilotis leucotis")
+  expect_true(is.na(out$alternative_possible_names))
+})
+
+test_that("within one reference, accepted names differing only in their subgenus are still different taxa", {
+  ref <- tibble::tribble(
+    ~canonical_name, ~scientific_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Ogma (Seriespinula) australis", "Ogma (Seriespinula) australis Smith, 1900", "species", "accepted", "Ogma", "a1", "a1",
+    "Ogma (Pateracephalanema) australis", "Ogma (Pateracephalanema) australis Jones, 1900", "species", "accepted", "Ogma", "a2", "a2",
+    "Criconema australis", "Criconema australis Smith, 1900", "species", "synonym", "Criconema", "s1", "a1",
+    "Criconema australis", "Criconema australis Smith, 1900", "species", "synonym", "Criconema", "s2", "a2"
+  ) |> dplyr::mutate(taxonomic_dataset = "ONE")
+  out <- create_taxonomic_update_lookup("Criconema australis", ref)
+  expect_match(out$alternative_possible_names, "Ogma \\(")
+})

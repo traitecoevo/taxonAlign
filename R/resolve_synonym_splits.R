@@ -55,13 +55,23 @@ build_split_table <- function(all_taxa) {
     target_canonical = target$canonical_name,
     target_status = target$taxonomic_status,
     target_genus = if ("genus" %in% names(target)) target$genus else NA_character_,
+    target_dataset = target$taxonomic_dataset,
     record_year = scientific_name_year(r$scientific_name),
     target_year = scientific_name_year(target$scientific_name)
   ) |>
     # a record pointing at itself (e.g. "unplaced") or at nothing isn't a second accepted taxon
     dplyr::filter(!is.na(target_canonical) & target_ID != taxon_ID & target_status %in% "accepted") |>
+    # Two or more *different* accepted taxa, not merely two accepted records. With references combined,
+    # the same accepted name is often in more than one: a name listed as a synonym of "Nesoptilotis
+    # leucotis" in both the AFD and GBIF isn't ambiguous, and would otherwise list its own accepted name
+    # as its alternative. So records with the same name in different references are one taxon. Within
+    # one reference, the name as it writes it decides: "Ogma (Seriespinula) australis" and "Ogma
+    # (Pateracephalanema) australis" are different taxa that only share a name once the subgenus is
+    # removed (and a reference listing the very same name twice is one taxon).
+    dplyr::group_by(canonical_name, target_canonical, target_dataset) |>
+    dplyr::mutate(target_key = if (dplyr::n_distinct(target_name) > 1) target_name else target_canonical) |>
     dplyr::group_by(canonical_name) |>
-    dplyr::filter(dplyr::n_distinct(target_ID) > 1) |>
+    dplyr::filter(dplyr::n_distinct(target_key) > 1) |>
     dplyr::mutate(
       status_rank = taxonomic_status_rank(status),
       epithet_rank = as.integer(last_word(target_canonical) != last_word(canonical_name)),
@@ -71,7 +81,7 @@ build_split_table <- function(all_taxa) {
       year_rank = dplyr::coalesce(target_year, .Machine$integer.max)
     ) |>
     dplyr::arrange(status_rank, epithet_rank, word_count_rank, older_rank, year_rank, source_order, .by_group = TRUE) |>
-    dplyr::distinct(target_ID, .keep_all = TRUE)
+    dplyr::distinct(target_key, .keep_all = TRUE)
 
   if (nrow(cand) == 0) return(empty_split_table())
 

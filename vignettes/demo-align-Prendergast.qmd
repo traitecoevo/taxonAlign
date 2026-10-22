@@ -14,17 +14,18 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
 This is a worked test of `taxonAlign` against real, messy data, not a hand-built example. The dataset
-is `Prendergast_2026_2` (from the sibling `austraits.build` repository) -- a plant-pollinator
-visitation dataset recording which animal taxa were observed visiting which plant species. Animal
-identifications in a dataset like this are exactly the kind of thing `taxonAlign` is built to clean
-up: misspellings (`"Hymnoptera"`), morphospecies codes (`"Chrysomelidae sp."`), bracketed subgenera
-(`"Amegilla (Zonamegilla) aeruginosa"`), and more.
+is `Prendergast_2026_3` (from the sibling `austraits.build` repository) -- a plant-pollinator
+visitation dataset recording which animals were observed visiting which plant species: bees, wasps,
+flies, beetles and butterflies, but also birds, bats, a possum and a skink. Animal identifications in
+a dataset like this are exactly the kind of thing `taxonAlign` is built to clean up: misspellings
+(`"Hymnoptera"`, `"Psittaformes"`), morphospecies codes, bracketed subgenera
+(`"Amegilla (Zonamegilla) aeruginosa"`), outdated names, and more.
 
-We align the raw animal names against two different references, at both species level
-(`Animal species binomial name`) and order level (`Animal order`), and look at what kinds of matches
-get made in each case: first the [Australian Faunal Directory](https://biodiversity.org.au/afd/home)
-(AFD), as released in its National Species List format -- then a live-GBIF-fetched reference covering every Australian animal, not
-just invertebrates.
+We align the raw animal names, at both species level (`Animal species binomial name`) and order level
+(`Animal order`), against two of the reference lists in taxonAlign's first data release, and look at
+what kinds of matches get made in each case: first the
+[Australian Faunal Directory](https://biodiversity.org.au/afd/home) (AFD, in its National Species List
+format), then GBIF's list of Australian animals.
 
 ```{r setup}
 library(taxonAlign)
@@ -38,17 +39,15 @@ afd <- load_taxonomic_resources("NSL_animals", version = "2026-10-07", quiet = T
 afd_resources <- prepare_taxonomic_resources(afd)
 ```
 
-The warning above is expected, not a sign anything went wrong: a handful of real AFD rows have a
-`canonical_name` that's just the bare name of their own rank (e.g. a row at family rank whose name is
-literally `"Family"`) -- an artefact of how those particular records were entered, not a usable taxon
-name -- so `prepare_taxonomic_resources()` drops them rather than leaving them in as a landmine for
-fuzzy matching.
+`prepare_taxonomic_resources()` drops a handful of real AFD records here (with a warning, hidden in
+this document): placeholder names such as `"Genus A"`, recorded for undescribed taxa, which could
+never be usefully matched against and would only attract false fuzzy matches.
 
 ## Loading the data to align
 
 ```{r}
 pollinator_data <- readr::read_csv(
-  "../../austraits.build/data/Prendergast_2026_2/data.csv",
+  "../../austraits.build/data/Prendergast_2026_3/data.csv",
   show_col_types = FALSE
 )
 
@@ -64,7 +63,7 @@ distinct animal names and `r n_distinct(pollinator_data[["Animal order"]])` dist
 ## A helper to align a column and summarise the results
 
 The same name is often repeated across many observations, so each *distinct* name is aligned once
-(much faster than aligning all 2,896 rows directly) and the result is joined back onto every
+(much faster than aligning all `r format(nrow(pollinator_data), big.mark = ",")` rows directly) and the result is joined back onto every
 observation that used it -- every count below is therefore at the observation level, not just the
 distinct-name level.
 
@@ -187,50 +186,44 @@ order_detail |> knitr::kable()
 match_examples(order_aligned, order_detail) |> knitr::kable()
 ```
 
-## A real limitation this dataset happens to show
+## The vertebrate visitors
 
-AFD covers Australian invertebrates only -- it has no vertebrate data at all. This dataset also
-records vertebrate pollinators (birds, bats, reptiles), and their orders show exactly what happens
-when a name is genuinely outside a reference's scope: `"Passeriformes"`, `"Psittaciformes"` (and its
-misspelling `"Psittaformes"`) correctly find no match at all, since nothing in AFD is close enough in
-spelling to falsely match. But `"Chiroptera"` (bats) and `"Squamata"` (reptiles) *do* get a fuzzy
-match -- to the unrelated invertebrate genera `"Chiroptella"` and `"Squamosa"` respectively, purely by
-spelling coincidence. This is a genuine, worth-knowing limitation of fuzzy matching against a
-reference that doesn't cover the query's actual taxonomic group at all: nothing in the matching logic
-itself knows that a query might be a bird, bat or reptile rather than an insect, so a coincidentally
-similar invertebrate name can still win. Always sanity-check a fuzzy match rather than trusting it
-blindly, especially for a name that might sit outside the reference's real coverage.
-
-## Does a broader reference fix the vertebrate gap? Trying GBIF instead
-
-AFD is Australian-invertebrates-only by design. `taxonAlign.dataprep` can also build a reference straight from
-GBIF's own backbone taxonomy, which covers every animal, not just invertebrates.
+The AFD covers Australian animals of every kind, vertebrates included, so the birds, bats, possum
+and skink in this dataset are matched the same way as the insects -- including their orders, and the
+misspelt `"Psittaformes"`, which fuzzy-matches `"Psittaciformes"`. Their species names show
+`update_taxa()` at work: honeyeaters recorded under the old genus *Lichenostomus*, which has since been
+split, are updated to their current genera (*Gavicalis*, *Caligavis*, *Ptilotula*, *Nesoptilotis*), and
+misspellings (`"Melithrepotus brevirostris"`, `"Rhipidura fulginosa"`) are corrected.
 
 ```{r}
-# The live worldwide route -- generate_taxadb_taxonomic_reference_list("Animalia", rank = "kingdom",
-# provider = "gbif", gbif_snapshot_url = "https://data.source.coop/cboettig/taxadb/2026/dwc_gbif_part_0.parquet")
-# -- pulls in the *entire* animal kingdom worldwide (4.4M+ rows) via a genuinely current 2026 GBIF
-# snapshot queried directly, bypassing taxadb's own frozen (Dec-2022) registry
-# (?generate_taxadb_taxonomic_reference_list's Description has the full story). Commented out here:
-# it's much more than this demo needs (this dataset is all Australian records) and, run alongside
-# several other concurrent R processes during testing, triggered an unrelated package-loading crash
-# from resource contention, not a real bug in that code path -- worth another look on its own, but not
-# blocking this demo.
-#
-# Using instead two smaller, already-built live-GBIF reference tables from an earlier session, scoped
-# to Australia specifically (via generate_GBIF_taxonomic_reference_list()'s own `country = "AU"`
-# filter) -- one for invertebrates, one for vertebrates, combined here into one Australia-wide animal
-# reference. A closer match to this dataset's actual scope than the full worldwide kingdom anyway.
-gbif_animals <- dplyr::bind_rows(
-  readRDS("../ignore/gbif_au_invertebrates.rds"),
-  readRDS("../ignore/gbif_vertebrates_au.rds")
-)
-gbif_resources <- prepare_taxonomic_resources(gbif_animals)
+vertebrates <- pollinator_data |> filter(`Animal class` %in% c("Aves", "Mammalia", "Reptilia"))
+vertebrate_names <- sort(unique(vertebrates[["Animal species binomial name"]]))
+
+afd_vertebrates <- create_taxonomic_update_lookup(vertebrate_names, afd_resources)
+afd_vertebrates |>
+  select(original_name, suggested_name, taxon_rank, taxonomic_status_aligned) |>
+  knitr::kable()
 ```
 
-`r format(nrow(gbif_animals), big.mark = ",")` rows, spanning every Australian animal GBIF has a
-record for (vertebrate and invertebrate alike) -- about
-`r round(nrow(gbif_animals) / nrow(afd$NSL_animals), 1)`x the size of the AFD reference above.
+A few names only reach genus. Three are old combinations the AFD doesn't list under that name:
+*Phylidonyris albifrons* (now *Purnella albifrons*), *Anthochaera rufogularis* (now *Acanthagenys
+rufogularis*) and *Climacteris leucophaca*, a misspelling of *Climacteris leucophaea* (now *Cormobates
+leucophaea*; the AFD lists only its old subspecies names under *Climacteris*). The next section tries
+GBIF's list for these.
+
+## Comparing with GBIF's list of Australian animals
+
+The data release also has `"GBIF_AU"`: every animal in the GBIF backbone taxonomy with occurrence
+records in Australia, plus its synonyms. GBIF's occurrence records include fossil specimens, so taxa
+GBIF flags as extinct are left out by default.
+
+```{r}
+gbif <- load_taxonomic_resources("GBIF_AU", version = "2026-10-07", quiet = TRUE)
+gbif_resources <- prepare_taxonomic_resources(gbif)
+```
+
+`r format(nrow(gbif$GBIF_AU), big.mark = ",")` records -- about
+`r round(nrow(gbif$GBIF_AU) / nrow(afd$NSL_animals), 1)`x the size of the AFD list above.
 
 ### Aligning by species binomial name
 
@@ -288,34 +281,51 @@ gbif_order_detail |> knitr::kable()
 match_examples(gbif_order_aligned, gbif_order_detail) |> knitr::kable()
 ```
 
-### Did it actually fix the vertebrate orders?
+### The vertebrates, by each reference, and both combined
+
+In practice you'd use the two together, listing the AFD first: where both have an accepted name, the
+AFD's is the one matched, and GBIF adds the names the AFD lacks. (Where both list the same *old* name,
+the record with the higher-priority taxonomic status is matched, whichever reference it's in -- GBIF's
+plain "synonym" record for *Lichenostomus leucotis* is matched before the AFD's "Generic combination"
+one, though both lead to *Nesoptilotis leucotis*.)
 
 ```{r}
-vertebrate_orders <- c("Passeriformes", "Psittaciformes", "Psittaformes", "Diprotodontia", "Chiroptera", "Squamata")
+both_resources <- prepare_taxonomic_resources(c(afd, gbif))
 
-dplyr::bind_rows(
-  afd_only = order_aligned |> dplyr::filter(original_name %in% vertebrate_orders) |> dplyr::distinct(original_name, aligned_name, taxon_rank),
-  gbif_animals = gbif_order_aligned |> dplyr::filter(original_name %in% vertebrate_orders) |> dplyr::distinct(original_name, aligned_name, taxon_rank),
-  .id = "reference"
+gbif_vertebrates <- create_taxonomic_update_lookup(vertebrate_names, gbif_resources)
+both_vertebrates <- create_taxonomic_update_lookup(vertebrate_names, both_resources)
+
+# compared without the subgenus, which the AFD writes into a species' name where it has one
+# ("Acanthiza (Geobasileus) chrysorrhoa") and GBIF doesn't
+without_subgenus <- function(x) coalesce(sub(" \\([^)]*\\)", "", x), "(no match)")
+
+tibble(
+  original_name = vertebrate_names,
+  AFD = afd_vertebrates$suggested_name,
+  GBIF = gbif_vertebrates$suggested_name,
+  `AFD, then GBIF` = both_vertebrates$suggested_name
 ) |>
-  arrange(original_name, reference) |>
+  filter(without_subgenus(AFD) != without_subgenus(GBIF) | without_subgenus(AFD) != original_name) |>
   knitr::kable()
 ```
 
+Only the names whose suggested name differs from the name recorded, or between the two references,
+are listed.
+
 ## Summary
 
-Aligning `Animal species binomial name` against AFD resolved
+Aligning `Animal species binomial name` against the AFD resolved
 `r sum(!is.na(species_aligned$aligned_name))` of `r nrow(species_aligned)` observations
-(`r round(100 * mean(!is.na(species_aligned$aligned_name)), 1)`%), and against the AU-wide GBIF animal
-reference, `r sum(!is.na(gbif_species_aligned$aligned_name))`
+(`r round(100 * mean(!is.na(species_aligned$aligned_name)), 1)`%), and against GBIF's Australian
+animals, `r sum(!is.na(gbif_species_aligned$aligned_name))`
 (`r round(100 * mean(!is.na(gbif_species_aligned$aligned_name)), 1)`%). Aligning `Animal order`
 resolved `r sum(!is.na(order_aligned$aligned_name))` of `r nrow(order_aligned)` observations against
-AFD (`r round(100 * mean(!is.na(order_aligned$aligned_name)), 1)`%) and
+the AFD (`r round(100 * mean(!is.na(order_aligned$aligned_name)), 1)`%) and
 `r sum(!is.na(gbif_order_aligned$aligned_name))`
-(`r round(100 * mean(!is.na(gbif_order_aligned$aligned_name)), 1)`%) against GBIF -- higher, as
-expected, since that reference's vertebrate coverage includes the orders AFD was never going to have
-in the first place. Across all four alignments, this single real dataset exercised
+(`r round(100 * mean(!is.na(gbif_order_aligned$aligned_name)), 1)`%) against GBIF. Resolving a name
+isn't the same as resolving it well, though: the examples above show where each reference only got as
+far as a genus, and where a fuzzy match is worth a second look. Across all four alignments, this single
+real dataset exercised
 `r length(unique(c(species_aligned$alignment_code, order_aligned$alignment_code, gbif_species_aligned$alignment_code, gbif_order_aligned$alignment_code)))`
 distinct internal match patterns -- a reasonable stand-in for how varied real-world taxonomic name
-data actually is, and for how differently two reasonable choices of reference can behave on the exact
-same names.
+data actually is.

@@ -150,7 +150,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-388 expectations, all passing as of the last `devtools::test()` run (2026-10-22, just after the split), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (233 expectations) holds the tests that moved with the builders.
+391 expectations, all passing as of the last `devtools::test()` run (2026-10-22), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (233 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -810,6 +810,29 @@ Architecture of the matching engine itself:
   question): genus values with *no* explicit row anywhere (NSL 7,443; CSV 12,283, almost all from
   synonym names only, since the CSV export has no genus-synonym records at all) are still synthesised
   as `"accepted"` genera.
+- **Synonym splits (`R/resolve_synonym_splits.R`, `build_split_table()`)**: a species/infraspecific
+  *synonym* leading to two or more accepted taxa gets one suggested name plus
+  `alternative_possible_names` (APCalign's `taxonomic_splits` convention; ordering rules and their
+  history are in dataprep's CLAUDE.md, Architecture #3, where they were developed against the AFD).
+  Narrowed at the user's insistence to species-level synonyms only -- a *genus* synonym leading to
+  several accepted genera (e.g. COL's six homonymous *Cynthia* genus records) still silently takes the
+  first; user, 2026-10-22: "let's leave for now". **Fixed 2026-10-22, found rendering the Prendergast
+  demo against AFD + GBIF_AU**: candidates used to be distinct accepted *records* (`target_ID`), so
+  with references combined, a name leading to the same accepted name in both (AFD and GBIF each
+  listing *Lichenostomus leucotis* -> *Nesoptilotis leucotis*) was a "split" listing its own accepted
+  name as its alternative. Now distinct accepted *taxa*: the same name in different references is one
+  taxon; within one reference the name as written (`display_name`) decides, so *Ogma (Seriespinula)
+  australis* and *Ogma (Pateracephalanema) australis* stay distinct. Measured: NSL animals + GBIF_AU
+  57,818 -> 7,514 splits; a single AFD format loses only 6, each the same valid name listed twice (a
+  data error the curator report lists). The old-vs-new split comparison (dataprep's CLAUDE.md) was run
+  before this fix, so combined-reference lookups now differ from it by design.
+- **Across combined references, status priority outranks list order.** `prepare_taxonomic_resources()`
+  sorts the combined table by `taxonAlign_taxonomic_status_priority` (stable, so list order only
+  breaks ties), so where two references list the same *old* name under different statuses, the
+  higher-priority status wins whichever reference it's in: GBIF's "synonym" record for *Lichenostomus
+  leucotis* is matched before the AFD's "Generic combination" one even with the AFD listed first.
+  Accepted names are unaffected (both "accepted", so list order decides). Raised with the user as a
+  design question, 2026-10-22; unchanged pending her answer.
 - **`match_02x` (issue #25): a second, marker-abbreviation input syntax for the bracketed-subgenus
   concept.** Found loading the new National Species List (NSL) reference data (`load_NSL_resources()`,
   see Architecture #4 below): NSL writes an infrageneric name as `"Genus subg. Subgenusname"` (e.g.
@@ -964,18 +987,22 @@ anything downstream assumes it's there" defensive pattern used elsewhere in the 
 
 `vignettes/demo-align-Prendergast.qmd` is a worked demo against real, messy data rather than a
 hand-built example or a historical record -- requested as "something to show people as a test" of the
-package, not a tutorial or a benchmark. Aligns the real `Prendergast_2026_2` plant-pollinator dataset
-(from the sibling `austraits.build` repo, `../../austraits.build/data/Prendergast_2026_2/data.csv` --
-**not self-contained**, same caveat as `reproduce-EH-workflow.Rmd`) at both species level (`Animal
-species binomial name`) and order level (`Animal order`), first against AFD, then against a
-live-GBIF-fetched Australia-wide animal reference (both invertebrates and vertebrates, combined from
-two already-built `generate_GBIF_taxonomic_reference_list(..., country = "AU")` tables kept outside
-the repo under `ignore/`) -- summarising match-type counts, showing examples sorted by internal match
-code, listing every non-matched name with its observation count (to drive a "what needs fixing"
-review), and directly comparing both references on the vertebrate orders AFD structurally can't cover
-(`Passeriformes`, `Chiroptera`, `Squamata`, ...). This is also the vignette that surfaced the real
-`match_02a` bug fixed above (`"Hylaeus (Rhodhylaeus) sp."` collapsing to bare genus rank) -- found by
-running real data through the package, not by constructing a fixture to probe for it.
+package. **Reworked 2026-10-22**: it now aligns the real `Prendergast_2026_3` plant-pollinator dataset
+(sibling `austraits.build` repo, `../../austraits.build/data/Prendergast_2026_3/data.csv` relative to
+`vignettes/` -- **not self-contained**) -- user's choice, because it has the vertebrate visitors (birds,
+bats, a possum, a skink; "I definitely want the version with vertebrates!!"). The pollination data was
+split in austraits.build after the demo was first written: `Prendergast_2026_2` is now insects only,
+and the old text's hardcoded "2,896 rows" and vertebrate claims described neither. References: the
+released `NSL_animals` and `GBIF_AU` (version `2026-10-07`), then both combined. The old "AFD has no
+vertebrates" story no longer applies -- the AFD's NSL export covers vertebrates, so every order matches
+exactly (incl. fuzzy `"Psittaformes"`), and the demo now shows *Lichenostomus* honeyeaters updating to
+*Gavicalis*/*Caligavis*/*Ptilotula*/*Nesoptilotis*, and three old combinations the AFD lacks at species
+rank (*Phylidonyris albifrons*, *Anthochaera rufogularis*, misspelt *Climacteris leucophaca*), the
+first two filled by GBIF in the combination. Until the release is published, render it against the
+local release files with `R_USER_CACHE_DIR` pointing at a folder holding
+`R/taxonAlign/data_release/2026-10-07/` (the ready files + manifest), so the real cache isn't touched.
+This vignette also surfaced the real `match_02a` bug fixed above (`"Hylaeus (Rhodhylaeus) sp."`), and
+the combined-references split bug (see "Synonym splits").
 - The `generate_taxadb_taxonomic_reference_list(..., gbif_snapshot_url = ...)` route (see Architecture
   #1b) can build the same kind of Australia-wide animal reference directly, combining `country = "AU"`
   with the current 2026 snapshot in one call, without needing the pre-built `ignore/` files -- confirmed
