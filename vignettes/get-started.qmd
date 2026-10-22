@@ -29,7 +29,7 @@ below deliberately mixes ranks, not just species names.
 Building a reference from other sources -- the World Checklist of Vascular Plants, the Catalogue of
 Life, a live GBIF fetch, a [taxadb](https://docs.ropensci.org/taxadb/) snapshot, the Australian Plant
 Census, or your own table with different column names -- is the job of the companion package
-[taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep), which also builds the
+[taxonAlign.dataprep](https://github.com/traitecoevo/taxonAlign.dataprep), which also builds the
 released lists. You only need it if you're building a reference yourself.
 
 This vignette walks through every exported function, in the order you'd typically use them, then
@@ -114,9 +114,9 @@ actually changes, so an older release isn't necessarily out of date.
 ### Download global taxonomic resources
 
 For taxa the released lists don't cover, or a reference that covers the whole world, the companion
-package [taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep) downloads the major
+package [taxonAlign.dataprep](https://github.com/traitecoevo/taxonAlign.dataprep) downloads the major
 global taxonomic resources and reshapes them into taxonAlign's format. Install it with
-`pak::pak("traitecoevo/taxonalign-dataprep")`.
+`pak::pak("traitecoevo/taxonAlign.dataprep")`.
 
 | Function | Reference | Best for |
 |---|---|---|
@@ -162,7 +162,7 @@ A few things worth knowing:
   Species List for vascular plants.
 
 taxonAlign.dataprep's own
-[getting-started vignette](https://github.com/traitecoevo/taxonalign-dataprep/blob/main/vignettes/get-started.qmd)
+[getting-started vignette](https://github.com/traitecoevo/taxonAlign.dataprep/blob/main/vignettes/get-started.qmd)
 covers each of these in detail.
 
 ### Your own reference table

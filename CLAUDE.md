@@ -28,10 +28,11 @@ Until 2026-10-22 this repo also held every function that *builds* a reference. F
 Cornwell's suggestion on [issue #26](https://github.com/traitecoevo/taxonAlign/issues/26) ("a new user
 who's just got a species list ... just needs `align_taxa()`, `update_taxa()`,
 `create_taxonomic_update_lookup()` with the right option to pull the right release"), it was split in
-two; the other half is the sibling repo `../taxonalign-dataprep`
-([traitecoevo/taxonalign-dataprep](https://github.com/traitecoevo/taxonalign-dataprep)), R package
+two; the other half is the sibling checkout `../taxonalign-dataprep`
+([traitecoevo/taxonAlign.dataprep](https://github.com/traitecoevo/taxonAlign.dataprep)), R package
 **`taxonAlign.dataprep`** (dotted, in the traits.build/austraits.build style; R names can't have a
-hyphen).
+hyphen). The GitHub repo was created as `taxonalign-dataprep` and renamed `taxonAlign.dataprep` to
+match the package on 2026-10-22 (GitHub redirects the old name; the local folder keeps the old name).
 
 | Here (taxonAlign) | taxonAlign.dataprep |
 |---|---|
@@ -51,7 +52,7 @@ Decisions made with the user while splitting (don't re-litigate):
   release. Dataset names: `NSL_animals`, `NSL_algae`, `NSL_bryophytes`, `NSL_fungi`, `NSL_lichens`,
   `GBIF_AU`.
 - **Releases live on the dataprep repo** (`taxonAlign_data_release_repo` in `R/data_release_helpers.R`
-  is `"traitecoevo/taxonalign-dataprep"`). The old `2026-10-07` draft on this repo's own Releases has the
+  is `"traitecoevo/taxonAlign.dataprep"`). The old `2026-10-07` draft on this repo's own Releases has the
   old asset layout (no ready files, `gbif_au_animals.parquet`, a manifest without `dataset`/`type`) and is
   superseded; `data_release_datasets()` errors clearly on a manifest that old.
 - **`load_AFD()` was removed** (user, 2026-10-22: "as long as we can load the NSL version through
@@ -171,7 +172,7 @@ quarto render README.qmd
 
 Sections are numbered as they were before the split, so the many cross-references below still line
 up: #2 (matching engine) and #5 (released data) are here; #1 (live GBIF builder), #1b (taxadb
-builder), #3 (AFD-format/APC loaders) and #4 (NSL loader) are in taxonalign-dataprep's CLAUDE.md,
+builder), #3 (AFD-format/APC loaders) and #4 (NSL loader) are in taxonAlign.dataprep's CLAUDE.md,
 with the old function names mapped as in the table above (`load_taxonomic_resources("AFD")` ->
 `load_AFD()` (since removed; its code is in dataprep's AFD-data-processing vignette),
 `load_NSL_resources()` -> `load_NSL()`, `load_GBIF_AU_resources()` -> `load_taxonomic_resources("GBIF_AU")`).
@@ -871,7 +872,7 @@ Architecture of the matching engine itself:
 
 ### 5. Released reference data and the reference format (issues #24, #26) — `R/load_taxonomic_resources.R`, `R/data_release_helpers.R`, `R/taxonomic_reference_schema.R`
 
-Reference data is published as files on dated GitHub Releases of the **taxonalign-dataprep** repo
+Reference data is published as files on dated GitHub Releases of the **taxonAlign.dataprep** repo
 (bare `YYYY-MM-DD` tags, exactly as APCalign does), so an alignment is reproducible by naming the
 release. Building and publishing releases is dataprep's job (its CLAUDE.md has the release-building
 history: scope, GBIF extinct flags, the BOLD-BIN records left out of `GBIF_AU`); this package only
@@ -894,7 +895,7 @@ warning** (user: it implies laziness, and the GBIF backbone often doesn't change
   re-download wrote *through* a symlinked cache entry and emptied the file it pointed at.
 - `data_release_versions()` lists published date-tagged releases (drafts excluded, pre-releases
   included) -- so a *draft* release is only usable by naming `version` after downloading its files into
-  the cache by hand (`gh release download <tag> --repo traitecoevo/taxonalign-dataprep -D
+  the cache by hand (`gh release download <tag> --repo traitecoevo/taxonAlign.dataprep -D
   <cache_dir>/data_release/<tag>`).
 - `arrow`, `curl`, `jsonlite` are full Imports (user decision for arrow, as APCalign).
 - **GBIF's `extinct` flag doesn't distinguish fossils from recent extinctions** -- the thylacine,

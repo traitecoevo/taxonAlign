@@ -20,7 +20,7 @@ development.
 
 The package has since been split in two (issue #26): taxonAlign now does the matching and updating,
 and the functions that build a reference (`generate_GBIF_taxonomic_reference_list()`, `load_NSL()`,
-...) live in the companion package [taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep).
+...) live in the companion package [taxonAlign.dataprep](https://github.com/traitecoevo/taxonAlign.dataprep).
 The AFD export used below, the AFD's own CSV format, has since been superseded by its National Species
 List format, released as `load_taxonomic_resources("NSL_animals")`; the reader for the CSV format,
 `load_AFD()`, now lives only in taxonAlign.dataprep's `AFD-data-processing` vignette, for comparisons

@@ -18,7 +18,7 @@
   [traits.build](https://github.com/traitecoevo/traits.build) database –
   from GBIF, the Catalogue of Life, the World Checklist of Vascular
   Plants, or your own table.
-  *([taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep))*
+  *([taxonAlign.dataprep](https://github.com/traitecoevo/taxonAlign.dataprep))*
 - **Work directly with Australia’s National Species Lists** for animals,
   fungi, vascular plants, bryophytes, lichens and algae – both packages
   are designed around them. The animal, fungi, bryophyte, lichen and
@@ -35,7 +35,7 @@ The work is split between two packages:
   and GBIF’s list of Australian animals) from dated data releases. If
   your taxa are covered by one of those lists, or you already have a
   reference table in taxonAlign’s format, it’s all you need.
-- **[taxonAlign.dataprep](https://github.com/traitecoevo/taxonalign-dataprep)**
+- **[taxonAlign.dataprep](https://github.com/traitecoevo/taxonAlign.dataprep)**
   builds reference lists – from GBIF, the Catalogue of Life, the World
   Checklist of Vascular Plants, the Australian Plant Census, or your own
   table – and builds taxonAlign’s data releases.
@@ -54,7 +54,7 @@ To build your own reference lists as well, install taxonAlign.dataprep,
 which installs taxonAlign along with it:
 
 ``` r
-pak::pak("traitecoevo/taxonalign-dataprep")
+pak::pak("traitecoevo/taxonAlign.dataprep")
 ```
 
 ## About this package

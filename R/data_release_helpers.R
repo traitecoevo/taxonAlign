@@ -6,7 +6,7 @@
 # ("2026-10-15"), assets are downloaded from the plain public release URL, cached locally, and the
 # newest locally cached release is used when there's no internet connection.
 
-taxonAlign_data_release_repo <- "traitecoevo/taxonalign-dataprep"
+taxonAlign_data_release_repo <- "traitecoevo/taxonAlign.dataprep"
 
 # session cache for the release list, so the GitHub API isn't queried on every load
 .taxonAlign_release_cache <- new.env(parent = emptyenv())
