@@ -335,3 +335,22 @@ test_that("a rank word plus a placeholder code is dropped, but a phrase name sta
   expect_false("Genus A" %in% resources$species$synonym$canonical_name)
   expect_true("Genus sp. Yalgoo (J.M.Ward s.n. 11/7/1999)" %in% resources$species$synonym$canonical_name)
 })
+
+test_that("across combined tables, the first-listed table wins, whatever the statuses", {
+  # the same old name in two references, under a lower-priority status in the first-listed one
+  first <- tibble::tribble(
+    ~canonical_name, ~scientific_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Nesoptilotis leucotis", "Nesoptilotis leucotis (Latham, 1801)", "species", "accepted", "Nesoptilotis", "a1", "a1",
+    "Lichenostomus leucotis", "Lichenostomus leucotis (Latham, 1801)", "species", "Generic combination", "Lichenostomus", "s1", "a1"
+  ) |> dplyr::mutate(taxonomic_dataset = "FIRST")
+  second <- first |> dplyr::mutate(taxon_ID = c("b1", "t1"), accepted_name_usage_ID = c("b1", "b1"),
+                                   taxonomic_status = c("accepted", "synonym"), taxonomic_dataset = "SECOND")
+  out <- align_taxa("Lichenostomus leucotis", list(first, second))
+  expect_equal(out$taxonomic_dataset, "FIRST")
+  expect_equal(out$taxonomic_status, "Generic combination")
+  # ...and listed the other way round, the other one
+  expect_equal(align_taxa("Lichenostomus leucotis", list(second, first))$taxonomic_dataset, "SECOND")
+  # within one table, status priority still decides
+  expect_equal(prepare_taxonomic_resources(dplyr::bind_rows(first, second))$species$synonym$taxonomic_status[1], "synonym")
+  expect_false(".table_order" %in% names(prepare_taxonomic_resources(list(first, second))$species$accepted))
+})

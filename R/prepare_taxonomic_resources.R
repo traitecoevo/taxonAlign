@@ -197,9 +197,10 @@ taxonAlign_taxon_rank_specificity <- c(
 #' is renamed to `canonical_name`/`taxon_rank`/`taxonomic_status`/`scientific_name`. This keeps
 #' `canonical_name` the *only* name field taxonAlign ever refers to.
 #'
-#' When multiple tables are supplied, priority is expressed purely through row order in the combined
-#' table: `match_taxa()`'s exact-match blocks use `match()` (first-hit semantics), so whichever table
-#' is supplied first is preferred when a name exists in more than one.
+#' When multiple tables are supplied, whichever is supplied first is preferred when a name exists in
+#' more than one, whatever taxonomic status each gives it. Within one table, a name listed more than
+#' once is matched to its most reliable status first (accepted, then the various kinds of synonym, then
+#' misapplications, ...).
 #'
 #' Two matching conventions for subgenus names are supported side by side: some input name lists
 #' write the subgenus alone (e.g. `"Podosemum"`), others write the `Genus (Subgenus)` bracketed
@@ -233,8 +234,10 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
       accepted_name_usage_ID = as.character(accepted_name_usage_ID)
     )
   })
-  # no prompt: the order tables were supplied in *is* the priority
-  taxonomic_resources <- dplyr::bind_rows(resolved)
+  # no prompt: the order tables were supplied in *is* the priority; `.table_order` records it, for the
+  # sort below
+  taxonomic_resources <- dplyr::bind_rows(resolved, .id = ".table_order") |>
+    dplyr::mutate(.table_order = match(.table_order, names(resolved)))
 
   # dummy placeholder for blank cells -- fuzzy matching doesn't cope with blank/duplicate cells
   zzz <- "zzzz zzzz"
@@ -327,6 +330,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     # the rest of the package's "first-hit wins" priority convention when the same name could otherwise
     # be attributed to more than one source
     dataset_of <- function(v) taxonomic_resources$taxonomic_dataset[match(v, values)]
+    table_of <- function(v) taxonomic_resources$.table_order[match(v, values)]
     row_id <- function(v, suffix = "") {
       if (length(v) == 0) return(character(0))
       paste0(paste(dataset_of(v), col, v, sep = "_"), suffix)
@@ -344,7 +348,8 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
 
     accepted_rows <- dplyr::tibble(
       canonical_name = accepted_new, scientific_name = accepted_new, taxon_rank = col,
-      taxonomic_status = "accepted", taxonomic_dataset = dataset_of(accepted_new), genus = NA_character_,
+      taxonomic_status = "accepted", taxonomic_dataset = dataset_of(accepted_new), .table_order = table_of(accepted_new),
+      genus = NA_character_,
       # no natural taxon_ID exists for a rank synthesised this way -- a placeholder combining the
       # dataset, rank and name keeps it unique across both ranks (a nominotypical genus/subgenus
       # sharing a name) and datasets (two sources both having, say, a "Formicidae" family row)
@@ -374,6 +379,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     synonym_rows <- dplyr::tibble(
       canonical_name = links$value, scientific_name = links$value, taxon_rank = rep(col, nrow(links)),
       taxonomic_status = rep("synonym", nrow(links)), taxonomic_dataset = dataset_of(links$value),
+      .table_order = table_of(links$value),
       genus = NA_character_,
       taxon_ID = row_id(links$value, paste0("_syn_", links$target)), accepted_name_usage_ID = links$target_ID
     )
@@ -381,6 +387,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     unplaced_rows <- dplyr::tibble(
       canonical_name = orphans, scientific_name = orphans, taxon_rank = rep(col, length(orphans)),
       taxonomic_status = rep("unplaced", length(orphans)), taxonomic_dataset = dataset_of(orphans),
+      .table_order = table_of(orphans),
       genus = NA_character_, taxon_ID = row_id(orphans), accepted_name_usage_ID = row_id(orphans)
     )
     dplyr::bind_rows(accepted_rows, synonym_rows, unplaced_rows)
@@ -388,15 +395,18 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
 
   taxonomic_resources <- dplyr::bind_rows(taxonomic_resources, synthesised_rows)
 
-  # Sort by taxonomic_status priority (see taxonAlign_taxonomic_status_priority above) so that, wherever
-  # the same lookup key repeats under different statuses, the most reliable row is the one every
-  # first-hit `match()`-based exact-match block finds, and the one the binomial/trinomial dedup below
-  # keeps (it discards later duplicates, so ordering matters there too). This is a stable sort, so it
-  # composes correctly with priority *between* multiple combined taxonomic_resources tables (row-bind
-  # order, established above): rows tie on taxonomic_status keep the relative order they already had,
-  # so a higher-priority *dataset*'s "accepted" row still comes before a lower-priority dataset's.
+  # Sort by table (the order the tables were supplied in), then by taxonomic_status priority within
+  # each table (see taxonAlign_taxonomic_status_priority above), so that wherever the same lookup key
+  # repeats, the row every first-hit `match()`-based exact-match block finds -- and the one the
+  # binomial/trinomial dedup below keeps (it discards later duplicates) -- is the first-listed table's,
+  # and within that table the most reliable status's. Table first is the user's choice (2026-10-22):
+  # "the first listed wins" whatever the statuses. Status used to rank first across all tables, so a
+  # name both references list as an old name went to whichever labelled it with the higher-priority
+  # status (GBIF's plain "synonym" for Lichenostomus leucotis beat the AFD's "Generic combination",
+  # with the AFD listed first). The sort is stable, so ties keep each table's own row order.
   taxonomic_resources <- taxonomic_resources |>
-    dplyr::arrange(factor(taxonomic_status, levels = taxonAlign_taxonomic_status_priority))
+    dplyr::arrange(.table_order, factor(taxonomic_status, levels = taxonAlign_taxonomic_status_priority)) |>
+    dplyr::select(-".table_order")
 
   taxonomic_resources <- taxonomic_resources |>
     dplyr::mutate(

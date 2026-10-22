@@ -230,7 +230,8 @@ you through mapping them onto the format (in the style of `traits.build`'s `meta
 
 `prepare_taxonomic_resources()` (and the matching functions) also accept a list of tables, combining
 them with a priority order: when the same name appears in more than one table, whichever table is
-listed *first* wins. This is how you'd combine released lists with your own data:
+listed *first* wins, whatever taxonomic status each gives it (within one table, the most reliable
+status wins). This is how you'd combine released lists with your own data:
 
 ```{r}
 #| eval: false

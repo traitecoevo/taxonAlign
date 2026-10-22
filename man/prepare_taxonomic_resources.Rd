@@ -53,9 +53,10 @@ own convention -- e.g. a raw \code{canonicalName}/\code{taxonRank}/\code{taxonom
 is renamed to \code{canonical_name}/\code{taxon_rank}/\code{taxonomic_status}/\code{scientific_name}. This keeps
 \code{canonical_name} the \emph{only} name field taxonAlign ever refers to.
 
-When multiple tables are supplied, priority is expressed purely through row order in the combined
-table: \code{match_taxa()}'s exact-match blocks use \code{match()} (first-hit semantics), so whichever table
-is supplied first is preferred when a name exists in more than one.
+When multiple tables are supplied, whichever is supplied first is preferred when a name exists in
+more than one, whatever taxonomic status each gives it. Within one table, a name listed more than
+once is matched to its most reliable status first (accepted, then the various kinds of synonym, then
+misapplications, ...).
 
 Two matching conventions for subgenus names are supported side by side: some input name lists
 write the subgenus alone (e.g. \code{"Podosemum"}), others write the \code{Genus (Subgenus)} bracketed

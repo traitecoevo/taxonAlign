@@ -826,13 +826,19 @@ Architecture of the matching engine itself:
   57,818 -> 7,514 splits; a single AFD format loses only 6, each the same valid name listed twice (a
   data error the curator report lists). The old-vs-new split comparison (dataprep's CLAUDE.md) was run
   before this fix, so combined-reference lookups now differ from it by design.
-- **Across combined references, status priority outranks list order.** `prepare_taxonomic_resources()`
-  sorts the combined table by `taxonAlign_taxonomic_status_priority` (stable, so list order only
-  breaks ties), so where two references list the same *old* name under different statuses, the
-  higher-priority status wins whichever reference it's in: GBIF's "synonym" record for *Lichenostomus
-  leucotis* is matched before the AFD's "Generic combination" one even with the AFD listed first.
-  Accepted names are unaffected (both "accepted", so list order decides). Raised with the user as a
-  design question, 2026-10-22; unchanged pending her answer.
+- **Across combined references, list order outranks status** (user's decision, 2026-10-22: "List
+  order first"). `prepare_taxonomic_resources()` sorts by `.table_order` (the order tables were
+  supplied in; carried onto synthesised higher-rank rows via the table of the row that first names
+  the value, dropped after the sort), then by `taxonAlign_taxonomic_status_priority` within each table.
+  It used to sort by status alone (stable, so list order only broke ties), so where two references
+  listed the same *old* name under different statuses, the higher-priority status won whichever
+  reference it was in -- GBIF's "synonym" for *Lichenostomus leucotis* beat the AFD's "Generic
+  combination" with the AFD listed first, contradicting the documented "first listed wins". A single
+  table is unaffected. Test: `test-prepare_taxonomic_resources.R`, "the first-listed table wins".
+  Measured with the split fix above, on the 5,154-name list against NSL_animals + GBIF_AU: no
+  `aligned_name` changes; 20 `suggested_name`s change -- 9 lose a self-listed alternative, 11 now
+  follow the AFD's taxonomy where GBIF's "accepted" record used to win (*Conoderus* -> *Monocrepidus*
+  for 7 names, *Goniocolletes* -> *Leioproctus (Goniocolletes)*, *Pachycoelia* -> *Lepispilus*).
 - **`match_02x` (issue #25): a second, marker-abbreviation input syntax for the bracketed-subgenus
   concept.** Found loading the new National Species List (NSL) reference data (`load_NSL_resources()`,
   see Architecture #4 below): NSL writes an infrageneric name as `"Genus subg. Subgenusname"` (e.g.

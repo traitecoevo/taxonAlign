@@ -283,11 +283,8 @@ match_examples(gbif_order_aligned, gbif_order_detail) |> knitr::kable()
 
 ### The vertebrates, by each reference, and both combined
 
-In practice you'd use the two together, listing the AFD first: where both have an accepted name, the
-AFD's is the one matched, and GBIF adds the names the AFD lacks. (Where both list the same *old* name,
-the record with the higher-priority taxonomic status is matched, whichever reference it's in -- GBIF's
-plain "synonym" record for *Lichenostomus leucotis* is matched before the AFD's "Generic combination"
-one, though both lead to *Nesoptilotis leucotis*.)
+In practice you'd use the two together, listing the AFD first: any name the AFD has is matched
+there, and GBIF is used only for names the AFD lacks.
 
 ```{r}
 both_resources <- prepare_taxonomic_resources(c(afd, gbif))
