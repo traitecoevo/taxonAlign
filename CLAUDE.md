@@ -151,7 +151,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-431 expectations, all passing as of the last `devtools::test()` run (2026-11-14), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
+441 expectations, all passing as of the last `devtools::test()` run (2026-11-14), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -178,6 +178,37 @@ with the old function names mapped as in the table above (`load_taxonomic_resour
 `load_NSL_resources()` -> `load_NSL()`, `load_GBIF_AU_resources()` -> `load_taxonomic_resources("GBIF_AU")`).
 
 ### 2. Fuzzy-matching/alignment engine — `R/prepare_taxonomic_resources.R`, `R/align_taxa.R`, `R/match_taxa.R`, `R/update_taxa.R`, `R/create_taxonomic_update_lookup.R`, `R/match_taxa_helpers.R` (active; everything but `match_taxa()` and the helpers is exported)
+
+**Read this first -- APCalign parity restructure (2026-11-14).** After a tester's run
+([dataprep#1](https://github.com/traitecoevo/taxonAlign.dataprep/issues/1)), `match_taxa()` was rebuilt
+to follow APCalign's *current* `match_taxa()` block for block (order and accepted-before-synonym
+precedence), generalised to any references/ranks; see the comment at the top of `R/match_taxa.R`.
+Several statements further down describe the earlier port and are superseded where they conflict:
+- Block order is APCalign's: 01 exact; 02 "sp." (02a/02x/02y subgenus forms, 02b exact, 02z vernacular
+  endings, 02c fuzzy genus -- only when the closest higher-rank name is a genus); 04 intergrade/
+  indecision; 05 fuzzy; 06 affinis (06a/06b exact whole-name, issue #16; 06c-f genus); 07 imprecise
+  fuzzy (was a silent no-op: the option set distances nothing read); 08 hybrids (was 03, before fuzzy
+  matching -- broke real hybrid names in APC); 09a-d trinomial exact+fuzzy, 10a-d binomial exact+fuzzy
+  (the fuzzy halves were missing); 11 bracket-free; 12a subgenus, 12b exact higher rank, 12c fuzzy higher
+  rank. Codes renumbered so they still sort in execution order.
+- Higher-rank fuzzy matching: accepted names first, then synonyms (APCalign); within a pass the
+  *closest* name across all ranks wins, ties to the broader rank (issue #12 survives only as the
+  tie-break). `rank_rows()` restricts first-word matching to one-word names (a multi-word name at an odd
+  rank, e.g. APNI "[unranked]" cultivars, used to match by its first word).
+- `include_bracketed_info` defaults to `TRUE` (APCalign's form; user's decision 2026-11-14).
+- `update_taxa()`: a name aligned above species keeps its "sp. [...]"/"x [...]" detail with the
+  accepted (or followed) name spliced in ("Ptilinopus sp. [Megaloprepia magnifica]"); a synonym leading
+  to a non-accepted taxon (APC "excluded") suggests that taxon, `accepted_name` NA; an accepted match is
+  checked for splits too (APCalign's "Acaena x ovina" alternatives), except a species vs its own
+  nominotypical infraspecific taxon. `accepted_name`/IDs filled for genus-level matches is an
+  **approved** difference (user: "for some animal groups id-ing to genus is as good as it gets").
+- `prepare_taxonomic_resources()` synthesis ignores a row's value at a rank broader than, or equal to,
+  the row's own (APC family rows fill `genus` with the family name; genus-rank phrase names carry a
+  placeholder genus) -- both made bogus accepted genera ("Asteraceae").
+- `tests/testthat/test-apc_equivalence.R` now also runs APCalign's own 239-name benchmark
+  (`tests/testthat/benchmarks/`) through both packages: all 204 APC names agree on aligned name, rank,
+  suggested name, and every ID/accepted-name value APCalign gives. Not yet matched (pending user
+  decisions): APCalign's split rules on its splits benchmark, `taxonomic_splits = "return_all"`.
 
 This is a cleaned-up port of an existing workflow (`AusInvertAlign`, from the sibling
 `ausinvertraits.addons` project) for aligning raw taxon-name lists to an accepted taxonomic resource,

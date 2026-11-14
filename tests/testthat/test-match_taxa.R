@@ -17,7 +17,7 @@ test_that("hybrids = TRUE resolves a hybrid name to genus rank via an exact genu
   out <- align_taxa("Boronia x hybrida", resources, hybrids = TRUE)
 
   expect_equal(out$taxon_rank, "genus")
-  expect_equal(out$alignment_code, "match_03a_hybrid_exact_genus")
+  expect_equal(out$alignment_code, "match_08a_hybrid_exact_genus")
   expect_true(grepl("^Boronia x \\[", out$aligned_name))
 })
 
@@ -25,7 +25,7 @@ test_that("hybrids = TRUE fuzzy-matches a misspelled genus, respecting fuzzy_mat
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   out_fuzzy <- align_taxa("Boronai x hybrida", resources, hybrids = TRUE) # fuzzy_matches defaults TRUE
-  expect_equal(out_fuzzy$alignment_code, "match_03b_hybrid_fuzzy_genus")
+  expect_equal(out_fuzzy$alignment_code, "match_08b_hybrid_fuzzy_genus")
   expect_true(grepl("^Boronia x \\[", out_fuzzy$aligned_name))
   # "Boronai" vs "Boronia" -- a single adjacent transposition, distance 1 under
   # Damerau-Levenshtein (confirmed directly, not assumed)
@@ -33,7 +33,7 @@ test_that("hybrids = TRUE fuzzy-matches a misspelled genus, respecting fuzzy_mat
 
   # confirm fuzzy matching genuinely was disabled, not just coincidentally unnecessary
   out_nofuzzy <- align_taxa("Boronai x hybrida", resources, hybrids = TRUE, fuzzy_matches = FALSE)
-  expect_equal(out_nofuzzy$alignment_code, "match_03c_hybrid_unresolved")
+  expect_equal(out_nofuzzy$alignment_code, "match_08c_hybrid_unresolved")
   expect_true(is.na(out_nofuzzy$aligned_name))
   expect_true(is.na(out_nofuzzy$chars_changed))
 })
@@ -43,7 +43,7 @@ test_that("hybrids = TRUE degrades gracefully when the genus isn't in the refere
   out <- align_taxa("Xylomelum x foobar", resources, hybrids = TRUE)
 
   expect_true(is.na(out$aligned_name))
-  expect_equal(out$alignment_code, "match_03c_hybrid_unresolved")
+  expect_equal(out$alignment_code, "match_08c_hybrid_unresolved")
 })
 
 test_that("intergrades_affinis = TRUE resolves an intergrade name (double dash) to genus rank", {
@@ -68,11 +68,11 @@ test_that("intergrades_affinis = TRUE resolves a graded/'affinis'/'cf.' identifi
 
   out_aff <- align_taxa("Boronia aff. serrulata", resources, intergrades_affinis = TRUE)
   expect_equal(out_aff$taxon_rank, "genus")
-  expect_equal(out_aff$alignment_code, "match_04g_affinis_exact_genus")
+  expect_equal(out_aff$alignment_code, "match_06c_affinis_exact_genus")
 
   out_cf <- align_taxa("Boronia cf. serrulata", resources, intergrades_affinis = TRUE)
   expect_equal(out_cf$taxon_rank, "genus")
-  expect_equal(out_cf$alignment_code, "match_04g_affinis_exact_genus")
+  expect_equal(out_cf$alignment_code, "match_06c_affinis_exact_genus")
 })
 
 test_that("intergrades_affinis distinguishes a real 'affinis' epithet from an affinity qualifier", {
@@ -88,7 +88,7 @@ test_that("intergrades_affinis distinguishes a real 'affinis' epithet from an af
   # qualifier
   out_qualifier <- align_taxa("Boronia affinis otherspecies", resources, intergrades_affinis = TRUE)
   expect_equal(out_qualifier$taxon_rank, "genus")
-  expect_equal(out_qualifier$alignment_code, "match_04g_affinis_exact_genus")
+  expect_equal(out_qualifier$alignment_code, "match_06c_affinis_exact_genus")
 })
 
 test_that("intergrades_affinis = FALSE (default) leaves these names unhandled by match_04", {
@@ -115,7 +115,7 @@ test_that("a real, listed tautonymous subspecies ('Genus affinis affinis') exact
 
   expect_equal(out$taxon_rank, "subspecies")
   expect_equal(out$aligned_name, "Boronia affinis affinis")
-  expect_equal(out$alignment_code, "match_04e_affinis_exact_species_accepted")
+  expect_equal(out$alignment_code, "match_06a_affinis_exact_species_accepted")
 })
 
 test_that("a genuine affinity hedge that ISN'T also a real, listed name still falls back to genus rank", {
@@ -125,7 +125,7 @@ test_that("a genuine affinity hedge that ISN'T also a real, listed name still fa
   out <- align_taxa("Boronia affinis hedgeus", resources, intergrades_affinis = TRUE)
 
   expect_equal(out$taxon_rank, "genus")
-  expect_equal(out$alignment_code, "match_04g_affinis_exact_genus")
+  expect_equal(out$alignment_code, "match_06c_affinis_exact_genus")
 })
 
 test_that("a truncated binomial/trinomial coincidence doesn't fool the affinis exact-match check", {
@@ -145,7 +145,7 @@ test_that("a truncated binomial/trinomial coincidence doesn't fool the affinis e
   out <- align_taxa("Boronia aff. completelyfakeepithet", resources, intergrades_affinis = TRUE)
 
   expect_equal(out$taxon_rank, "genus")
-  expect_equal(out$alignment_code, "match_04g_affinis_exact_genus")
+  expect_equal(out$alignment_code, "match_06c_affinis_exact_genus")
 })
 
 test_that("progress = TRUE still reports progress when hybrids/intergrades_affinis resolve a name (issue #5)", {
@@ -158,7 +158,7 @@ test_that("progress = TRUE still reports progress when hybrids/intergrades_affin
     out <- align_taxa("Boronia x hybrida", resources, hybrids = TRUE, progress = TRUE),
     "%"
   )
-  expect_equal(out$alignment_code, "match_03a_hybrid_exact_genus")
+  expect_equal(out$alignment_code, "match_08a_hybrid_exact_genus")
 })
 
 # include_bracketed_info (defaults to FALSE): APCalign's convention of formatting a higher-rank-only
@@ -168,13 +168,13 @@ test_that("progress = TRUE still reports progress when hybrids/intergrades_affin
 # word, or a bare "Genus (Subgenus)"), the bracketed suffix is redundant (original_name already
 # preserves the raw input as its own column regardless), so the default now returns just the bare
 # matched name. include_bracketed_info = TRUE restores APCalign's always-bracketed convention exactly.
-test_that("include_bracketed_info = FALSE (default) returns a bare name when nothing more was in the input", {
+test_that("include_bracketed_info = FALSE returns a bare name when nothing more was in the input", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
-  out_genus <- align_taxa("Boronia", resources)
-  out_genus_synonym <- align_taxa("Boronella", resources)
-  out_family <- align_taxa("Rutaceae", resources)
-  out_subgenus_bracket <- align_taxa("Boronia (Valvatae)", resources)
+  out_genus <- align_taxa("Boronia", resources, include_bracketed_info = FALSE)
+  out_genus_synonym <- align_taxa("Boronella", resources, include_bracketed_info = FALSE)
+  out_family <- align_taxa("Rutaceae", resources, include_bracketed_info = FALSE)
+  out_subgenus_bracket <- align_taxa("Boronia (Valvatae)", resources, include_bracketed_info = FALSE)
 
   expect_equal(out_genus$aligned_name, "Boronia")
   expect_equal(out_genus$alignment_code, "match_12b_higher_rank_exact_accepted")
@@ -256,7 +256,7 @@ test_that("a genuine 'Genus (Subgenus) species' trinomial is unaffected by the b
 # sample_taxonomic_resources()'s existing "Boronia (Valvatae)" pair without any fixture changes.
 test_that("a bare 'Genus subg. Subgenusname' query resolves the same as its bracket equivalent", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
-  out <- align_taxa("Boronia subg. Valvatae", resources)
+  out <- align_taxa("Boronia subg. Valvatae", resources, include_bracketed_info = FALSE)
 
   expect_equal(out$aligned_name, "Boronia (Valvatae)")
   expect_equal(out$taxon_rank, "subgenus")
@@ -266,7 +266,7 @@ test_that("a bare 'Genus subg. Subgenusname' query resolves the same as its brac
 
 test_that("the marker convention still matches without a trailing period on the abbreviation", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
-  out <- align_taxa("Boronia subg Valvatae", resources)
+  out <- align_taxa("Boronia subg Valvatae", resources, include_bracketed_info = FALSE)
 
   expect_equal(out$aligned_name, "Boronia (Valvatae)")
   expect_equal(out$alignment_code, "match_02x_marker_exact_subgenus")
@@ -274,7 +274,7 @@ test_that("the marker convention still matches without a trailing period on the 
 
 test_that("a misspelled marker-form subgenus is recovered by fuzzy matching", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
-  out <- align_taxa("Boronia subg. Valvatte", resources) # one substitution away from "Valvatae"
+  out <- align_taxa("Boronia subg. Valvatte", resources, include_bracketed_info = FALSE) # one substitution away from "Valvatae"
 
   expect_equal(out$aligned_name, "Boronia (Valvatae)")
   expect_equal(out$alignment_code, "match_02x_marker_fuzzy_subgenus")
@@ -292,18 +292,19 @@ test_that("a marker-form query falls back to genus rank when the subgenus pair i
 
 test_that("include_bracketed_info = FALSE also drops a bare match's identifier, not just the original name", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
-  out <- align_taxa("Boronia", resources, identifier = "some_dataset")
+  out <- align_taxa("Boronia", resources, identifier = "some_dataset", include_bracketed_info = FALSE)
 
   expect_equal(out$aligned_name, "Boronia") # no "[Boronia; some_dataset]" -- "nothing more" is literal
 })
 
 test_that("include_bracketed_info = FALSE still brackets a fuzzy bare-name match (match_12c)", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
-  out <- align_taxa("Boronela", resources) # one letter short of the genus synonym "Boronella"
+  out <- align_taxa("Boronela", resources, include_bracketed_info = FALSE) # one letter short of the genus synonym "Boronella"
 
-  # the *matched* reference name is bare, but the *input* itself was still just one (mis-spelled) word
-  # with nothing else -- still qualifies for the simplified format
-  expect_equal(out$aligned_name, "Boronella")
+  # the input is still just one (mis-spelled) word with nothing else, so the simplified format applies.
+  # Accepted names are tried before synonyms, as in APCalign: the accepted genus "Boronia" (2 edits)
+  # wins over the synonym "Boronella" (1 edit)
+  expect_equal(out$aligned_name, "Boronia")
   expect_equal(out$alignment_code, "match_12c_higher_rank_fuzzy_accepted")
 })
 
@@ -371,13 +372,13 @@ test_that("consider_english_name_endings = FALSE (default) leaves vernacular end
     "Testinae Sm.", "Testinae", "subfamily", "accepted", "TEST", NA_character_, "sf1", "sf1"
   ))
 
-  # "Testine" is within ordinary fuzzy tolerance of both "Testidae" (family) and "Testinae" (subfamily)
-  # -- with the toggle off, broadest-first fuzzy matching (not the exact-substitution logic) resolves
-  # it, landing on the broader of the two (family), not necessarily the rank the "-ine" ending would
-  # conventionally suggest (subfamily)
+  # "Testine" is within ordinary fuzzy tolerance of both "Testidae" (family, 2 edits) and "Testinae"
+  # (subfamily, 1 edit). With the toggle off, ordinary fuzzy matching resolves it: the closest name
+  # across ranks wins (ties would go to the broader rank, issue #12), so here the subfamily -- by
+  # distance, not by the exact-substitution logic
   out <- align_taxa("Testine sp.", resources, full = TRUE)
 
-  expect_equal(out$taxon_rank, "family")
+  expect_equal(out$taxon_rank, "subfamily")
   expect_false(isTRUE(out$alignment_code == "match_02z_english_ending_accepted"))
 })
 

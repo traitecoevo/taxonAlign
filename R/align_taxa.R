@@ -33,14 +33,12 @@
 #'  a recognised informal English vernacular name ending (e.g. `"-id"`, `"-ine"`, `"-oid"`) for its
 #'  formal Latin equivalent and attempt an exact match on the corrected name. Defaults to `FALSE`. See
 #'  `?match_taxa`.
-#' @param include_bracketed_info Logical; controls the `"<rank name> sp. [<original name>;
-#'  <identifier>]"` formatting used for a higher-rank-only match. When `FALSE` (the default) and the
-#'  name being matched is nothing more than the matched rank's own name (a bare single word, or a bare
-#'  `"Genus (Subgenus)"`), the bracketed suffix is dropped and `aligned_name` is just the bare matched
-#'  name -- `original_name` already preserves the raw input as its own column regardless. Whenever
-#'  there's anything beyond the rank name itself to report, the bracketed format is used regardless of
-#'  this argument. Set to `TRUE` to always use the bracketed format (matching APCalign's convention
-#'  exactly). Defaults to `FALSE`. See `?match_taxa`.
+#' @param include_bracketed_info Logical; `TRUE` (the default) gives every higher-rank-only match
+#'  APCalign's `"<rank name> sp. [<original name>; <identifier>]"` form, e.g. `"Banksia sp. [Banksia]"`
+#'  for a bare `"Banksia"`. `FALSE` drops the brackets when the name is nothing more than the matched
+#'  rank's own name (a bare single word, or a bare `"Genus (Subgenus)"`), giving just `"Banksia"`;
+#'  `original_name` keeps the raw input either way, and a name with anything more keeps the brackets
+#'  regardless. See `?match_taxa`.
 #' @param progress Logical; if `TRUE`, prints a text progress bar tracking what fraction of
 #'  `original_name` has been resolved so far. Useful for large inputs, where matching can take a while.
 #'  Defaults to `FALSE`. See `?match_taxa`.
@@ -71,7 +69,7 @@ align_taxa <- function(original_name,
                         hybrids = FALSE,
                         intergrades_affinis = FALSE,
                         consider_english_name_endings = FALSE,
-                        include_bracketed_info = FALSE,
+                        include_bracketed_info = TRUE,
                         progress = FALSE,
                         full = FALSE) {
 

@@ -35,6 +35,10 @@ load_apc_resources_for_test <- function() {
     APC$family_accepted |> dplyr::mutate(taxonomic_dataset = "APC"),
     APC$family_synonym
   )
+  # as in load_APC(): the records synonyms lead to that APCalign's split tables leave out (excluded
+  # taxa -- "Achneria brevifolia" -> excluded "Eriachne brevifolia"), from its full APC table
+  missing_targets <- setdiff(flat$accepted_name_usage_ID, flat$taxon_ID)
+  flat <- dplyr::bind_rows(flat, APC$APC[APC$APC$taxon_ID %in% missing_targets, ] |> dplyr::mutate(taxonomic_dataset = "APC"))
   # as in load_APC(): subclass/taxon_distribution are only in the full APC table, and APC's other
   # metadata columns would be read as ranks
   extra <- APC$APC[, c("taxon_ID", "subclass", "taxon_distribution")]
@@ -147,4 +151,49 @@ test_that("taxonAlign matches oddball/edge-case real names the same way APCalign
   expect_equal(out_taxonAlign$original_name, out_APCalign$original_name)
   expect_equal(out_taxonAlign$aligned_name, out_APCalign$aligned_name)
   expect_equal(out_taxonAlign$taxon_rank, out_APCalign$taxon_rank)
+})
+
+# APCalign's own benchmark (benchmarks/apcalign_test_matches_alignments_updates.csv: 239 names APCalign
+# checks its alignments and updates against), through both packages on the same live APC data, column
+# by column. Added 2026-11-14 after a tester found differences the narrower tests above never compared
+# (taxonAlign.dataprep#1): misspellings falling to genus (no imprecise/trinomial/binomial fuzzy
+# blocks), synonym genera chosen over accepted ones, and "Genus sp. [original]" suggested names
+# collapsing to a bare genus. The user's rule: taxonAlign gives what APCalign gives, possibly more,
+# never less. Approved differences, so not compared:
+# - names APCalign resolves via APNI (searched late, in APNI-only blocks; taxonAlign has no
+#   names-only dataset concept, and this test's reference is APC alone);
+# - accepted_name/taxon_ID/scientific_name_ID for a name aligned above species, which taxonAlign
+#   fills in and APCalign leaves NA (user, 2026-11-14: "for some animal groups id-ing to genus is as
+#   good as it gets") -- compared only where APCalign gives one.
+test_that("APCalign's benchmark names align and update the same way in both packages", {
+  testthat::skip_if_not_installed("APCalign")
+  testthat::skip_if_offline()
+  testthat::skip_on_cran()
+
+  loaded <- load_apc_resources_for_test()
+  bench <- utils::read.csv(testthat::test_path("benchmarks", "apcalign_test_matches_alignments_updates.csv"))
+  names <- bench$original_name
+  idf <- "test_all_matches_TRUE"
+
+  a_al <- suppressMessages(APCalign::align_taxa(
+    names, resources = loaded$APC, full = TRUE, fuzzy_abs_dist = 3, fuzzy_rel_dist = 0.2,
+    imprecise_fuzzy_matches = TRUE, APNI_matches = TRUE, fuzzy_matches = TRUE, identifier = idf, quiet = TRUE
+  ))
+  a_up <- suppressMessages(APCalign::update_taxonomy(a_al, resources = loaded$APC, taxonomic_splits = "most_likely_species", quiet = TRUE))
+  t_al <- align_taxa(names, loaded$resources, imprecise_fuzzy_matches = TRUE, hybrids = TRUE,
+                     intergrades_affinis = TRUE, identifier = idf, full = TRUE)
+  t_up <- update_taxa(t_al, loaded$resources)
+
+  a_al <- a_al[match(names, a_al$original_name), ]
+  a_up <- a_up[match(names, a_up$original_name), ]
+  apc <- !a_al$taxonomic_dataset %in% "APNI"
+  expect_gt(sum(apc), 200)
+
+  expect_equal(t_al$aligned_name[apc], a_al$aligned_name[apc])
+  expect_equal(t_al$taxon_rank[apc], a_al$taxon_rank[apc])
+  expect_equal(t_up$suggested_name[apc], a_up$suggested_name[apc])
+  for (col in c("accepted_name", "taxon_ID", "scientific_name_ID", "scientific_name")) {
+    given <- apc & !is.na(a_up[[col]])
+    expect_equal(t_up[[col]][given], a_up[[col]][given], label = col)
+  }
 })

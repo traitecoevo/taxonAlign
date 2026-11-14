@@ -53,8 +53,10 @@ test_that("a name matched with its authorship isn't treated as a split", {
   ) |> dplyr::mutate(taxonomic_dataset = "T")
   out <- create_taxonomic_update_lookup(c("Camponotus reticulatus", "Camponotus reticulatus Kirby, 1896"), prepare_taxonomic_resources(ref))
   expect_equal(out$accepted_name, c("Camponotus reticulatus", "Camponotus spenceri"))
-  # an accepted name is just that name, never treated as ambiguous
-  expect_equal(out$alternative_possible_names, c(NA_character_, NA_character_))
+  # without authorship, the name is also the junior homonym (Kirby) -- listed as an alternative, as
+  # APCalign lists one for an accepted name that is also another record's name ("Acaena x ovina");
+  # with authorship it identifies one record, so there's none
+  expect_equal(out$alternative_possible_names, c("Camponotus spenceri (synonym)", NA_character_))
 })
 
 test_that("a genus listed as a synonym of its own nominotypical subgenus isn't treated as a split", {
@@ -67,7 +69,7 @@ test_that("a genus listed as a synonym of its own nominotypical subgenus isn't t
   ) |> dplyr::mutate(scientific_name = canonical_name, taxonomic_dataset = "T")
   out <- create_taxonomic_update_lookup("Acritus BF01", prepare_taxonomic_resources(ref))
   expect_true(is.na(out$alternative_possible_names))
-  expect_equal(out$suggested_name, "Acritus")
+  expect_equal(out$suggested_name, "Acritus sp. [Acritus BF01]")
 })
 
 test_that("a name leading to the same accepted name in two combined references isn't a split", {

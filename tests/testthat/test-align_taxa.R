@@ -121,7 +121,7 @@ test_that("chars_changed is 0 for an exact genus match via the hybrid/intergrade
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
   out <- align_taxa("Boronia x hybrida", resources, hybrids = TRUE)
 
-  expect_equal(out$alignment_code, "match_03a_hybrid_exact_genus")
+  expect_equal(out$alignment_code, "match_08a_hybrid_exact_genus")
   expect_equal(out$chars_changed, 0L)
 })
 

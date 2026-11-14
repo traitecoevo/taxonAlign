@@ -32,10 +32,10 @@
 # shares one genus (for "collapse_to_higher_taxon").
 #' @noRd
 build_split_table <- function(all_taxa) {
-  # only species/infraspecific synonym records: a name listed as a synonym of two or more different
-  # accepted taxa is the one genuinely ambiguous case (a split, or a pro parte synonym)
-  syn <- all_taxa[all_taxa$taxonomic_status != "accepted" &
-    all_taxa$taxon_rank %in% c("species", "subspecies", "variety", "form", "subvariety", "subform"), ]
+  # species/infraspecific records, of any status: a name leading to two or more different accepted
+  # taxa is ambiguous (a split, or a pro parte synonym) -- including an accepted name that is also
+  # listed as a misapplication of another taxon ("Acaena x ovina"), as APCalign treats it
+  syn <- all_taxa[all_taxa$taxon_rank %in% c("species", "subspecies", "variety", "form", "subvariety", "subform"), ]
   repeated <- syn$canonical_name %in% syn$canonical_name[duplicated(syn$canonical_name)]
   r <- syn[repeated, ]
   if (nrow(r) == 0) return(empty_split_table())
@@ -59,8 +59,13 @@ build_split_table <- function(all_taxa) {
     record_year = scientific_name_year(r$scientific_name),
     target_year = scientific_name_year(target$scientific_name)
   ) |>
-    # a record pointing at itself (e.g. "unplaced") or at nothing isn't a second accepted taxon
-    dplyr::filter(!is.na(target_canonical) & target_ID != taxon_ID & target_status %in% "accepted") |>
+    # a non-accepted record pointing at itself (e.g. "unplaced") or at nothing isn't a second accepted
+    # taxon; an accepted record is its own
+    dplyr::filter(!is.na(target_canonical) & (target_ID != taxon_ID | status %in% "accepted") &
+                    target_status %in% "accepted") |>
+    # a species listed as a synonym of its own nominotypical infraspecific taxon ("Newgenus beta" ->
+    # "Newgenus beta beta", "Acacia aneura" -> "Acacia aneura var. aneura") isn't a second taxon
+    dplyr::filter(!is_nominotypical_of(target_canonical, canonical_name)) |>
     # Two or more *different* accepted taxa, not merely two accepted records. With references combined,
     # the same accepted name is often in more than one: a name listed as a synonym of "Nesoptilotis
     # leucotis" in both the AFD and GBIF isn't ambiguous, and would otherwise list its own accepted name
@@ -118,4 +123,15 @@ taxonomic_status_rank <- function(status) {
 #' @noRd
 scientific_name_year <- function(scientific_name) {
   as.integer(stringr::str_extract(scientific_name, "\\d{4}(?=[a-z]?\\]?\\)?\\s*$)"))
+}
+
+# TRUE where `infra` is the nominotypical infraspecific taxon of the species `species`: the species name
+# plus its own epithet repeated, rank marker or not ("Newgenus beta beta", "Acacia aneura var. aneura").
+#' @noRd
+is_nominotypical_of <- function(infra, species) {
+  words <- strsplit(APCalign::strip_names(infra), " ")
+  sp_words <- strsplit(APCalign::strip_names(species), " ")
+  mapply(function(w, s) {
+    length(s) == 2 && length(w) == 3 && identical(w[1:2], s) && w[3] == s[2]
+  }, words, sp_words, USE.NAMES = FALSE)
 }

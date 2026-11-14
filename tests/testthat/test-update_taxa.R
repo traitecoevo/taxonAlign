@@ -38,7 +38,7 @@ test_that("update_taxa resolves a genus-level synonym forward (not just species)
 
   expect_equal(aligned$taxon_rank, "genus")
   expect_equal(out$accepted_name, "Boronia")
-  expect_equal(out$suggested_name, "Boronia")
+  expect_equal(out$suggested_name, "Boronia sp. [Boronella]")
   expect_equal(out$taxon_rank, "genus")
   expect_equal(out$taxonomic_status_aligned, "synonym")
   expect_equal(out$taxonomic_status, "accepted")
@@ -51,7 +51,7 @@ test_that("update_taxa resolves a synonym at a third, arbitrary higher rank ('or
 
   expect_equal(aligned$taxon_rank, "order")
   expect_equal(out$accepted_name, "Sapindales")
-  expect_equal(out$suggested_name, "Sapindales")
+  expect_equal(out$suggested_name, "Sapindales sp. [Oldorderia]")
   expect_equal(out$taxon_rank, "order")
   expect_equal(out$taxonomic_status_aligned, "synonym")
   expect_equal(out$taxonomic_status, "accepted")

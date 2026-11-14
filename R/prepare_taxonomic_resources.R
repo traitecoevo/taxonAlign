@@ -324,6 +324,21 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
 
   synthesised_rows <- purrr::map(implied_rank_cols, function(col) {
     values <- taxonomic_resources[[col]]
+    # only a row at this rank or below names a taxon at this rank: APCalign's family tables fill
+    # `genus` with the family's own name, which made every APC family ("Asteraceae") a synthesised
+    # accepted *genus* too (found running APCalign's benchmark, 2026-11-14). Subgenus counts as below
+    # genus, although it comes after genus in taxonAlign_taxon_rank_specificity.
+    col_pos <- match(col, taxonAlign_taxon_rank_specificity)
+    if (!is.na(col_pos)) {
+      row_rank <- APCalign::standardise_taxon_rank(taxonomic_resources$taxon_rank)
+      row_pos <- match(row_rank, taxonAlign_taxon_rank_specificity)
+      broader <- !is.na(row_pos) & row_pos > col_pos & !(col == "genus" & row_rank %in% "subgenus")
+      # a record *at* this rank is already that taxon: its own value here, when it differs from its
+      # name, is a placeholder -- APC's genus-rank phrase name "Asteraceae genus nov. (M.A.Burgman
+      # 4418)" has genus "Asteraceae", which made "Asteraceae" a synonym genus
+      same_rank <- row_rank %in% col
+      values[broader | same_rank] <- NA
+    }
     # rank compared in standardised form -- taxon_rank isn't standardised until further below, and
     # e.g. the NSL exports write "Genus" -- otherwise every explicit row would be missed and a
     # duplicate "accepted" row synthesised for it, overriding an explicit synonym-genus row

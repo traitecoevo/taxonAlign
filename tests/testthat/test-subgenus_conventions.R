@@ -60,7 +60,7 @@ for (with_subgenus in c(TRUE, FALSE)) {
 
     # subgenus-rank output is always "Genus (Subgenus)"
     expect_equal(out$taxon_rank[6:7], c("subgenus", "subgenus"))
-    expect_equal(out$aligned_name[6:7], rep("Pardalotus (Pardalotinus)", 2))
+    expect_equal(sub(" sp\\. \\[.*\\]$", "", out$aligned_name[6:7]), rep("Pardalotus (Pardalotinus)", 2))
     expect_equal(out$accepted_name[6:7], rep("Pardalotus (Pardalotinus)", 2))
   })
 }

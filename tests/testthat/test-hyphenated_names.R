@@ -29,7 +29,7 @@ test_that("a bare hyphenated genus aligns to the genus, rather than crashing", {
   res <- prepare_taxonomic_resources(hyphen_reference())
   out <- align_taxa(c("Neo-uvaria", "Uvaria grandiflora"), res)
 
-  expect_equal(out$aligned_name, c("Neo-uvaria", "Uvaria grandiflora"))
+  expect_equal(out$aligned_name, c("Neo-uvaria sp. [Neo-uvaria]", "Uvaria grandiflora"))
   expect_equal(out$taxon_rank, c("genus", "species"))
   expect_equal(out$taxon_ID, c("g1", "s3"))
 })

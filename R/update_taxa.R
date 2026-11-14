@@ -141,7 +141,10 @@ update_taxa <- function(aligned_data, resources = NULL,
       FALSE
     }
     # only a match to a synonym record is ambiguous; a match to an accepted name is just that name
-    s[!is.na(s) & (by_authorship | matched$taxonomic_status %in% "accepted")] <- NA
+    # A match to an accepted record counts too, as in APCalign: "Acaena x ovina" is accepted, and also
+    # listed as a pro parte misapplication of two other taxa, which APCalign reports as alternatives
+    # (taxonAlign used to skip accepted matches; found running APCalign's benchmark, 2026-11-14).
+    s[!is.na(s) & by_authorship] <- NA
     hit <- !is.na(s)
     chosen <- all_taxa[match(splits$chosen_ID[s[hit]], all_taxa$taxon_ID), ]
     usage_ID[hit] <- chosen$accepted_name_usage_ID
@@ -171,13 +174,33 @@ update_taxa <- function(aligned_data, resources = NULL,
   family_current <- if ("family" %in% names(all_taxa)) current$family else NA_character_
   family_prior <- if ("family" %in% names(aligned_data)) aligned_data$family else NA_character_
 
+  # " sp.", " sp. [...]" or " x [...]" at the end of an aligned name above species rank
+  higher_rank_suffix <- stringr::str_extract(aligned_data$aligned_name, " (sp\\.|x)( \\[.*\\])?$")
+
   out <- aligned_data |>
     dplyr::mutate(
       taxonomic_status_aligned = status_aligned,
       accepted_name_usage_ID = usage_ID,
       alternative_possible_names = alternatives,
       accepted_name = dplyr::if_else(resolved & current$taxonomic_status == "accepted", current$canonical_name, NA_character_),
-      suggested_name = dplyr::if_else(!is.na(accepted_name), accepted_name, aligned_name),
+      # the name the match leads to, even when that isn't "accepted" -- APC's "excluded" taxa, say:
+      # "Achneria brevifolia" -> "Eriachne brevifolia" (excluded), as APCalign suggests; accepted_name
+      # stays NA for those
+      suggested_name = dplyr::case_when(
+        !is.na(accepted_name) ~ accepted_name,
+        resolved & !is.na(current$canonical_name) ~ current$canonical_name,
+        TRUE ~ aligned_name
+      ),
+      # A name aligned above species keeps its "sp. [...]"/"x [...]" detail, with the accepted name in
+      # place of the aligned one, as APCalign's update_taxonomy() does: "Megaloprepia sp. [Megaloprepia
+      # magnifica]" -> "Ptilinopus sp. [Megaloprepia magnifica]", not plain "Ptilinopus" (which read as
+      # an identification to genus). A reference's own phrase names ("Jasminum sp. (Beechmont ...)")
+      # are names in their own right, not this form.
+      suggested_name = dplyr::if_else(
+        resolved & !is.na(current$canonical_name) & !is.na(higher_rank_suffix) & !aligned_name %in% all_taxa$canonical_name,
+        paste0(dplyr::coalesce(accepted_name, current$canonical_name), higher_rank_suffix),
+        suggested_name
+      ),
       # APCalign's convention: one name, with every other candidate in brackets
       suggested_name = dplyr::case_when(
         !is.na(collapsed) ~ collapsed,
@@ -207,6 +230,8 @@ update_taxa <- function(aligned_data, resources = NULL,
         !is.na(accepted_name) & accepted_name == aligned_name ~
           "Aligned name is already the current accepted name",
         !is.na(accepted_name) ~ paste0("Updated to the current accepted name (", Sys.Date(), ")"),
+        resolved & !current$taxonomic_status %in% "accepted" & dplyr::coalesce(usage_ID != aligned_data$taxon_ID, FALSE) ~
+          paste0("Aligned name leads to a name with taxonomic status '", current$taxonomic_status, "', not an accepted name"),
         TRUE ~ "Aligned name's current status could not be resolved in `resources`"
       )
     )
@@ -220,7 +245,11 @@ update_taxa <- function(aligned_data, resources = NULL,
   accepted_genera <- all_taxa[all_taxa$taxon_rank %in% "genus" & all_taxa$taxonomic_status %in% "accepted", ]
   genus_record <- match(dplyr::coalesce(collapsed_genus, out$genus), accepted_genera$canonical_name)
   record <- match(usage_ID, all_taxa$taxon_ID)
-  record[!(resolved & current$taxonomic_status %in% "accepted")] <- NA
+  # the record suggested_name names: the accepted one, or for a name leading to a non-accepted taxon
+  # (APC's "excluded"), that taxon -- but not a non-accepted name leading only to itself (an unplaced
+  # name), which APCalign gives no taxon_ID either
+  leads_to_itself <- dplyr::coalesce(usage_ID == aligned_data$taxon_ID, FALSE)
+  record[!resolved | (!current$taxonomic_status %in% "accepted" & leads_to_itself)] <- NA
   is_collapsed <- !is.na(collapsed)
   # an unresolved match (an unplaced name, say) still has a name, with its own authorship and ID
   name_record <- dplyr::coalesce(record, match(aligned_data$taxon_ID, all_taxa$taxon_ID))

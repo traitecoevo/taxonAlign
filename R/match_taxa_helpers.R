@@ -60,6 +60,14 @@ fuzzy_match <- function(txt, accepted_list,
   ## identify number of words in the text to match
   words_in_text <- 1 + stringr::str_count(txt," ")
 
+  ## Ported from APCalign's current fuzzy_match(): a token that flags an uncertain identification
+  ## ("aff."/"cf.") or a hybrid ("x") must also be in a candidate for it to be confirmed below --
+  ## otherwise the qualifier slots into an unrelated word's position by first-letter coincidence
+  ## ("acacia aff aneura" confirmed against "acacia aptaneura").
+  qualifier_tokens <- c("aff", "cf", "x")
+  has_token <- function(s, q) grepl(paste0("(^|\\s)", q, "($|\\s)"), s, ignore.case = TRUE)
+  txt_qualifiers <- qualifier_tokens[vapply(qualifier_tokens, function(q) has_token(txt, q), logical(1))]
+
   ## extract first letter of first word
   txt_word1_start <- stringr::str_extract(txt, "[:alpha:]") |>
                      stringr::str_to_lower()
@@ -67,7 +75,7 @@ fuzzy_match <- function(txt, accepted_list,
   ## for text matches with 2 or more words,
   ## extract the first letter/digit of the second word
   if(words_in_text > 1 & epithet_letters == 2)
-    {if(nchar(stringr::word(txt,2)) == 1) {
+    {if(isTRUE(nchar(stringr::word(txt,2)) == 1)) {
       txt_word2_start <- stringr::str_extract(stringr::word(txt,2),
                                               "[:alpha:]|[:digit:]")
     } else {
@@ -130,6 +138,11 @@ fuzzy_match <- function(txt, accepted_list,
   # function to check if a match is ok
   check_match <- function(potential_match) {
 
+    if (length(txt_qualifiers) > 0 &&
+        !all(vapply(txt_qualifiers, function(q) has_token(potential_match, q), logical(1)))) {
+      return(FALSE)
+    }
+
     ## identify number of words in the matched string
     words_in_match <- 1 + stringr::str_count(potential_match," ")
 
@@ -141,7 +154,7 @@ fuzzy_match <- function(txt, accepted_list,
     ## (if the matched string includes 2+ words)
     if(words_in_text > 1 & epithet_letters == 2) {
       x <- stringr::word(potential_match,2)
-      if(nchar(x) == 1) {
+      if(isTRUE(nchar(x) == 1)) {
         match_word2_start <- stringr::str_extract(x, "[:alpha:]|[:digit:]")
       } else {
         match_word2_start <- stringr::str_extract(x, "[:alpha:][:alpha:]|[:digit:]")
@@ -163,30 +176,30 @@ fuzzy_match <- function(txt, accepted_list,
     ## first letters of the first three words in the matched string
 
     if(words_in_text == 1) {
-      if (txt_word1_start == match_word1_start) {
+      if (isTRUE(txt_word1_start == match_word1_start)) {
         return(TRUE)
       }
 
     } else if(words_in_text == 2) {
-      if (
+      if (isTRUE(
           txt_word1_start == match_word1_start &
           txt_word2_start == match_word2_start
-      ) {
+      )) {
         return(TRUE)
       }
     } else if(words_in_text > 2) {
       if (words_in_match > 2) {
-        if (
+        if (isTRUE(
           txt_word1_start == match_word1_start &
           txt_word2_start == match_word2_start &
           txt_word3_start == match_word3_start
-        ) {
+        )) {
           return(TRUE)
         }
-      } else if (
+      } else if (isTRUE(
           txt_word1_start == match_word1_start &
           txt_word2_start == match_word2_start
-        ) {
+        )) {
           return(TRUE)}
     }
     return(FALSE)

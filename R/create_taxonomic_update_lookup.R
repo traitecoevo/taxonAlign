@@ -33,7 +33,7 @@ create_taxonomic_update_lookup <- function(original_name,
                                             hybrids = FALSE,
                                             intergrades_affinis = FALSE,
                                             consider_english_name_endings = FALSE,
-                                            include_bracketed_info = FALSE,
+                                            include_bracketed_info = TRUE,
                                             progress = FALSE,
                                             taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon"),
                                             full = FALSE) {

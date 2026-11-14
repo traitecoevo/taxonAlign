@@ -6,7 +6,8 @@ test_that("create_taxonomic_update_lookup runs align_taxa + update_taxa end to e
   expect_equal(nrow(out), length(names))
   expect_equal(out$original_name, names)
   expect_equal(out$accepted_name, c("Boronia serrulata", "Boronia serrulata", "Boronia", NA))
-  expect_equal(out$suggested_name, c("Boronia serrulata", "Boronia serrulata", "Boronia", NA))
+  # a name aligned to genus keeps APCalign's "Genus sp. [original]" form, with the accepted genus
+  expect_equal(out$suggested_name, c("Boronia serrulata", "Boronia serrulata", "Boronia sp. [Boronella]", NA))
   expect_equal(out$taxonomic_status_aligned, c("accepted", "synonym", "synonym", NA))
   expect_equal(out$taxonomic_status, c("accepted", "accepted", "accepted", "unknown"))
 })
@@ -111,15 +112,17 @@ test_that("create_taxonomic_update_lookup forwards fuzzy-matching arguments to a
 test_that("create_taxonomic_update_lookup forwards include_bracketed_info to align_taxa", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
+  # APCalign's bracketed form is the default (user's decision, 2026-11-14); FALSE gives the bare name
   out_default <- create_taxonomic_update_lookup("Boronia", resources)
-  out_bracketed <- create_taxonomic_update_lookup("Boronia", resources, include_bracketed_info = TRUE)
+  out_bare <- create_taxonomic_update_lookup("Boronia", resources, include_bracketed_info = FALSE)
 
-  expect_equal(out_default$aligned_name, "Boronia")
-  expect_equal(out_bracketed$aligned_name, "Boronia sp. [Boronia]")
-  # the update step downstream is unaffected either way -- it resolves via taxon_ID, not the
-  # aligned_name string
+  expect_equal(out_default$aligned_name, "Boronia sp. [Boronia]")
+  expect_equal(out_bare$aligned_name, "Boronia")
+  expect_equal(out_default$suggested_name, "Boronia sp. [Boronia]")
+  expect_equal(out_bare$suggested_name, "Boronia")
+  # the update step is unaffected either way -- it resolves via taxon_ID, not the aligned_name string
   expect_equal(out_default$accepted_name, "Boronia")
-  expect_equal(out_bracketed$accepted_name, "Boronia")
+  expect_equal(out_bare$accepted_name, "Boronia")
 })
 
 test_that("create_taxonomic_update_lookup gives a clear, actionable error when resources is missing", {
