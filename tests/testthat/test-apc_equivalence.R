@@ -165,6 +165,11 @@ test_that("taxonAlign matches oddball/edge-case real names the same way APCalign
 # - accepted_name/taxon_ID/scientific_name_ID for a name aligned above species, which taxonAlign
 #   fills in and APCalign leaves NA (user, 2026-11-14: "for some animal groups id-ing to genus is as
 #   good as it gets") -- compared only where APCalign gives one.
+# - alternatives for a match to an *accepted* name that is also another record's synonym (APCalign
+#   lists them -- "Acaena x ovina [alternative possible names: ...]"; taxonAlign doesn't: user's
+#   decision 2026-11-14, as on the AFD it added them to plain accepted names);
+# - APCalign's split rules (its splits benchmark): taxonAlign keeps the ordering rules developed
+#   with the user against the AFD; and taxonomic_splits = "return_all", not ported (user, 2026-11-14).
 test_that("APCalign's benchmark names align and update the same way in both packages", {
   testthat::skip_if_not_installed("APCalign")
   testthat::skip_if_offline()
@@ -191,7 +196,10 @@ test_that("APCalign's benchmark names align and update the same way in both pack
 
   expect_equal(t_al$aligned_name[apc], a_al$aligned_name[apc])
   expect_equal(t_al$taxon_rank[apc], a_al$taxon_rank[apc])
-  expect_equal(t_up$suggested_name[apc], a_up$suggested_name[apc])
+  # approved difference (see above): no alternatives for a match to an accepted name
+  a_sugg <- ifelse(t_up$taxonomic_status_aligned %in% "accepted",
+                   sub(" \\[alternative possible names: .*\\]$", "", a_up$suggested_name), a_up$suggested_name)
+  expect_equal(t_up$suggested_name[apc], a_sugg[apc])
   for (col in c("accepted_name", "taxon_ID", "scientific_name_ID", "scientific_name")) {
     given <- apc & !is.na(a_up[[col]])
     expect_equal(t_up[[col]][given], a_up[[col]][given], label = col)

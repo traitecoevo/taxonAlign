@@ -198,17 +198,22 @@ Several statements further down describe the earlier port and are superseded whe
 - `include_bracketed_info` defaults to `TRUE` (APCalign's form; user's decision 2026-11-14).
 - `update_taxa()`: a name aligned above species keeps its "sp. [...]"/"x [...]" detail with the
   accepted (or followed) name spliced in ("Ptilinopus sp. [Megaloprepia magnifica]"); a synonym leading
-  to a non-accepted taxon (APC "excluded") suggests that taxon, `accepted_name` NA; an accepted match is
-  checked for splits too (APCalign's "Acaena x ovina" alternatives), except a species vs its own
-  nominotypical infraspecific taxon. `accepted_name`/IDs filled for genus-level matches is an
-  **approved** difference (user: "for some animal groups id-ing to genus is as good as it gets").
+  to a non-accepted taxon (APC "excluded") suggests that taxon, `accepted_name` NA.
+- `hybrids`/`intergrades_affinis` default to `TRUE` (user, 2026-11-14; APCalign always detects them).
+- **Approved differences from APCalign** (user, 2026-11-14), and the only ones: `accepted_name`/IDs
+  filled for genus-level matches ("for some animal groups id-ing to genus is as good as it gets"); no
+  alternatives for a match to an *accepted* name that is also another record's synonym (APCalign lists
+  them, "Acaena x ovina"; on the AFD that added them to 5 plain accepted vertebrate names); taxonAlign's
+  own split ordering rules (developed with the user against the AFD) rather than APCalign's; no
+  `taxonomic_splits = "return_all"`; APNI is not a separate late-searched concept. Anything else that
+  differs from APCalign is a bug.
 - `prepare_taxonomic_resources()` synthesis ignores a row's value at a rank broader than, or equal to,
   the row's own (APC family rows fill `genus` with the family name; genus-rank phrase names carry a
   placeholder genus) -- both made bogus accepted genera ("Asteraceae").
 - `tests/testthat/test-apc_equivalence.R` now also runs APCalign's own 239-name benchmark
   (`tests/testthat/benchmarks/`) through both packages: all 204 APC names agree on aligned name, rank,
-  suggested name, and every ID/accepted-name value APCalign gives. Not yet matched (pending user
-  decisions): APCalign's split rules on its splits benchmark, `taxonomic_splits = "return_all"`.
+  suggested name (less the approved alternatives difference), and every ID/accepted-name value
+  APCalign gives.
 
 This is a cleaned-up port of an existing workflow (`AusInvertAlign`, from the sibling
 `ausinvertraits.addons` project) for aligning raw taxon-name lists to an accepted taxonomic resource,

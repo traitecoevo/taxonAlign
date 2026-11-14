@@ -141,10 +141,11 @@ update_taxa <- function(aligned_data, resources = NULL,
       FALSE
     }
     # only a match to a synonym record is ambiguous; a match to an accepted name is just that name
-    # A match to an accepted record counts too, as in APCalign: "Acaena x ovina" is accepted, and also
-    # listed as a pro parte misapplication of two other taxa, which APCalign reports as alternatives
-    # (taxonAlign used to skip accepted matches; found running APCalign's benchmark, 2026-11-14).
-    s[!is.na(s) & by_authorship] <- NA
+    # only a match to a synonym record is ambiguous; a match to an accepted name is just that name. An
+    # approved difference from APCalign, which also lists alternatives for an accepted name that is
+    # another record's synonym ("Acaena x ovina"; user, 2026-11-14: revert -- on the AFD it added
+    # alternatives to plain accepted vertebrate names, e.g. "Bettongia penicillata")
+    s[!is.na(s) & (by_authorship | matched$taxonomic_status %in% "accepted")] <- NA
     hit <- !is.na(s)
     chosen <- all_taxa[match(splits$chosen_ID[s[hit]], all_taxa$taxon_ID), ]
     usage_ID[hit] <- chosen$accepted_name_usage_ID

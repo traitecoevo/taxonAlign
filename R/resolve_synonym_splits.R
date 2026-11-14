@@ -32,10 +32,12 @@
 # shares one genus (for "collapse_to_higher_taxon").
 #' @noRd
 build_split_table <- function(all_taxa) {
-  # species/infraspecific records, of any status: a name leading to two or more different accepted
-  # taxa is ambiguous (a split, or a pro parte synonym) -- including an accepted name that is also
-  # listed as a misapplication of another taxon ("Acaena x ovina"), as APCalign treats it
-  syn <- all_taxa[all_taxa$taxon_rank %in% c("species", "subspecies", "variety", "form", "subvariety", "subform"), ]
+  # only species/infraspecific synonym records: a name listed as a synonym of two or more different
+  # accepted taxa is the one genuinely ambiguous case (a split, or a pro parte synonym). An accepted name
+  # that is also another record's synonym isn't treated as a split (user's decision, 2026-11-14), unlike
+  # APCalign
+  syn <- all_taxa[all_taxa$taxonomic_status != "accepted" &
+    all_taxa$taxon_rank %in% c("species", "subspecies", "variety", "form", "subvariety", "subform"), ]
   repeated <- syn$canonical_name %in% syn$canonical_name[duplicated(syn$canonical_name)]
   r <- syn[repeated, ]
   if (nrow(r) == 0) return(empty_split_table())
@@ -59,10 +61,8 @@ build_split_table <- function(all_taxa) {
     record_year = scientific_name_year(r$scientific_name),
     target_year = scientific_name_year(target$scientific_name)
   ) |>
-    # a non-accepted record pointing at itself (e.g. "unplaced") or at nothing isn't a second accepted
-    # taxon; an accepted record is its own
-    dplyr::filter(!is.na(target_canonical) & (target_ID != taxon_ID | status %in% "accepted") &
-                    target_status %in% "accepted") |>
+    # a record pointing at itself (e.g. "unplaced") or at nothing isn't a second accepted taxon
+    dplyr::filter(!is.na(target_canonical) & target_ID != taxon_ID & target_status %in% "accepted") |>
     # a species listed as a synonym of its own nominotypical infraspecific taxon ("Newgenus beta" ->
     # "Newgenus beta beta", "Acacia aneura" -> "Acacia aneura var. aneura") isn't a second taxon
     dplyr::filter(!is_nominotypical_of(target_canonical, canonical_name)) |>

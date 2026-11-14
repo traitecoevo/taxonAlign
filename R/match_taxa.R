@@ -205,7 +205,7 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #'
 #' Hybrid names (`Genus x species`) and the various "uncertain/composite identification" naming
 #' conventions (an intergrade between two taxa, a collector's indecision between two taxa, or a
-#' graded/"affinis"/"cf." identification) are opt-in via `hybrids`/`intergrades_affinis` -- both
+#' graded/"affinis"/"cf." identification) are detected by default (`hybrids`/`intergrades_affinis`) -- both
 #' resolve only to genus rank (never a specific species), since none of these naming conventions can
 #' specify a genuine species. See `match_special_case_to_genus()` for the shared implementation.
 #'
@@ -231,14 +231,15 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #'  higher-rank matches against. Defaults to `NULL`, which uses every rank present in `resources`
 #'  other than `"species"`/`"subgenus_v2"` (i.e. every higher-rank sublist `resources` contains).
 #' @param hybrids Logical; if `TRUE`, a name containing `" x "`/`" X "` (indicating a hybrid taxon) that
-#'  isn't itself a listed name is resolved to genus rank (`Genus x [original name]`). Defaults to `FALSE`.
+#'  isn't itself a listed name is resolved to genus rank (`Genus x [original name]`). Defaults to `TRUE`
+#'  (user's decision 2026-11-14, as APCalign always does; opt-in before, issue #9).
 #' @param intergrades_affinis Logical; if `TRUE`, a name suggesting an intergrade between two taxa
 #'  (a double dash, `--`), a collector's indecision between two taxa (a slash, `/`), or a graded/
 #'  "affinis"/"cf." identification (`"aff."`, `"affinis"`, `"cf."`) is resolved to genus rank, unless
 #'  it's actually an exact match to a real, listed name (a bare "affinis" is ambiguous between the
 #'  qualifier reading and a real specific epithet, e.g. a tautonymous subspecies like "Genus affinis
 #'  affinis" -- a real, resource-verified exact match takes priority over the heuristic). Defaults to
-#'  `FALSE`.
+#'  `TRUE` (as `hybrids`).
 #' @param consider_english_name_endings Logical; if `TRUE`, before any fuzzy matching, try substituting
 #'  a recognised informal English vernacular name ending for its formal Latin equivalent (`"-id"` ->
 #'  `"-idae"` for family, `"-ine"` -> `"-inae"` for subfamily, `"-oid"` -> `"-oidea"` for superfamily)
@@ -265,8 +266,8 @@ match_taxa <- function(
     fuzzy_matches = TRUE,
     imprecise_fuzzy_matches = FALSE,
     taxon_ranks_to_check = NULL,
-    hybrids = FALSE,
-    intergrades_affinis = FALSE,
+    hybrids = TRUE,
+    intergrades_affinis = TRUE,
     consider_english_name_endings = FALSE,
     identifier = NA_character_,
     include_bracketed_info = TRUE,

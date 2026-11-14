@@ -13,8 +13,8 @@ align_taxa(
   fuzzy_matches = TRUE,
   imprecise_fuzzy_matches = FALSE,
   taxon_ranks_to_check = NULL,
-  hybrids = FALSE,
-  intergrades_affinis = FALSE,
+  hybrids = TRUE,
+  intergrades_affinis = TRUE,
   consider_english_name_endings = FALSE,
   include_bracketed_info = TRUE,
   progress = FALSE,
@@ -48,12 +48,15 @@ implemented -- see \code{match_taxa()}). Defaults to \code{FALSE}.}
 attempt higher-rank matches against. Defaults to \code{NULL}, which uses every higher rank present in
 \code{resources}.}
 
-\item{hybrids}{Logical; if \code{TRUE}, resolve hybrid names (\verb{Genus x species}) to genus rank rather
-than leaving them for later, inappropriate match attempts. Defaults to \code{FALSE}. See \code{?match_taxa}.}
+\item{hybrids}{Logical; if \code{TRUE} (the default, as APCalign always does), a hybrid name
+(\verb{Genus x species}) that isn't itself a listed name is resolved to genus rank
+(\code{"Genus x [original name]"}) rather than left for later match attempts -- with \code{FALSE},
+\code{"Banksia serrata x ericifolia"} aligns to \emph{Banksia serrata}. See \code{?match_taxa}.}
 
-\item{intergrades_affinis}{Logical; if \code{TRUE}, resolve names suggesting an intergrade, an
-indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
-Defaults to \code{FALSE}. See \code{?match_taxa}.}
+\item{intergrades_affinis}{Logical; if \code{TRUE} (the default, as APCalign always does), names
+suggesting an intergrade (\verb{--}), an indecision between taxa (\code{/}), or a graded/"affinis"/"cf."
+identification are resolved to genus rank the same way, unless the whole name is a listed name.
+See \code{?match_taxa}.}
 
 \item{consider_english_name_endings}{Logical; if \code{TRUE}, before any fuzzy matching, try substituting
 a recognised informal English vernacular name ending (e.g. \code{"-id"}, \code{"-ine"}, \code{"-oid"}) for its

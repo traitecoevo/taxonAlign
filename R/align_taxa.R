@@ -24,11 +24,14 @@
 #' @param taxon_ranks_to_check Optional character vector of taxonomic ranks (besides species) to
 #'  attempt higher-rank matches against. Defaults to `NULL`, which uses every higher rank present in
 #'  `resources`.
-#' @param hybrids Logical; if `TRUE`, resolve hybrid names (`Genus x species`) to genus rank rather
-#'  than leaving them for later, inappropriate match attempts. Defaults to `FALSE`. See `?match_taxa`.
-#' @param intergrades_affinis Logical; if `TRUE`, resolve names suggesting an intergrade, an
-#'  indecision between taxa, or a graded/"affinis"/"cf." identification to genus rank the same way.
-#'  Defaults to `FALSE`. See `?match_taxa`.
+#' @param hybrids Logical; if `TRUE` (the default, as APCalign always does), a hybrid name
+#'  (`Genus x species`) that isn't itself a listed name is resolved to genus rank
+#'  (`"Genus x [original name]"`) rather than left for later match attempts -- with `FALSE`,
+#'  `"Banksia serrata x ericifolia"` aligns to *Banksia serrata*. See `?match_taxa`.
+#' @param intergrades_affinis Logical; if `TRUE` (the default, as APCalign always does), names
+#'  suggesting an intergrade (`--`), an indecision between taxa (`/`), or a graded/"affinis"/"cf."
+#'  identification are resolved to genus rank the same way, unless the whole name is a listed name.
+#'  See `?match_taxa`.
 #' @param consider_english_name_endings Logical; if `TRUE`, before any fuzzy matching, try substituting
 #'  a recognised informal English vernacular name ending (e.g. `"-id"`, `"-ine"`, `"-oid"`) for its
 #'  formal Latin equivalent and attempt an exact match on the corrected name. Defaults to `FALSE`. See
@@ -66,8 +69,8 @@ align_taxa <- function(original_name,
                         fuzzy_matches = TRUE,
                         imprecise_fuzzy_matches = FALSE,
                         taxon_ranks_to_check = NULL,
-                        hybrids = FALSE,
-                        intergrades_affinis = FALSE,
+                        hybrids = TRUE,
+                        intergrades_affinis = TRUE,
                         consider_english_name_endings = FALSE,
                         include_bracketed_info = TRUE,
                         progress = FALSE,
