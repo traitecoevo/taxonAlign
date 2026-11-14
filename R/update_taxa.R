@@ -25,6 +25,23 @@
 #'  `alternative_possible_names` (the other candidates for a name that leads to more than one accepted
 #'  name, otherwise `NA`).
 #'
+#'  It also has every column APCalign's `update_taxonomy()` returns, meaning the same thing, all
+#'  describing the taxon `suggested_name` names (its accepted record, or for a split collapsed to genus,
+#'  that genus's):
+#'  - `taxon_ID`: that accepted record's ID (`NA` when the name doesn't resolve to an accepted name).
+#'    The ID of the record the name *matched* (a synonym's own ID, say), which `align_taxa()` returns as
+#'    `taxon_ID`, is kept as `aligned_taxon_ID`.
+#'  - `taxon_ID_genus`: the ID of its genus's accepted record.
+#'  - `scientific_name` and `scientific_name_ID`: its name with authorship, and the reference's
+#'    `scientific_name_ID` for it (e.g. an IPNI LSID for the WCVP; `NA` if the reference has none). For
+#'    a name that matched but doesn't resolve to an accepted name (an unplaced name, say), those of the
+#'    matched record.
+#'  - `subclass`, `taxon_distribution`: the reference's own columns of those names, `NA` if it has none.
+#'  - `canonical_name`: the same as `suggested_name`, as in APCalign.
+#'  - `row_number`: the row's position in `aligned_data`.
+#'  - `number_of_collapsed_taxa`: for a name leading to more than one accepted name, 1 when one is
+#'    suggested, or the number of candidates when they're collapsed to genus; `NA` otherwise.
+#'
 #' @details
 #' Unlike [APCalign](https://traitecoevo.github.io/APCalign/)'s `update_taxonomy()` -- five separate
 #' functions, each hand-written for one specific rank/dataset combination (`update_taxonomy_APC_genus`,
@@ -107,6 +124,10 @@ update_taxa <- function(aligned_data, resources = NULL,
   usage_ID <- aligned_data$accepted_name_usage_ID
   alternatives <- rep(NA_character_, nrow(aligned_data))
   collapsed <- rep(NA_character_, nrow(aligned_data))
+  collapsed_genus <- rep(NA_character_, nrow(aligned_data))
+  # APCalign's number_of_collapsed_taxa: 1 for a name resolved to one of several candidates, the
+  # number of candidates when they're collapsed to genus, NA for a name that isn't a split
+  n_collapsed <- rep(NA_integer_, nrow(aligned_data))
   splits <- build_split_table(matching_taxa)
   if (nrow(splits) > 0) {
     matched <- matching_taxa[match(aligned_data$taxon_ID, matching_taxa$taxon_ID), ]
@@ -126,11 +147,14 @@ update_taxa <- function(aligned_data, resources = NULL,
     usage_ID[hit] <- chosen$accepted_name_usage_ID
     status_aligned[hit] <- chosen$taxonomic_status
     alternatives[hit] <- splits$alternative_possible_names[s[hit]]
+    n_collapsed[hit] <- 1L
     if (taxonomic_splits == "collapse_to_higher_taxon") {
       collapsed[hit] <- ifelse(
         is.na(splits$shared_genus[s[hit]]), NA_character_,
         paste0(splits$shared_genus[s[hit]], " sp. [collapsed names: ", splits$all_possible_names[s[hit]], "]")
       )
+      collapsed_genus[hit] <- splits$shared_genus[s[hit]]
+      n_collapsed[hit] <- ifelse(is.na(collapsed[hit]), 1L, splits$n_possible_names[s[hit]])
     }
   }
 
@@ -147,7 +171,7 @@ update_taxa <- function(aligned_data, resources = NULL,
   family_current <- if ("family" %in% names(all_taxa)) current$family else NA_character_
   family_prior <- if ("family" %in% names(aligned_data)) aligned_data$family else NA_character_
 
-  aligned_data |>
+  out <- aligned_data |>
     dplyr::mutate(
       taxonomic_status_aligned = status_aligned,
       accepted_name_usage_ID = usage_ID,
@@ -185,5 +209,39 @@ update_taxa <- function(aligned_data, resources = NULL,
         !is.na(accepted_name) ~ paste0("Updated to the current accepted name (", Sys.Date(), ")"),
         TRUE ~ "Aligned name's current status could not be resolved in `resources`"
       )
+    )
+
+  # APCalign's update_taxonomy() columns, describing the taxon `suggested_name` names: the current
+  # accepted record, or for a split collapsed to genus, that genus's accepted record (its
+  # `taxon_ID`/`taxon_ID_genus`/`scientific_name_ID` are what traits.build taxon lists record --
+  # traitecoevo/taxonAlign.dataprep#1). taxonAlign's `taxon_ID` used to be the *matched* record's ID
+  # here; that's now `aligned_taxon_ID`, so `taxon_ID` means what it means in APCalign.
+  col_or_na <- function(table, col, i) if (col %in% names(table)) as.character(table[[col]][i]) else rep(NA_character_, length(i))
+  accepted_genera <- all_taxa[all_taxa$taxon_rank %in% "genus" & all_taxa$taxonomic_status %in% "accepted", ]
+  genus_record <- match(dplyr::coalesce(collapsed_genus, out$genus), accepted_genera$canonical_name)
+  record <- match(usage_ID, all_taxa$taxon_ID)
+  record[!(resolved & current$taxonomic_status %in% "accepted")] <- NA
+  is_collapsed <- !is.na(collapsed)
+  # an unresolved match (an unplaced name, say) still has a name, with its own authorship and ID
+  name_record <- dplyr::coalesce(record, match(aligned_data$taxon_ID, all_taxa$taxon_ID))
+  name_record[is_collapsed] <- NA
+
+  out |>
+    dplyr::mutate(
+      aligned_taxon_ID = aligned_data$taxon_ID,
+      subclass = dplyr::if_else(is_collapsed, NA_character_, col_or_na(all_taxa, "subclass", record)),
+      taxon_distribution = dplyr::if_else(is_collapsed, NA_character_, col_or_na(all_taxa, "taxon_distribution", record)),
+      scientific_name = dplyr::if_else(
+        is_collapsed, accepted_genera$scientific_name[genus_record], all_taxa$scientific_name[name_record]
+      ),
+      taxon_ID = dplyr::if_else(is_collapsed, accepted_genera$taxon_ID[genus_record], all_taxa$taxon_ID[record]),
+      taxon_ID_genus = accepted_genera$taxon_ID[genus_record],
+      scientific_name_ID = dplyr::if_else(
+        is_collapsed, col_or_na(accepted_genera, "scientific_name_ID", genus_record),
+        col_or_na(all_taxa, "scientific_name_ID", name_record)
+      ),
+      canonical_name = suggested_name,
+      row_number = seq_len(dplyr::n()),
+      number_of_collapsed_taxa = n_collapsed
     )
 }

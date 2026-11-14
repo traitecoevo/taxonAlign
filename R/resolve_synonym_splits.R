@@ -92,6 +92,7 @@ build_split_table <- function(all_taxa) {
       alternative_possible_names = paste0(target_name[-1], " (", status[-1], ")", collapse = " | "),
       all_possible_names = paste0(target_name, " (", status, ")", collapse = " | "),
       shared_genus = if (dplyr::n_distinct(target_genus) == 1 && !is.na(target_genus[1])) target_genus[1] else NA_character_,
+      n_possible_names = dplyr::n(),
       .groups = "drop"
     )
 }
@@ -101,7 +102,7 @@ empty_split_table <- function() {
   dplyr::tibble(
     canonical_name = character(0), taxon_rank = character(0), chosen_ID = character(0),
     alternative_possible_names = character(0), all_possible_names = character(0),
-    shared_genus = character(0)
+    shared_genus = character(0), n_possible_names = integer(0)
   )
 }
 

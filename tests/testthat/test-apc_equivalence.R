@@ -35,6 +35,13 @@ load_apc_resources_for_test <- function() {
     APC$family_accepted |> dplyr::mutate(taxonomic_dataset = "APC"),
     APC$family_synonym
   )
+  # as in load_APC(): subclass/taxon_distribution are only in the full APC table, and APC's other
+  # metadata columns would be read as ranks
+  extra <- APC$APC[, c("taxon_ID", "subclass", "taxon_distribution")]
+  flat <- flat |>
+    dplyr::select(-dplyr::any_of(c("subclass", "taxon_distribution"))) |>
+    dplyr::left_join(extra[!duplicated(extra$taxon_ID), ], by = "taxon_ID") |>
+    dplyr::select(dplyr::any_of(c(taxonomic_reference_schema()$column, "kingdom", "class", "subclass", "family")))
   list(APC = APC, resources = prepare_taxonomic_resources(flat))
 }
 
@@ -91,6 +98,18 @@ test_that("taxonAlign aligns/updates a curated set of real names the same way AP
   expect_equal(
     updated_taxonAlign$accepted_name[comparable_rank], updated_APCalign$accepted_name[comparable_rank]
   )
+
+  # the APCalign columns taxonAlign added (traitecoevo/taxonAlign.dataprep#1) mean the same thing:
+  # the accepted taxon's IDs, authorship and distribution, where APCalign gives one
+  full_taxonAlign <- create_taxonomic_update_lookup(taxa, resources, full = TRUE) |> dplyr::arrange(original_name)
+  full_APCalign <- suppressMessages(
+    APCalign::create_taxonomic_update_lookup(taxa, resources = APC, quiet = TRUE, full = TRUE)
+  ) |>
+    dplyr::arrange(original_name)
+  for (col in c("taxon_ID", "taxon_ID_genus", "scientific_name_ID", "scientific_name", "taxon_distribution", "subclass")) {
+    given <- comparable_rank & !is.na(full_APCalign[[col]])
+    expect_equal(full_taxonAlign[[col]][given], full_APCalign[[col]][given], label = col)
+  }
 })
 
 test_that("taxonAlign matches oddball/edge-case real names the same way APCalign does", {

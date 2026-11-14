@@ -24,10 +24,64 @@ test_that("create_taxonomic_update_lookup's default output has the documented sl
 
   expect_setequal(
     names(out),
-    c("original_name", "aligned_name", "accepted_name", "suggested_name", "genus", "family",
-      "taxon_rank", "taxonomic_dataset", "taxonomic_status", "taxonomic_status_aligned",
-      "aligned_reason", "update_reason", "alternative_possible_names", "chars_changed", "identifier")
+    c("original_name", "aligned_name", "accepted_name", "suggested_name", "genus", "taxon_rank",
+      "taxonomic_dataset", "taxonomic_status", "scientific_name", "aligned_reason", "update_reason",
+      "number_of_collapsed_taxa", "taxon_ID", "taxon_ID_genus", "scientific_name_ID", "family",
+      "taxonomic_status_aligned", "alternative_possible_names", "chars_changed", "identifier")
   )
+})
+
+test_that("every column APCalign's lookup returns, taxonAlign's does too", {
+  # the user's rule: taxonAlign's output includes everything APCalign's does (and may add more).
+  # APCalign 2.0.1's create_taxonomic_update_lookup() columns, without and with `full = TRUE`
+  apcalign_slim <- c(
+    "original_name", "aligned_name", "accepted_name", "suggested_name", "genus", "taxon_rank",
+    "taxonomic_dataset", "taxonomic_status", "scientific_name", "aligned_reason", "update_reason",
+    "number_of_collapsed_taxa"
+  )
+  apcalign_full <- c(
+    apcalign_slim, "family", "taxonomic_status_aligned", "subclass", "taxon_distribution", "taxon_ID",
+    "taxon_ID_genus", "scientific_name_ID", "canonical_name", "row_number"
+  )
+  resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  slim <- create_taxonomic_update_lookup("Boronia serrulata Sm.", resources)
+  full <- create_taxonomic_update_lookup("Boronia serrulata Sm.", resources, full = TRUE)
+  expect_true(all(apcalign_slim %in% names(slim)))
+  expect_true(all(apcalign_full %in% names(full)))
+  # ...in APCalign's order, ahead of taxonAlign's own
+  expect_equal(names(slim)[seq_along(apcalign_slim)], apcalign_slim)
+})
+
+test_that("the ID columns describe the suggested taxon, as in APCalign", {
+  ref <- tibble::tribble(
+    ~canonical_name, ~scientific_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID, ~scientific_name_ID, ~taxon_distribution,
+    "Eucalyptus", "Eucalyptus L'Her.", "genus", "accepted", "Eucalyptus", "g1", "g1", "ipni:g1", NA,
+    "Eucalyptus globulus", "Eucalyptus globulus Labill.", "species", "accepted", "Eucalyptus", "s1", "s1", "ipni:s1", "Tas, Vic",
+    "Eucalyptus gigantea", "Eucalyptus gigantea Dehnh.", "species", "synonym", "Eucalyptus", "s2", "s1", "ipni:s2", NA,
+    "Eucalyptus dubia", "Eucalyptus dubia Sm.", "species", "unplaced", "Eucalyptus", "s3", "s3", "ipni:s3", NA,
+    "Eucalyptus regnans", "Eucalyptus regnans F.Muell.", "species", "accepted", "Eucalyptus", "s4", "s4", "ipni:s4", "Vic",
+    "Eucalyptus ambigua", "Eucalyptus ambigua Sm.", "species", "synonym", "Eucalyptus", "s5", "s1", "ipni:s5", NA,
+    "Eucalyptus ambigua", "Eucalyptus ambigua Sm.", "species", "synonym", "Eucalyptus", "s6", "s4", "ipni:s6", NA
+  ) |> dplyr::mutate(taxonomic_dataset = "TEST")
+  q <- c("Eucalyptus gigantea", "Eucalyptus dubia", "Eucalyptus sp.", "Eucalyptus ambigua", "nonsense")
+  out <- create_taxonomic_update_lookup(q, ref, full = TRUE)
+
+  # a synonym: the accepted taxon's ID, name and authorship; the matched record's ID kept as aligned_taxon_ID
+  expect_equal(out$taxon_ID, c("s1", NA, "g1", "s1", NA))
+  expect_equal(out$aligned_taxon_ID, c("s2", "s3", "g1", "s5", NA))
+  expect_equal(out$scientific_name_ID, c("ipni:s1", "ipni:s3", "ipni:g1", "ipni:s1", NA))
+  expect_equal(out$scientific_name[1:3], c("Eucalyptus globulus Labill.", "Eucalyptus dubia Sm.", "Eucalyptus L'Her."))
+  expect_equal(out$taxon_ID_genus, c("g1", "g1", "g1", "g1", NA))
+  expect_equal(out$taxon_distribution[1], "Tas, Vic")
+  expect_true(all(is.na(out$subclass)))
+  expect_equal(out$canonical_name, out$suggested_name)
+  expect_equal(out$row_number, 1:5)
+  # a split: 1 when one name is suggested, the number of candidates when collapsed to genus
+  expect_equal(out$number_of_collapsed_taxa, c(NA, NA, NA, 1L, NA))
+  collapsed <- create_taxonomic_update_lookup("Eucalyptus ambigua", ref, taxonomic_splits = "collapse_to_higher_taxon")
+  expect_equal(collapsed$number_of_collapsed_taxa, 2L)
+  expect_equal(collapsed$taxon_ID, "g1")
+  expect_equal(collapsed$scientific_name, "Eucalyptus L'Her.")
 })
 
 test_that("create_taxonomic_update_lookup(full = TRUE) returns the fuller intermediate columns too", {

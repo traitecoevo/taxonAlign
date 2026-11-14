@@ -151,7 +151,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-409 expectations, all passing as of the last `devtools::test()` run (2026-11-14), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
+431 expectations, all passing as of the last `devtools::test()` run (2026-11-14), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -803,6 +803,19 @@ Architecture of the matching engine itself:
   a query with a *wrong* subgenus (`"Leioproctus (Wrongsub) lanceolatus"`) silently resolves to the
   species under its real subgenus; a matched *synonym* keeps whatever form its reference wrote (NSL
   synonym records have no parent link). Tests: `test-subgenus_conventions.R`.
+- **Output columns are a superset of APCalign's** (user's standing rule: "include what APCalign does
+  (and possibly more, but not less)"). `update_taxa()` adds APCalign's `update_taxonomy()` columns, with
+  APCalign's meanings, describing the taxon `suggested_name` names: `taxon_ID` (the *accepted* record's
+  ID -- the matched record's ID, which `align_taxa()` calls `taxon_ID`, is renamed `aligned_taxon_ID`),
+  `taxon_ID_genus`, `scientific_name`, `scientific_name_ID`, `subclass`, `taxon_distribution`,
+  `canonical_name` (= `suggested_name`, as in APCalign), `row_number`, `number_of_collapsed_taxa`. The
+  lookup's slim output has APCalign's slim columns first, in its order, then taxonAlign's (incl.
+  `taxon_ID`/`taxon_ID_genus`/`scientific_name_ID`, which APCalign only gives with `full = TRUE`).
+  `test-create_taxonomic_update_lookup.R` pins APCalign 2.0.1's column lists; `test-apc_equivalence.R`
+  checks the six value columns against APCalign's on live APC data (all agree). Requested via
+  [dataprep#1](https://github.com/traitecoevo/taxonAlign.dataprep/issues/1) (traits.build taxon lists
+  need `taxon_ID`/`scientific_name_ID`). `align_taxa()` lacks only APCalign's APNI-specific
+  `fuzzy_match_*_APNI` debugging columns, which have no meaning without APNI.
 - **Hyphenated names, and optional columns read as ranks** (2026-11-14, from
   [dataprep#1](https://github.com/traitecoevo/taxonAlign.dataprep/issues/1), a Malaysian plant list
   against the WCVP): `APCalign::strip_names()` turns every punctuation mark into a space, so a

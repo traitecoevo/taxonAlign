@@ -33,6 +33,25 @@ falls back to \code{aligned_name}), \code{taxonomic_status} (the \emph{current} 
 \code{update_reason} (a short explanation, mirroring \code{aligned_reason}'s style), and
 \code{alternative_possible_names} (the other candidates for a name that leads to more than one accepted
 name, otherwise \code{NA}).
+
+It also has every column APCalign's \code{update_taxonomy()} returns, meaning the same thing, all
+describing the taxon \code{suggested_name} names (its accepted record, or for a split collapsed to genus,
+that genus's):
+\itemize{
+\item \code{taxon_ID}: that accepted record's ID (\code{NA} when the name doesn't resolve to an accepted name).
+The ID of the record the name \emph{matched} (a synonym's own ID, say), which \code{align_taxa()} returns as
+\code{taxon_ID}, is kept as \code{aligned_taxon_ID}.
+\item \code{taxon_ID_genus}: the ID of its genus's accepted record.
+\item \code{scientific_name} and \code{scientific_name_ID}: its name with authorship, and the reference's
+\code{scientific_name_ID} for it (e.g. an IPNI LSID for the WCVP; \code{NA} if the reference has none). For
+a name that matched but doesn't resolve to an accepted name (an unplaced name, say), those of the
+matched record.
+\item \code{subclass}, \code{taxon_distribution}: the reference's own columns of those names, \code{NA} if it has none.
+\item \code{canonical_name}: the same as \code{suggested_name}, as in APCalign.
+\item \code{row_number}: the row's position in \code{aligned_data}.
+\item \code{number_of_collapsed_taxa}: for a name leading to more than one accepted name, 1 when one is
+suggested, or the number of candidates when they're collapsed to genus; \code{NA} otherwise.
+}
 }
 \description{
 Takes the output of \code{\link[=align_taxa]{align_taxa()}} and, for every row that matched something in \code{resources}
