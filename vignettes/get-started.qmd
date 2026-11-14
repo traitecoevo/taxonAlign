@@ -58,7 +58,7 @@ naming the release it used. The first release contains:
 | `"NSL_bryophytes"` | Bryophytes | NSL export (CAB taxa, ABNI names) |
 | `"NSL_fungi"` | Fungi | NSL export (AFL taxa, AFNI names) |
 | `"NSL_lichens"` | Lichens | NSL export (ALC taxa, ALNI names) |
-| `"GBIF_AU"` | Animals recorded in Australia (GBIF) | GBIF backbone taxonomy: taxa with Australian occurrence records, plus their synonyms |
+| `"GBIF_AU"` | Animals recorded in Australia (GBIF) | GBIF Backbone taxonomy: taxa with Australian occurrence records, plus their synonyms. In the `2026-10-07` release; replaced by `"CatalogueOfLife_AU"` from the next one, as GBIF has replaced its Backbone with the Catalogue of Life Extended Release |
 
 `data_release_versions()` lists the releases available, most recent first, and
 `data_release_datasets()` lists what's in one, with each dataset's source, retrieval date, licence and
@@ -120,10 +120,8 @@ global taxonomic resources and reshapes them into taxonAlign's format. Install i
 
 | Function | Reference | Best for |
 |---|---|---|
-| `load_CoL()` | Catalogue of Life, from [ChecklistBank](https://www.checklistbank.org) | A reference to every taxon in every kingdom (~5.5 million names) |
+| `load_CatalogueOfLife()` | Catalogue of Life, from [ChecklistBank](https://www.checklistbank.org) | A reference to every taxon in every kingdom (~5.5 million names); `extended = TRUE` for its Extended Release (~8.5 million), GBIF's own taxonomy |
 | `load_WCVP()` | World Checklist of Vascular Plants (Royal Botanic Gardens, Kew) | Every vascular plant name worldwide (~1.45 million) |
-| `generate_taxadb_taxonomic_reference_list()` | GBIF backbone taxonomy (or ITIS, NCBI and others), from [taxadb](https://docs.ropensci.org/taxadb/)'s pre-built snapshot | A large group -- a class or a phylum -- quickly |
-| `generate_GBIF_taxonomic_reference_list()` | GBIF backbone taxonomy, fetched live from GBIF | A small group -- a genus or family -- always current |
 | `filter_to_country()` | Any of the above | Keeping only the taxa GBIF has occurrence records of in one or more countries |
 
 Each returns one table in taxonAlign's format, which goes straight into the matching functions:
@@ -137,20 +135,18 @@ wcvp_au <- load_WCVP() |> filter_to_country("AU")
 create_taxonomic_update_lookup(my_plant_names, wcvp_au)
 
 # the Catalogue of Life, pinned to one release (COL26.10) so the alignment can be repeated
-col <- load_CoL(316595)
+col <- load_CatalogueOfLife(316595)
 
-# every insect in GBIF's backbone taxonomy with an Australian occurrence record
-insecta_au <- generate_taxadb_taxonomic_reference_list("Insecta", rank = "class", country = "AU")
-
-# one genus, live from GBIF
-aporocera <- generate_GBIF_taxonomic_reference_list("Aporocera", country = "AU")
+# GBIF's own taxonomy (the Catalogue of Life Extended Release), only the animals GBIF has
+# Australian records of
+col_xr_au <- load_CatalogueOfLife(extended = TRUE) |> filter_to_country("AU", gbif_taxon = "Animalia")
 ```
 
 A few things worth knowing:
 
 - **The WCVP and Catalogue of Life are large downloads** (~90MB and ~170MB). Each is downloaded once
   and cached, so later calls load from your computer, offline. Name a version (`load_WCVP(16)`,
-  `load_CoL(316595)`) to make an alignment repeatable.
+  `load_CatalogueOfLife(316595)`) to make an alignment repeatable.
 - **A worldwide list matches more names than you may want**: a misspelt Australian plant name can
   fuzzy-match a species that only grows in South America. `filter_to_country()` avoids this. It keeps
   each taxon's accepted name and all its synonyms, even where GBIF and the reference disagree on which

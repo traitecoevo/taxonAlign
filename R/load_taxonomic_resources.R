@@ -14,14 +14,17 @@
 #'
 #' The datasets in the first release are the Australian National Species List exports --
 #' `"NSL_animals"` (the Australian Faunal Directory), `"NSL_algae"`, `"NSL_bryophytes"`, `"NSL_fungi"`
-#' and `"NSL_lichens"` -- and `"GBIF_AU"`, every animal taxon in the GBIF backbone with occurrence
-#' records in Australia, plus its synonyms. [data_release_datasets()] lists what a release holds, with
-#' each dataset's source, retrieval date, licence and citation.
+#' and `"NSL_lichens"` -- and `"GBIF_AU"`, every animal taxon in the GBIF Backbone with occurrence
+#' records in Australia, plus its synonyms. GBIF has since replaced its Backbone with the Catalogue of
+#' Life Extended Release, so later releases have `"CatalogueOfLife_AU"` instead: that release's animal
+#' names GBIF has Australian records of, plus their synonyms. [data_release_datasets()] lists what a
+#' release holds, with each dataset's source, retrieval date, licence and citation.
 #'
 #' When several datasets are loaded, they're returned in the order given, which is the order they're
 #' preferred in when a name appears in more than one.
 #'
-#' Some datasets flag extinct taxa (an `extinct` column; currently `"GBIF_AU"`). GBIF's occurrence
+#' Some datasets flag extinct taxa (an `extinct` column; `"GBIF_AU"`). (`"CatalogueOfLife_AU"` has no
+#' flag; it leaves out names GBIF knows only from fossil specimens instead.) GBIF's occurrence
 #' records include fossil specimens, so these are left out by default, as they only produce spurious
 #' matches against modern names. GBIF's flag doesn't distinguish fossils from recent extinctions,
 #' though -- the thylacine (*Thylacinus cynocephalus*) is flagged extinct too -- so

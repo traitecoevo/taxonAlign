@@ -49,14 +49,17 @@ is only downloaded once.
 \details{
 The datasets in the first release are the Australian National Species List exports --
 \code{"NSL_animals"} (the Australian Faunal Directory), \code{"NSL_algae"}, \code{"NSL_bryophytes"}, \code{"NSL_fungi"}
-and \code{"NSL_lichens"} -- and \code{"GBIF_AU"}, every animal taxon in the GBIF backbone with occurrence
-records in Australia, plus its synonyms. \code{\link[=data_release_datasets]{data_release_datasets()}} lists what a release holds, with
-each dataset's source, retrieval date, licence and citation.
+and \code{"NSL_lichens"} -- and \code{"GBIF_AU"}, every animal taxon in the GBIF Backbone with occurrence
+records in Australia, plus its synonyms. GBIF has since replaced its Backbone with the Catalogue of
+Life Extended Release, so later releases have \code{"CatalogueOfLife_AU"} instead: that release's animal
+names GBIF has Australian records of, plus their synonyms. \code{\link[=data_release_datasets]{data_release_datasets()}} lists what a
+release holds, with each dataset's source, retrieval date, licence and citation.
 
 When several datasets are loaded, they're returned in the order given, which is the order they're
 preferred in when a name appears in more than one.
 
-Some datasets flag extinct taxa (an \code{extinct} column; currently \code{"GBIF_AU"}). GBIF's occurrence
+Some datasets flag extinct taxa (an \code{extinct} column; \code{"GBIF_AU"}). (\code{"CatalogueOfLife_AU"} has no
+flag; it leaves out names GBIF knows only from fossil specimens instead.) GBIF's occurrence
 records include fossil specimens, so these are left out by default, as they only produce spurious
 matches against modern names. GBIF's flag doesn't distinguish fossils from recent extinctions,
 though -- the thylacine (\emph{Thylacinus cynocephalus}) is flagged extinct too -- so
