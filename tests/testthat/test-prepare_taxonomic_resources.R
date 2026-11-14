@@ -60,6 +60,29 @@ test_that("prepare_taxonomic_resources doesn't synthesise bogus rows from scient
   expect_false("scientific_name_authorship" %in% names(resources))
 })
 
+test_that("no optional schema column is read as a rank", {
+  # an IPNI LSID in `scientific_name_ID` (asked of the WCVP loader, traitecoevo/taxonAlign.dataprep#1),
+  # a state list in `taxon_distribution`, ... each used to become a bogus "taxon" at a rank named after
+  # the column
+  raw <- dplyr::tibble(
+    canonical_name = "Testus alphus", scientific_name = "Testus alphus Sm.", taxon_rank = "species",
+    taxonomic_status = "accepted", taxonomic_dataset = "MY_DATA", genus = "Testus",
+    taxon_ID = "sp1", accepted_name_usage_ID = "sp1",
+    scientific_name_ID = "urn:lsid:ipni.org:names:1-1", taxon_distribution = "WA, NT",
+    higher_classification = "Plantae|Testaceae", accepted_name_usage = "Testus alphus", family = "Testaceae"
+  )
+
+  resources <- prepare_taxonomic_resources(raw)
+
+  expect_setequal(names(resources), c("species", "genus", "family"))
+  optional <- dplyr::filter(taxonomic_reference_schema(), !required)$column
+  expect_true(all(optional %in% taxonAlign_non_hierarchy_cols))
+  # the column itself is kept on the record
+  expect_equal(resources$species$accepted$scientific_name_ID, "urn:lsid:ipni.org:names:1-1")
+  # and the added family row has the documented, name-derived ID
+  expect_equal(resources$family$taxon_ID, "MY_DATA_family_Testaceae")
+})
+
 test_that("prepare_taxonomic_resources renames raw Darwin Core columns, exactly like APCalign::load_taxonomic_resources()", {
   raw <- dplyr::tibble(
     canonicalName = "Boronia serrulata", scientificName = "Boronia serrulata Sm.",

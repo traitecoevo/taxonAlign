@@ -262,6 +262,29 @@ extract_genus <- function(taxon_name) {
   genus
 }
 
+# APCalign::strip_names(), but keeping a hyphen between two letters. strip_names() turns every
+# punctuation mark into a space, which splits a hyphenated genus ("Neo-uvaria", ICN Art. 20.3) or
+# epithet ("Polygonia c-album", "Arctostaphylos uva-ursi") into two words -- shifting every word
+# after it, so the "binomial" of "Neo-uvaria sp." became "neo uvaria", the same as every
+# Neo-uvaria species' binomial (a bare genus or "Genus sp." silently matched the first species), a
+# bare "Neo-uvaria" crashed match_10a, and "Polygonia c-album" and "Polygonia c-aureum" shared the
+# binomial "polygonia c". Found aligning a Malaysian plant list against the WCVP
+# (traitecoevo/taxonAlign.dataprep#1). The placeholder is letters only, so strip_names() leaves it be.
+strip_names_keep_hyphens <- function(taxon_names) {
+  placeholder <- "zqhyphenqz"
+  taxon_names |>
+    stringr::str_replace_all("(?<=[[:alpha:]])-(?=[[:alpha:]])", placeholder) |>
+    APCalign::strip_names() |>
+    stringr::str_replace_all(placeholder, "-")
+}
+
+# The second whitespace-delimited word of each name, "" (not NA) when there is none -- for the
+# match blocks that test whether it's a "(Subgenus)" bracket, where an NA (a one-word name) used to
+# turn the whole row index NA and crash the block's `taxa$tocheck[i, ] <-` assignment.
+second_word <- function(x) {
+  dplyr::coalesce(stringr::word(x, start = 2, end = 2), "")
+}
+
 # Shape-check for `align_taxa()`/`update_taxa()`'s `resources` argument, once it's known not to be a
 # plain data frame -- see `ensure_prepared_resources()` below.
 validate_resources_shape <- function(resources) {

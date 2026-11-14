@@ -1,6 +1,6 @@
 Package: taxonAlign
 Title: Align and Update Taxonomic Names Against Any Taxonomic Reference
-Version: 0.0.0.9000
+Version: 0.0.0.9001
 Authors@R: c(
     person(given = "Elizabeth", family = "Wenk", role = c("aut", "ctb", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
     person(given = "Fonti", family = "Kar", role = c("aut", "cre"), email = "f.kar@unsw.edu.au", comment = c(ORCID = "0000-0002-2760-3974"))

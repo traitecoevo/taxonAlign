@@ -151,7 +151,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-391 expectations, all passing as of the last `devtools::test()` run (2026-10-22), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (233 expectations) holds the tests that moved with the builders.
+409 expectations, all passing as of the last `devtools::test()` run (2026-11-14), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -803,6 +803,21 @@ Architecture of the matching engine itself:
   a query with a *wrong* subgenus (`"Leioproctus (Wrongsub) lanceolatus"`) silently resolves to the
   species under its real subgenus; a matched *synonym* keeps whatever form its reference wrote (NSL
   synonym records have no parent link). Tests: `test-subgenus_conventions.R`.
+- **Hyphenated names, and optional columns read as ranks** (2026-11-14, from
+  [dataprep#1](https://github.com/traitecoevo/taxonAlign.dataprep/issues/1), a Malaysian plant list
+  against the WCVP): `APCalign::strip_names()` turns every punctuation mark into a space, so a
+  hyphenated genus (`"Neo-uvaria"`, ICN Art. 20.3) or epithet (`"Polygonia c-album"`) became two
+  words in every stripped key. A bare `"Neo-uvaria"` crashed `match_10a` (its `binomial` "neo uvaria"
+  matched the species', while the second-word bracket guard was `NA` for a one-word name, so the row
+  index was `NA`); `"Neo-uvaria sp."` and `"Neo-uvaria <unknown epithet>"` silently matched the first
+  *Neo-uvaria* species; `c-album`/`c-aureum` shared the binomial "polygonia c". Fixed by
+  `strip_names_keep_hyphens()` (`match_taxa_helpers.R`; keeps a letter-hyphen-letter hyphen) at all
+  three `strip_names()` call sites, and `second_word()` (`""`, not `NA`) at every
+  `word(cleaned_name, 2, 2)` guard. Live APC equivalence tests unchanged. Separately,
+  `taxonAlign_non_hierarchy_cols` now holds every optional schema column (the Darwin Core renames plus
+  `extinct`): `scientific_name_ID`, `taxon_distribution`, `higher_classification`, ... had each been
+  synthesised into a bogus rank, which the WCVP loader keeping IPNI IDs would have hit at ~1.4M rows.
+  Version bumped to 0.0.0.9001 so dataprep can require it. Tests: `test-hyphenated_names.R`.
 - **Higher-rank synthesis used to duplicate every explicit row whose rank was capitalised** (found
   while doing the above): `already_present` compared the raw `taxon_rank` (`"Genus"` in NSL exports)
   to the lowercase column name, so 19,347 NSL synonym genera (e.g. *Geobasileus*, a primary synonym of

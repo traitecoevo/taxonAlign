@@ -30,8 +30,12 @@ taxonAlign_required_col_descriptions <- c(
 #'
 #' Any other column is kept. A character column named after a rank (`family`, `order`, `tribe`, ...)
 #' is read as that rank's value for each row: [prepare_taxonomic_resources()] adds a row for every
-#' family/order/... named this way that has no row of its own. `scientific_name_authorship` and
-#' `extinct` (logical; see [load_taxonomic_resources()]) are recognised too.
+#' family/order/... named this way that has no row of its own. Such an added row's `taxon_ID` is
+#' `<taxonomic_dataset>_<rank>_<name>`, e.g. `"WCVP_family_Annonaceae"` (the dataset of the first row
+#' naming it) -- built from the name alone, so it's the same every time the same reference is
+#' prepared. The optional columns listed by `taxonomic_reference_schema()` (`scientific_name_ID`,
+#' `scientific_name_authorship`, `taxon_distribution`, `extinct`, ...) are never read as ranks.
+#' `extinct` (logical) is described in [load_taxonomic_resources()].
 #'
 #' One record per row. A synonym (any `taxonomic_status` other than `"accepted"`) has its own row,
 #' whose `accepted_name_usage_ID` is the `taxon_ID` of the accepted record it leads to. If a table has

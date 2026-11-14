@@ -41,7 +41,16 @@ taxonAlign_required_cols <- c(
 # `taxonAlign_taxon_rank_specificity`/`taxonAlign_taxonomic_status_priority` already use -- a user's own
 # arbitrary extra column is still scanned as before; this list only ever grows with columns taxonAlign
 # itself is responsible for producing.
-taxonAlign_non_hierarchy_cols <- c("scientific_name_authorship")
+# Every optional column taxonomic_reference_schema() documents is on the list too (the Darwin Core
+# columns renamed via taxonAlign_column_rename, plus `extinct`): none is a rank, but each used to be
+# scanned like one -- an IPNI LSID in `scientific_name_ID`, a state list in `taxon_distribution`, a
+# whole classification string in `higher_classification` each became a bogus "taxon" at a rank named
+# after the column. Found when the WCVP loader was asked to keep its IPNI IDs
+# (traitecoevo/taxonAlign.dataprep#1).
+taxonAlign_non_hierarchy_cols <- union(
+  c("scientific_name_authorship", "extinct"),
+  setdiff(names(taxonAlign_column_rename), taxonAlign_required_cols)
+)
 
 # Priority order used to disambiguate when the same lookup key (canonical_name, scientific_name,
 # binomial, trinomial, ...) appears more than once with a different taxonomic_status -- match_taxa()'s
@@ -432,11 +441,11 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
       ),
       ## strip_names removes punctuation and filler words associated with infraspecific taxa (subsp,
       ## var, f, ser)
-      stripped_canonical = APCalign::strip_names(canonical_name),
+      stripped_canonical = strip_names_keep_hyphens(canonical_name),
       ## strip_names_extra removes extra filler words associated with species name cases (x, sp) --
       ## essential for the 2/3-word matches, since those words shouldn't count as one of the words
       stripped_canonical2 = APCalign::strip_names_extra(stripped_canonical),
-      stripped_scientific = APCalign::strip_names(scientific_name),
+      stripped_scientific = strip_names_keep_hyphens(scientific_name),
       binomial = ifelse(taxon_rank == "species", stringr::word(stripped_canonical2, start = 1, end = 2), zzz),
       binomial = ifelse(is.na(binomial), zzz, binomial),
       binomial = base::replace(binomial, duplicated(binomial), zzz),

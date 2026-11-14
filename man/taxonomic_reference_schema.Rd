@@ -25,8 +25,12 @@ Eight columns are required: \code{canonical_name}, \code{scientific_name}, \code
 
 Any other column is kept. A character column named after a rank (\code{family}, \code{order}, \code{tribe}, ...)
 is read as that rank's value for each row: \code{\link[=prepare_taxonomic_resources]{prepare_taxonomic_resources()}} adds a row for every
-family/order/... named this way that has no row of its own. \code{scientific_name_authorship} and
-\code{extinct} (logical; see \code{\link[=load_taxonomic_resources]{load_taxonomic_resources()}}) are recognised too.
+family/order/... named this way that has no row of its own. Such an added row's \code{taxon_ID} is
+\verb{<taxonomic_dataset>_<rank>_<name>}, e.g. \code{"WCVP_family_Annonaceae"} (the dataset of the first row
+naming it) -- built from the name alone, so it's the same every time the same reference is
+prepared. The optional columns listed by \code{taxonomic_reference_schema()} (\code{scientific_name_ID},
+\code{scientific_name_authorship}, \code{taxon_distribution}, \code{extinct}, ...) are never read as ranks.
+\code{extinct} (logical) is described in \code{\link[=load_taxonomic_resources]{load_taxonomic_resources()}}.
 
 One record per row. A synonym (any \code{taxonomic_status} other than \code{"accepted"}) has its own row,
 whose \code{accepted_name_usage_ID} is the \code{taxon_ID} of the accepted record it leads to. If a table has

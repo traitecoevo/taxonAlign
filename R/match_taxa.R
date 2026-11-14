@@ -280,7 +280,7 @@ match_taxa <- function(
       cleaned_name = cleaned_name |>
         update_na_with(APCalign::standardise_names(original_name)),
       stripped_name = stripped_name |>
-        update_na_with(APCalign::strip_names(cleaned_name)),
+        update_na_with(strip_names_keep_hyphens(cleaned_name)),
       stripped_name2 = stripped_name2 |>
         update_na_with(APCalign::strip_names_extra(stripped_name)),
       trinomial = stringr::word(stripped_name2, start = 1, end = 3),
@@ -450,8 +450,8 @@ match_taxa <- function(
 
     i <-
       stringr::str_detect(taxa$tocheck$cleaned_name, "[:space:]sp\\.$") &
-      stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(") &
-      stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "\\)$") &
+      stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(") &
+      stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "\\)$") &
       stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2 &
       stringr::word(taxa$tocheck$cleaned_name, start = 1, end = 2) %in% resources$subgenus_v2$genus_and_subgenus
 
@@ -503,7 +503,7 @@ match_taxa <- function(
   # fallback) chance to run.
   is_bracketed_subgenus_sp <-
     stringr::str_detect(taxa$tocheck$cleaned_name, "[:space:]sp\\.$") &
-    stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(.*\\)$") &
+    stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(.*\\)$") &
     stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2
 
   if (any(is_bracketed_subgenus_sp)) {
@@ -554,7 +554,7 @@ match_taxa <- function(
       taxa, resources,
       detect_fn = function(cleaned_name) {
         stringr::str_detect(cleaned_name, "[:space:]sp\\.$") &
-          stringr::str_detect(stringr::word(cleaned_name, start = 2, end = 2), "^\\(.*\\)$") &
+          stringr::str_detect(second_word(cleaned_name), "^\\(.*\\)$") &
           stringr::str_count(cleaned_name, " ") == 2
       },
       bracket_sep = " sp. [",
@@ -592,7 +592,7 @@ match_taxa <- function(
   is_marker_subgenus <-
     stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2 &
     stringr::str_detect(
-      stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2),
+      second_word(taxa$tocheck$cleaned_name),
       stringr::regex("^subg\\.?$", ignore_case = TRUE)
     )
 
@@ -652,7 +652,7 @@ match_taxa <- function(
         is_marker_subgenus2 <-
           stringr::str_count(taxa$tocheck$cleaned_name, " ") == 2 &
           stringr::str_detect(
-            stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2),
+            second_word(taxa$tocheck$cleaned_name),
             stringr::regex("^subg\\.?$", ignore_case = TRUE)
           )
 
@@ -707,7 +707,7 @@ match_taxa <- function(
       detect_fn = function(cleaned_name) {
         stringr::str_count(cleaned_name, " ") == 2 &
           stringr::str_detect(
-            stringr::word(cleaned_name, start = 2, end = 2),
+            second_word(cleaned_name),
             stringr::regex("^subg\\.?$", ignore_case = TRUE)
           )
       },
@@ -749,7 +749,7 @@ match_taxa <- function(
   # is still caught and quarantined rather than leaking through.
   is_bracketed_subgenus <-
     stringr::str_count(taxa$tocheck$cleaned_name, " ") == 1 &
-    stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(.*\\)$")
+    stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(.*\\)$")
 
   if (any(is_bracketed_subgenus)) {
 
@@ -801,7 +801,7 @@ match_taxa <- function(
         # (post-exact-match, shrunk) taxa$tocheck, not the outer-scope `is_bracketed_subgenus`.
         is_bracketed_subgenus2 <-
           stringr::str_count(taxa$tocheck$cleaned_name, " ") == 1 &
-          stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(.*\\)$")
+          stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(.*\\)$")
 
         fuzzy_bracket <- rep(NA_character_, nrow(taxa$tocheck))
         if (any(is_bracketed_subgenus2)) {
@@ -855,7 +855,7 @@ match_taxa <- function(
       taxa, resources,
       detect_fn = function(cleaned_name) {
         stringr::str_count(cleaned_name, " ") == 1 &
-          stringr::str_detect(stringr::word(cleaned_name, start = 2, end = 2), "^\\(.*\\)$")
+          stringr::str_detect(second_word(cleaned_name), "^\\(.*\\)$")
       },
       bracket_sep = " sp. [",
       reason_text = paste(
@@ -1367,8 +1367,8 @@ match_taxa <- function(
   i <-
     taxa$tocheck$binomial %in% resources$species$accepted$binomial &
     # needed to avoid names with subgenus in brackets - in that case a binomial means nothing
-    !stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(") &
-    !stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "\\)$")
+    !stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(") &
+    !stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "\\)$")
 
   ii <-
     match(
@@ -1405,8 +1405,8 @@ match_taxa <- function(
   i <-
     taxa$tocheck$binomial %in% resources$species$synonym$binomial &
     # needed to avoid names with subgenus in brackets - in that case a binomial means nothing
-    !stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(") &
-    !stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "\\)$")
+    !stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(") &
+    !stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "\\)$")
 
   ii <-
     match(
@@ -1518,8 +1518,8 @@ match_taxa <- function(
   if (!is.null(resources$subgenus_v2)) {
 
     i <-
-      stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "^\\(") &
-      stringr::str_detect(stringr::word(taxa$tocheck$cleaned_name, start = 2, end = 2), "\\)$") &
+      stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(") &
+      stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "\\)$") &
       stringr::word(taxa$tocheck$cleaned_name, start = 1, end = 2) %in% resources$subgenus_v2$genus_and_subgenus
 
     ii <-
