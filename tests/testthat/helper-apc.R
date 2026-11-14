@@ -1,6 +1,6 @@
 # A live APC snapshot, flattened into taxonAlign's format the way taxonAlign.dataprep's load_APC() does
 # (repeated here so these tests don't depend on dataprep), and APCalign's own resources for the same
-# data. Loaded once per test session. Used by test-apc_equivalence.R and test-apcalign_ported.R, which
+# data. Loaded once per test session. Used by test-apc_equivalence.R, which is
 # are skipped unless APCalign is installed and the network is available.
 apc_test_cache <- new.env(parent = emptyenv())
 
