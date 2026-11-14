@@ -12,6 +12,8 @@
 #'  [prepare_taxonomic_resources()] (the same one passed to `align_taxa()`), or a reference table (or
 #'  list of them) -- see [align_taxa()].
 #'
+#' @param quiet Accepted for compatibility with APCalign's function of the same name; this
+#'  function prints nothing either way.
 #' @param taxonomic_splits How to report a name that leads to more than one accepted name:
 #'  `"most_likely_species"` (the default) suggests one and lists the others in brackets;
 #'  `"collapse_to_higher_taxon"` collapses it to genus when all candidates share one. See Details.
@@ -73,7 +75,8 @@
 #'
 #' @export
 update_taxa <- function(aligned_data, resources = NULL,
-                        taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon")) {
+                        taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon"),
+                        quiet = FALSE) {
   taxonomic_splits <- match.arg(taxonomic_splits)
 
   if (is.null(resources)) {
@@ -230,7 +233,7 @@ update_taxa <- function(aligned_data, resources = NULL,
           "Aligned name leads to more than one accepted name; the most likely is suggested, alternatives in brackets",
         !is.na(accepted_name) & accepted_name == aligned_name ~
           "Aligned name is already the current accepted name",
-        !is.na(accepted_name) ~ paste0("Updated to the current accepted name (", Sys.Date(), ")"),
+        !is.na(accepted_name) ~ "Updated to the current accepted name",
         resolved & !current$taxonomic_status %in% "accepted" & dplyr::coalesce(usage_ID != aligned_data$taxon_ID, FALSE) ~
           paste0("Aligned name leads to a name with taxonomic status '", current$taxonomic_status, "', not an accepted name"),
         TRUE ~ "Aligned name's current status could not be resolved in `resources`"

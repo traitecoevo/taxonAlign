@@ -19,7 +19,8 @@ create_taxonomic_update_lookup(
   include_bracketed_info = TRUE,
   progress = FALSE,
   taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon"),
-  full = FALSE
+  full = FALSE,
+  quiet = FALSE
 )
 }
 \arguments{
@@ -40,6 +41,11 @@ compute. If \code{FALSE} (the default), return just the key output columns: \cod
 \code{update_reason} and \code{chars_changed} (the number of characters that differed between the name being
 matched and the reference name it matched -- \code{0} for an exact match, the edit distance for a fuzzy
 match, \code{NA} when nothing matched).}
+
+\item{quiet}{Logical; if \code{FALSE} (the default), ends by printing a summary, as APCalign's does: how
+many distinct names aligned to a species or infraspecific taxon (by dataset), only to a genus or a
+family, or to another rank; how many couldn't be aligned; how many were updated to a different
+name; and how many could refer to more than one accepted taxon. \code{TRUE} prints nothing.}
 }
 \value{
 A tibble with one row per element of \code{original_name}; see \code{\link[=update_taxa]{update_taxa()}} for column

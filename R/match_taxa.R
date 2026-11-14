@@ -29,6 +29,9 @@
 
 # ---- shared helpers ---------------------------------------------------------------------------------
 
+# Per-call state apply_match() reads: the dataset versions of the `resources` being matched against.
+match_state <- new.env(parent = emptyenv())
+
 # Records a match for the rows of `taxa$tocheck` selected by the logical `i`, against rows `ii` of
 # `table` (one per selected row; `table = NULL` records "checked, but nothing aligned"), then moves them
 # to `taxa$checked`. `aligned_reason` is completed with the matched dataset and the date.
@@ -48,8 +51,12 @@ apply_match <- function(taxa, i, table, ii, aligned_name, aligned_reason, alignm
   taxa$tocheck$taxon_ID[i] <- from_table("taxon_ID")
   taxa$tocheck$accepted_name_usage_ID[i] <- from_table("accepted_name_usage_ID")
   taxa$tocheck$aligned_name[i] <- aligned_name
+  # the data version, not the run date (APCalign #281): the same names against the same data give the
+  # same output. Nothing when the version isn't known.
+  version <- unname(match_state$versions[dataset])
   taxa$tocheck$aligned_reason[i] <- paste0(
-    aligned_reason, ifelse(is.na(dataset), "", paste0(" in ", dataset)), " (", Sys.Date(), ")"
+    aligned_reason, ifelse(is.na(dataset), "", paste0(" in ", dataset)),
+    ifelse(is.na(version), "", paste0(" (", version, ")"))
   )
   taxa$tocheck$chars_changed[i] <- as.integer(chars_changed)
   taxa$tocheck$alignment_code[i] <- alignment_code
@@ -287,6 +294,10 @@ match_taxa <- function(
   if (length(genus_pos) == 1 && length(subgenus_pos) == 1 && subgenus_pos < genus_pos) {
     taxon_ranks_to_check_fuzzy[c(subgenus_pos, genus_pos)] <- taxon_ranks_to_check_fuzzy[c(genus_pos, subgenus_pos)]
   }
+
+  previous_versions <- match_state$versions
+  match_state$versions <- attr(resources, "dataset_versions", exact = TRUE)
+  on.exit(match_state$versions <- previous_versions, add = TRUE)
 
   total_rows <- nrow(taxa$tocheck) + nrow(taxa$checked)
   pb <- if (progress) utils::txtProgressBar(min = 0, max = total_rows, style = 3) else NULL

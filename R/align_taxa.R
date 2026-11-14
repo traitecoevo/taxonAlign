@@ -42,6 +42,8 @@
 #'  rank's own name (a bare single word, or a bare `"Genus (Subgenus)"`), giving just `"Banksia"`;
 #'  `original_name` keeps the raw input either way, and a name with anything more keeps the brackets
 #'  regardless. See `?match_taxa`.
+#' @param quiet Accepted for compatibility with APCalign's function of the same name; this
+#'  function prints nothing either way.
 #' @param progress Logical; if `TRUE`, prints a text progress bar tracking what fraction of
 #'  `original_name` has been resolved so far. Useful for large inputs, where matching can take a while.
 #'  Defaults to `FALSE`. See `?match_taxa`.
@@ -74,7 +76,8 @@ align_taxa <- function(original_name,
                         consider_english_name_endings = FALSE,
                         include_bracketed_info = TRUE,
                         progress = FALSE,
-                        full = FALSE) {
+                        full = FALSE,
+                        quiet = FALSE) {
 
   if (missing(original_name) || length(original_name) == 0) {
     stop("`original_name` is required and must have length > 0.")

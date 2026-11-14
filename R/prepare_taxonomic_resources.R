@@ -231,6 +231,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   }
 
   tables <- normalise_taxonomic_resources_input(taxonomic_resources)
+  dataset_versions <- taxonomic_dataset_versions(tables)
   resolved <- purrr::imap(tables, resolve_taxonomic_resources_table)
 
   # normalise taxon_ID/accepted_name_usage_ID to character on each table *before* combining --
@@ -552,6 +553,9 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     resources[ranks_to_drop] <- NULL
   }
 
+  # each dataset's version, which match_taxa() records in aligned_reason in place of the run date, as
+  # APCalign does (#281 there): the same names against the same data give the same output
+  attr(resources, "dataset_versions") <- dataset_versions
   resources
 }
 
@@ -608,4 +612,27 @@ resolve_taxonomic_resources_table <- function(data, table_label) {
     )
   }
   data
+}
+
+# The version of each dataset in `tables`, by taxonomic_dataset: "taxonAlign data release 2026-11-14"
+# for a dataset loaded with load_taxonomic_resources(), or "<dataset> version <v>" from a loader's own
+# "version" attribute (taxonAlign.dataprep's load_WCVP(), load_CatalogueOfLife(), load_APC()). NA where
+# a table carries neither.
+#' @noRd
+taxonomic_dataset_versions <- function(tables) {
+  out <- unlist(unname(lapply(tables, function(tbl) {
+    if (!is.data.frame(tbl) || !"taxonomic_dataset" %in% names(tbl)) return(NULL)
+    datasets <- unique(stats::na.omit(as.character(tbl$taxonomic_dataset)))
+    release <- attr(tbl, "data_release", exact = TRUE)
+    version <- attr(tbl, "version", exact = TRUE)
+    label <- if (length(release) == 1 && !is.na(release)) {
+      rep(paste("taxonAlign data release", release), length(datasets))
+    } else if (length(version) == 1 && !is.na(version)) {
+      paste(datasets, "version", version)
+    } else {
+      rep(NA_character_, length(datasets))
+    }
+    stats::setNames(label, datasets)
+  })))
+  if (is.null(out)) character(0) else out[!duplicated(names(out))]
 }

@@ -7,7 +7,8 @@
 update_taxa(
   aligned_data,
   resources = NULL,
-  taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon")
+  taxonomic_splits = c("most_likely_species", "collapse_to_higher_taxon"),
+  quiet = FALSE
 )
 }
 \arguments{
@@ -23,6 +24,9 @@ list of them) -- see \code{\link[=align_taxa]{align_taxa()}}.}
 \item{taxonomic_splits}{How to report a name that leads to more than one accepted name:
 \code{"most_likely_species"} (the default) suggests one and lists the others in brackets;
 \code{"collapse_to_higher_taxon"} collapses it to genus when all candidates share one. See Details.}
+
+\item{quiet}{Accepted for compatibility with APCalign's function of the same name; this
+function prints nothing either way.}
 }
 \value{
 \code{aligned_data} with \code{taxon_rank}/\code{genus}/\code{family}/\code{taxonomic_dataset} refreshed to whatever

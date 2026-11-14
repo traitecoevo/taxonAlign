@@ -18,7 +18,8 @@ align_taxa(
   consider_english_name_endings = FALSE,
   include_bracketed_info = TRUE,
   progress = FALSE,
-  full = FALSE
+  full = FALSE,
+  quiet = FALSE
 )
 }
 \arguments{
@@ -77,6 +78,9 @@ Defaults to \code{FALSE}. See \code{?match_taxa}.}
 \item{full}{Logical; if \code{TRUE}, return every intermediate column \code{match_taxa()} computes (useful
 for inspecting \emph{why} a name matched the way it did). If \code{FALSE} (the default), return just the
 key output columns.}
+
+\item{quiet}{Accepted for compatibility with APCalign's function of the same name; this
+function prints nothing either way.}
 }
 \value{
 A tibble with one row per element of \code{original_name} (preserving its length, order and any
