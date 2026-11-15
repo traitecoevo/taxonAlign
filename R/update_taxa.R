@@ -179,7 +179,7 @@ update_taxa <- function(aligned_data, resources = NULL,
   family_prior <- if ("family" %in% names(aligned_data)) aligned_data$family else NA_character_
 
   # " sp.", " sp. [...]" or " x [...]" at the end of an aligned name above species rank
-  higher_rank_suffix <- stringr::str_extract(aligned_data$aligned_name, " (sp\\.|x)( \\[.*\\])?$")
+  higher_rank_suffix <- re_extract(aligned_data$aligned_name, " (sp\\.|x)( \\[.*\\])?$")
 
   out <- aligned_data |>
     dplyr::mutate(

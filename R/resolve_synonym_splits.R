@@ -81,7 +81,7 @@ build_split_table <- function(all_taxa) {
       status_rank = taxonomic_status_rank(status),
       epithet_rank = as.integer(last_word(target_canonical) != last_word(canonical_name)),
       # same number of words: a trinomial goes to the subspecies, a binomial to the species
-      word_count_rank = as.integer(stringr::str_count(target_canonical, "\\S+") != stringr::str_count(canonical_name, "\\S+")),
+      word_count_rank = as.integer(re_count(target_canonical, "[^\\s\\p{Z}\\x85]+") != re_count(canonical_name, "[^\\s\\p{Z}\\x85]+")),
       older_rank = as.integer(!(!is.na(target_year) & !is.na(record_year) & target_year <= record_year)),
       year_rank = dplyr::coalesce(target_year, .Machine$integer.max)
     ) |>
@@ -122,7 +122,7 @@ taxonomic_status_rank <- function(status) {
 # "Guenée, [1858]" -> 1858, "Girault, 1956b" -> 1956; NA where there's none.
 #' @noRd
 scientific_name_year <- function(scientific_name) {
-  as.integer(stringr::str_extract(scientific_name, "\\d{4}(?=[a-z]?\\]?\\)?\\s*$)"))
+  as.integer(re_extract(scientific_name, "\\p{Nd}{4}(?=[a-z]?\\]?\\)?[\\s\\p{Z}\\x85]*$)"))
 }
 
 # TRUE where `infra` is the nominotypical infraspecific taxon of the species `species`: the species name

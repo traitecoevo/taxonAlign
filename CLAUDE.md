@@ -108,10 +108,31 @@ has since been ported into real functions, and the original file now lives at
 `ignore/match_taxa_for_inverts_202500304-use this.R` (excluded from the build via `.Rbuildignore`, since
 its non-portable filename otherwise trips a `checking for portable file names` `R CMD check` WARNING).
 
-`DESCRIPTION` Imports: `APCalign`, `arrow`, `curl`, `dplyr`, `jsonlite`, `purrr`, `readr`, `stats`,
-`stringdist`, `stringr`, `tools`, `utils` (with `Remotes: traitecoevo/APCalign` since APCalign isn't on
-CRAN). `rgbif`, `parallel`, `rlang` and the `taxadb`/`duckdb`/`DBI` Suggests went to dataprep with the
-code that used them. The `_reproduce-EH-workflow.Rmd` vignette (only) additionally needs packages that
+`DESCRIPTION` Depends: `R (>= 4.5.0)` (Daniel, 2026-11-15; the code itself needs only 4.1, for the native
+pipe). Imports: `APCalign`, `cli`, `curl`, `dplyr`, `jsonlite`, `nanoparquet`, `rlang`, `stats`,
+`stringdist`, `tools`, `utils` (with `Remotes: traitecoevo/APCalign`, which installs APCalign's GitHub
+master). Every one of these but `APCalign` itself is already an APCalign dependency, so taxonAlign adds
+nothing to an install. `readr` is a suggested package, needed only to read a reference from a CSV path
+(`rlang::check_installed()` first). `rgbif`, `parallel` and the `taxadb`/`duckdb`/`DBI` Suggests went to
+dataprep with the code that used them.
+
+**Dependency rule (issue #27, 2026-11-15): follow APCalign's dependency refactors.** taxonAlign was
+forked just before APCalign dropped arrow, readr, crayon (#300) and stringr, stringi, purrr (#302), and
+then had to catch up. Don't bring any of them back into Imports. String work goes through the base-R
+helpers in `R/strings.R` (`re_detect()`, `re_extract()`, `word()`, `split_i()`, `to_sentence()`, ...),
+vendored from APCalign's `R/strings.R`/`R/word.R` with `R/sysdata.rda`'s `case_table` copied from
+APCalign's; keep them in step with APCalign's (a fix in one belongs in the other), and read the
+ICU -> PCRE traps in that file's header before writing a pattern (a bare `[:space:]` is not a class in
+PCRE; `\s`/`\d` are ASCII-only; characters above U+00FF as `\u` escapes). `tests/testthat/test-strings.R` pins
+the helpers against stringr, and checks each translated pattern against its stringr original on
+awkward input. Verified on the switch (2026-11-15): 4,388 name lookups (benchmark, APCalign's
+`species.csv`, messy input, seeded typos) against APC, NSL_animals + CatalogueOfLife_AU, and the four
+other NSL groups, both `taxonomic_splits` options and `align_taxa()`, gave identical results to the
+stringr/arrow version, and so did `prepare_taxonomic_resources()` on every dataset in the 2026-11-14
+release. The one difference: arrow also restored R attributes dataprep's `arrow::write_parquet()`
+stored in a file's metadata (CatalogueOfLife_AU carries `key`, `doi`, `citation`, `version`,
+`country` and two tibbles, `gbif_names` and `unmatched`); nanoparquet reads the data only. Nothing
+here read them, and the manifest has the citation. The `_reproduce-EH-workflow.Rmd` vignette (only) additionally needs packages that
 are **not** declared as dependencies anywhere (`tidyverse`, `here`) — install these manually if you
 need to run it.
 
@@ -174,7 +195,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-441 expectations, all passing as of the last `devtools::test()` run (2026-11-14), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
+507 expectations, all passing as of the last `devtools::test()` run (2026-11-15), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -315,7 +336,7 @@ Architecture of the matching engine itself:
   match if the first letter (or, for genus/species epithets, first 1–2 letters) of each word already
   agrees — this is what keeps fuzzy matching from cross-matching unrelated taxa (see the "Boronieae"
   vs. "Boronia" note below). `fuzzy_match_column(x, accepted_list, ...)` vectorizes it over a whole
-  column via `purrr::map_chr()` — every fuzzy-matching call site in `match_taxa()` (species-level
+  column via `vapply()` — every fuzzy-matching call site in `match_taxa()` (species-level
   `match_05a`/`match_05b`, and the genus-level `fuzzy_match_genera()` closure) goes through this shared
   helper now, rather than some looping `for (i in seq_len(nrow(taxa$tocheck)))` and calling
   `fuzzy_match()` one row at a time, matching the equivalent efficiency fix upstream APCalign made in
@@ -499,7 +520,7 @@ Architecture of the matching engine itself:
     `"Genus (Subgenus) species"` trinomial (e.g. the nominotypical-subgenus convention
     `"Aporocera (Aporocera) t-viride"`, `test-match_taxa_typos.R`) is already resolved correctly by a
     different, existing mechanism -- `match_11a`/`match_11b`'s `ignore_bracketed_words`, computed
-    directly from `original_name` via `stringr::str_remove(original_name, " \\(.*\\)")`, which drops
+    directly from `original_name` via `re_replace(original_name, " \\(.*\\)", "")`, which drops
     the entire `"(...)"` (parens and contents) rather than just the characters -- and the original,
     unconditional-on-trailing-content `match_12a` fallback is kept (now purely as the late safety net
     for a `"Genus (Subgenus) unmatched_epithet"` query, once every species-level block has already had,
@@ -776,7 +797,7 @@ Architecture of the matching engine itself:
   APCalign's convention unconditionally, for anyone who wants it.
   - Only affects the three *generic, last-resort* higher-rank match blocks -- `match_12a` (bracketed
     subgenus fallback), `match_12b`/`match_12c` (exact/fuzzy fallback against any rank in
-    `taxon_ranks_to_check`) -- via a `bare_rank_name` check (`stringr::str_count()` on `cleaned_name`:
+    `taxon_ranks_to_check`) -- via a `bare_rank_name` check (`re_count()` on `cleaned_name`:
     exactly 1 whitespace-delimited token for `match_12b`/`match_12c`, exactly 2 for `match_12a`'s
     `"Genus (Subgenus)"` shape). Deliberately does **not** touch:
     - `match_02a`/`match_02b`/`match_02c` (the explicit `"...sp."`-suffixed blocks) -- these only ever
@@ -985,7 +1006,9 @@ warning** (user: it implies laziness, and the GBIF backbone often doesn't change
   included) -- so a *draft* release is only usable by naming `version` after downloading its files into
   the cache by hand (`gh release download <tag> --repo traitecoevo/taxonAlign.dataprep -D
   <cache_dir>/data_release/<tag>`).
-- `arrow`, `curl`, `jsonlite` are full Imports (user decision for arrow, as APCalign).
+- `nanoparquet`, `curl`, `jsonlite` are full Imports. Parquet was read with arrow until issue #27
+  (2026-11-15) followed APCalign #300 to nanoparquet, a much smaller install with no system library
+  (arrow also broke on every Homebrew upgrade); the manifest is read with `utils::read.csv()`.
 - **GBIF's `extinct` flag doesn't distinguish fossils from recent extinctions** -- the thylacine,
   pig-footed bandicoot and paradise parrot are flagged exactly like *Diprotodon*. Hence releases keep
   everything with the column and the loader filters, rather than the release dropping them.

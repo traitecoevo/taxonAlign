@@ -110,8 +110,8 @@ check_taxonomic_reference <- function(x, name = deparse(substitute(x))) {
     blank <- is.na(x[[col]]) | as.character(x[[col]]) == ""
     if (any(blank)) problems <- c(problems, paste0(count(blank), " record(s) have no `", col, "`"))
   }
-  taxon_ID <- as.character(x$taxon_ID)
-  accepted_ID <- as.character(x$accepted_name_usage_ID)
+  taxon_ID <- id_as_character(x$taxon_ID)
+  accepted_ID <- id_as_character(x$accepted_name_usage_ID)
   duplicated_ID <- !is.na(taxon_ID) & duplicated(taxon_ID)
   if (any(duplicated_ID)) {
     problems <- c(problems, paste0(count(duplicated_ID), " record(s) share a `taxon_ID` with an earlier record"))

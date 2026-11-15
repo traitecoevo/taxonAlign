@@ -58,7 +58,7 @@ fuzzy_match <- function(txt, accepted_list,
   accepted_list <- accepted_list[!is.na(accepted_list)]
 
   ## identify number of words in the text to match
-  words_in_text <- 1 + stringr::str_count(txt," ")
+  words_in_text <- 1 + count_fixed(txt, " ")
 
   ## Ported from APCalign's current fuzzy_match(): a token that flags an uncertain identification
   ## ("aff."/"cf.") or a hybrid ("x") must also be in a candidate for it to be confirmed below --
@@ -69,39 +69,41 @@ fuzzy_match <- function(txt, accepted_list,
   txt_qualifiers <- qualifier_tokens[vapply(qualifier_tokens, function(q) has_token(txt, q), logical(1))]
 
   ## extract first letter of first word
-  txt_word1_start <- stringr::str_extract(txt, "[:alpha:]") |>
-                     stringr::str_to_lower()
+  txt_word1_start <- to_lower(re_extract(txt, "\\p{L}"))
+
+  ## Text with no letter (e.g. the genus word of "12 34", or "+/-" from "\u00b1 Acacia") cannot
+  ## match anything, since the reference list is narrowed to names with the same first letter
+  ## (APCalign #303).
+  if (is.na(txt_word1_start)) return(NA)
 
   ## for text matches with 2 or more words,
   ## extract the first letter/digit of the second word
   if(words_in_text > 1 & epithet_letters == 2)
-    {if(isTRUE(nchar(stringr::word(txt,2)) == 1)) {
-      txt_word2_start <- stringr::str_extract(stringr::word(txt,2),
-                                              "[:alpha:]|[:digit:]")
+    {if(isTRUE(nchar(word(txt,2)) == 1)) {
+      txt_word2_start <- re_extract(word(txt,2), "\\p{L}|\\p{Nd}")
     } else {
-      txt_word2_start <- stringr::str_extract(stringr::word(txt,2),
-                                          "[:alpha:][:alpha:]|[:digit:]")
+      txt_word2_start <- re_extract(word(txt,2), "\\p{L}\\p{L}|\\p{Nd}")
     }
   }
 
   if(words_in_text > 1 & epithet_letters == 1) {
-    txt_word2_start <- stringr::str_extract(stringr::word(txt,2), "[:alpha:]|[:digit:]")
+    txt_word2_start <- re_extract(word(txt,2), "\\p{L}|\\p{Nd}")
   }
 
   ## for text matches with 3 or more words,
   ## extract the first letter/digit of the third word
   if(words_in_text > 2) {
-    txt_word3_start <- stringr::str_extract(stringr::word(txt,3), "[:alpha:]|[:digit:]")
+    txt_word3_start <- re_extract(word(txt,3), "\\p{L}|\\p{Nd}")
   }
 
   ## Subset accepted_list to entries sharing the query's first letter, to keep the stringdist() call
-  ## below cheap. `accepted_list_word1_start`'s own first-letter extraction can return NA for a
-  ## malformed entry (e.g. one with no alphabetic character at all); excluded explicitly with
-  ## `!is.na(...)` rather than left to `%in%`/subsetting, which would otherwise inject a literal NA
-  ## into the filtered list and poison every distance calculation downstream.
-  accepted_list_word1_start <- stringr::str_extract(accepted_list, "[:alpha:]") |> stringr::str_to_lower()
+  ## below cheap. An entry's own first letter can be NA for a malformed entry (e.g. one with no
+  ## alphabetic character at all); excluded explicitly with `!is.na(...)` rather than left to
+  ## subsetting, which would otherwise inject a literal NA into the filtered list and poison every
+  ## distance calculation downstream. first_letters() keeps the result for the last list seen.
+  accepted_list_word1_start <- first_letters(accepted_list)
   accepted_list <- accepted_list[
-    !is.na(accepted_list_word1_start) & accepted_list_word1_start == (txt_word1_start |> stringr::str_to_lower())
+    !is.na(accepted_list_word1_start) & accepted_list_word1_start == txt_word1_start
   ] |>
                     unique()
 
@@ -114,7 +116,7 @@ fuzzy_match <- function(txt, accepted_list,
   ## string to match a string in the list of accepted names. `na.rm = TRUE` is a defensive
   ## backstop against any not-yet-seen data-quality issue producing an NA distance.
   min_dist_abs_c <-  min(distance_c, na.rm = TRUE)
-  min_dist_per_c <-  min(distance_c, na.rm = TRUE) / stringr::str_length(txt)
+  min_dist_per_c <-  min(distance_c, na.rm = TRUE) / nchar(txt)
 
   i <- which(distance_c==min_dist_abs_c)
   potential_matches <- accepted_list[i]
@@ -144,31 +146,30 @@ fuzzy_match <- function(txt, accepted_list,
     }
 
     ## identify number of words in the matched string
-    words_in_match <- 1 + stringr::str_count(potential_match," ")
+    words_in_match <- 1 + count_fixed(potential_match, " ")
 
     ## identify the first letter of the first word in the matched string
-    match_word1_start <- stringr::str_extract(potential_match, "[:alpha:]") |>
-                          stringr::str_to_lower()
+    match_word1_start <- to_lower(re_extract(potential_match, "\\p{L}"))
 
     ## identify the first letter of the second word in the matched string
     ## (if the matched string includes 2+ words)
     if(words_in_text > 1 & epithet_letters == 2) {
-      x <- stringr::word(potential_match,2)
+      x <- word(potential_match,2)
       if(isTRUE(nchar(x) == 1)) {
-        match_word2_start <- stringr::str_extract(x, "[:alpha:]|[:digit:]")
+        match_word2_start <- re_extract(x, "\\p{L}|\\p{Nd}")
       } else {
-        match_word2_start <- stringr::str_extract(x, "[:alpha:][:alpha:]|[:digit:]")
+        match_word2_start <- re_extract(x, "\\p{L}\\p{L}|\\p{Nd}")
       }
     }
 
     if(words_in_text > 1 & epithet_letters == 1) {
-        match_word2_start <- stringr::str_extract(stringr::word(potential_match,2), "[:alpha:]|[:digit:]")
+        match_word2_start <- re_extract(word(potential_match,2), "\\p{L}|\\p{Nd}")
     }
 
     ## identify the first letter of the third word in the matched string
     ## (if the matched string includes 3+ words)
     if(words_in_text > 2) {
-      match_word3_start <- stringr::str_extract(stringr::word(potential_match,3), "[:alpha:]|[:digit:]")
+      match_word3_start <- re_extract(word(potential_match,3), "\\p{L}|\\p{Nd}")
     }
 
     ## keep match if the first letters of the first three words
@@ -205,7 +206,7 @@ fuzzy_match <- function(txt, accepted_list,
     return(FALSE)
   }
 
-  j <- purrr::map_lgl(potential_matches, check_match)
+  j <- vapply(potential_matches, check_match, logical(1), USE.NAMES = FALSE)
 
   if(!any(j)) return(NA)
 
@@ -214,21 +215,37 @@ fuzzy_match <- function(txt, accepted_list,
 
 
 # Vectorized wrapper around `fuzzy_match()`, applying it to every element of `x` at once via
-# `purrr::map_chr()` rather than looping and calling `fuzzy_match()` one row at a time. Mirrors the
+# `vapply()` rather than looping and calling `fuzzy_match()` one row at a time. Mirrors the
 # equivalent efficiency fix in upstream APCalign's internal `match_taxa()`.
 fuzzy_match_column <- function(x, accepted_list, max_distance_abs, max_distance_rel,
                                 n_allowed = 1, epithet_letters = 1) {
-  purrr::map_chr(
+  vapply(
     x,
-    ~ fuzzy_match(
-      txt = .x,
+    # as.character(): fuzzy_match() returns a logical NA for no match, which purrr::map_chr() used to
+    # coerce
+    function(txt) as.character(fuzzy_match(
+      txt = txt,
       accepted_list = accepted_list,
       max_distance_abs = max_distance_abs,
       max_distance_rel = max_distance_rel,
       n_allowed = n_allowed,
       epithet_letters = epithet_letters
-    )
+    )),
+    character(1),
+    USE.NAMES = FALSE
   )
+}
+
+# The lower-case first letter of each name in `accepted_list`. fuzzy_match() is called once per name
+# with the same reference list, so the result for the last list seen is kept (identical() on the same
+# vector is a fast check). From APCalign's fuzzy_match.R (#302).
+.first_letters_cache <- new.env(parent = emptyenv())
+first_letters <- function(accepted_list) {
+  if (!identical(.first_letters_cache$list, accepted_list)) {
+    .first_letters_cache$list <- accepted_list
+    .first_letters_cache$first <- to_lower(re_extract(accepted_list, "\\p{L}"))
+  }
+  .first_letters_cache$first
 }
 
 update_na_with <- function(current, new) {
@@ -263,14 +280,14 @@ extract_genus <- function(taxon_name) {
 
   taxon_name <- APCalign::standardise_names(taxon_name)
 
-  genus <- stringr::str_split_i(taxon_name, " |\\/", 1) |> stringr::str_to_sentence()
+  genus <- to_sentence(split_i(taxon_name, " |\\/", 1))
 
   # Deal with names that being with x,
   # e.g."x Taurodium x toveyanum" or "x Glossadenia tutelata"
   i <- !is.na(genus) & genus =="X"
 
   genus[i] <-
-    paste("x", stringr::str_split_i(taxon_name[i], " |\\/", 2) |> stringr::str_to_sentence())
+    paste("x", to_sentence(split_i(taxon_name[i], " |\\/", 2)))
 
   genus
 }
@@ -286,16 +303,16 @@ extract_genus <- function(taxon_name) {
 strip_names_keep_hyphens <- function(taxon_names) {
   placeholder <- "zqhyphenqz"
   taxon_names |>
-    stringr::str_replace_all("(?<=[[:alpha:]])-(?=[[:alpha:]])", placeholder) |>
+    re_replace_all("(?<=\\p{L})-(?=\\p{L})", placeholder) |>
     APCalign::strip_names() |>
-    stringr::str_replace_all(placeholder, "-")
+    re_replace_all(placeholder, "-")
 }
 
 # The second whitespace-delimited word of each name, "" (not NA) when there is none -- for the
 # match blocks that test whether it's a "(Subgenus)" bracket, where an NA (a one-word name) used to
 # turn the whole row index NA and crash the block's `taxa$tocheck[i, ] <-` assignment.
 second_word <- function(x) {
-  dplyr::coalesce(stringr::word(x, start = 2, end = 2), "")
+  dplyr::coalesce(word(x, 2), "")
 }
 
 # Shape-check for `align_taxa()`/`update_taxa()`'s `resources` argument, once it's known not to be a
@@ -335,7 +352,7 @@ ensure_prepared_resources <- function(resources) {
 # "Calodema (regale species group)" are left as they are.
 #' @noRd
 strip_subgenus_from_name <- function(x) {
-  stringr::str_replace(x, "^(\\S+) \\([^()]+\\) (\\S.*)$", "\\1 \\2")
+  re_replace(x, "^([^\\s\\p{Z}\\x85]+) \\([^()]+\\) ([^\\s\\p{Z}\\x85].*)$", "\\1 \\2")
 }
 
 # Flattens every rank/status sublist of a prepared `resources` list into one table keyed by

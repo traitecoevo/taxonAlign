@@ -17,23 +17,24 @@ BugReports: https://github.com/traitecoevo/taxonAlign/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Depends:
-    R (>= 4.1.0)
+    R (>= 4.5.0)
 Imports:
     APCalign,
-    arrow,
+    cli,
     curl,
     dplyr,
     jsonlite,
-    purrr,
-    readr,
+    nanoparquet,
+    rlang,
     stats,
     stringdist,
-    stringr,
     tools,
     utils
 Suggests:
     knitr,
+    readr,
     rmarkdown,
+    stringr,
     testthat (>= 3.1.9),
     tibble,
     withr
