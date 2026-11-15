@@ -107,7 +107,7 @@ rank_rows <- function(resources, rank, status = c("any", "accepted", "synonym"))
   status <- match.arg(status)
   tbl <- resources[[rank]]
   if (is.null(tbl) || nrow(tbl) == 0) return(NULL)
-  one_word <- !grepl("\\s", sub("^[xX×]\\s+", "", tbl$canonical_name))
+  one_word <- !grepl("\\s", sub("^[xX\u00d7]\\s+", "", tbl$canonical_name))
   keep <- one_word & switch(status,
     any = TRUE,
     accepted = tbl$taxonomic_status %in% "accepted",

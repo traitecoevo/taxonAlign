@@ -115,6 +115,18 @@ code that used them. The `reproduce-EH-workflow.Rmd` vignette (only) additionall
 are **not** declared as dependencies anywhere (`tidyverse`, `here`) — install these manually if you
 need to run it.
 
+### CI and the build
+
+`.github/workflows/R-CMD-check.yaml` (added 2026-11-15; there was no CI before) runs R CMD check
+`--as-cran` on macOS, Windows and Ubuntu (R devel, release, oldrel-1), with `NOT_CRAN=true` so the live
+APC parity tests in `test-apc_equivalence.R` run too, and fails on any ERROR or WARNING. It installs
+APCalign from GitHub master (`Remotes`). To keep the check clean, `.Rbuildignore` keeps out of the
+built package everything that isn't package content: `vignettes/` (none is a registered vignette: the
+`.qmd` files are rendered with Quarto, and `reproduce-EH-workflow.Rmd` reads `../ausinvertraits.addons`),
+`data/` (nothing calls `data()`), `CLAUDE.md`, `.github/`, and `wcvp_MYSG.csv` (committed by accident).
+So `devtools::check()` needs no flags. taxonAlign is headed for CRAN; the readiness list is a GitHub
+issue.
+
 ### Testing
 
 `tests/testthat/test-prepare_taxonomic_resources.R`, `test-align_taxa.R`, `test-match_taxa.R`,
