@@ -393,14 +393,25 @@ test_that("across combined tables, the first-listed table wins, whatever the sta
 })
 
 test_that("a column named like one of prepare_taxonomic_resources()'s own variables doesn't change it (#37)", {
-  ref <- sample_taxonomic_resources()
-  expected <- suppressWarnings(prepare_taxonomic_resources(ref))
-  # numeric, so it isn't taken for a taxonomic rank and synthesised into rows
-  for (col in c("zzz", "accepted_id", "resolved")) {
-    shadowed <- ref
-    shadowed[[col]] <- 1
-    out <- suppressWarnings(prepare_taxonomic_resources(shadowed))
-    expect_equal(flatten_resources(out)$binomial, flatten_resources(expected)$binomial, info = col)
-    expect_equal(flatten_resources(out)$taxon_ID, flatten_resources(expected)$taxon_ID, info = col)
+  # numeric columns, so they aren't taken for taxonomic ranks and synthesised into rows
+  same <- function(tables, col) {
+    expected <- suppressWarnings(prepare_taxonomic_resources(tables))
+    shadowed <- lapply(tables, function(t) { t[[col]] <- 1; t })
+    out <- tryCatch(suppressWarnings(prepare_taxonomic_resources(shadowed)), error = function(e) conditionMessage(e))
+    if (is.character(out)) return(out)
+    flat <- flatten_resources(out)
+    flat[[col]] <- NULL
+    isTRUE(all.equal(flat, flatten_resources(expected)))
   }
+  ref <- sample_taxonomic_resources()
+  for (col in c("zzz", "taxonAlign_taxonomic_status_priority", "taxonAlign_taxon_rank_specificity")) {
+    expect_true(same(list(ref), col), info = col)
+  }
+  # `resolved` is used only to order several tables
+  first <- ref[ref$taxon_rank != "species" | grepl("1$", ref$taxon_ID), ]
+  second <- ref
+  second$taxonomic_dataset <- "SECOND"
+  second$taxon_ID <- paste0("b", second$taxon_ID)
+  second$accepted_name_usage_ID <- paste0("b", second$accepted_name_usage_ID)
+  expect_true(same(list(second, first), "resolved"), info = "resolved")
 })

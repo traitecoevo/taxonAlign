@@ -113,17 +113,23 @@ test_that("update_taxa gives a clear, actionable error when resources is a malfo
 
 test_that("a column named like one of update_taxa()'s own variables doesn't change the result (#37)", {
   resources <- sample_taxonomic_resources()
-  aligned <- align_taxa(c("Boronia oldname", "Boronia serrulata", "Boronia sp."), resources)
+  # an accepted name, a synonym, a genus-only name, and a synonym that leads nowhere (so the
+  # unresolved, *_prior, branches run too)
+  aligned <- align_taxa(c("Boronia oldname", "Boronia serrulata", "Boronia sp.", "Boronia missingaccepted"), resources)
   expected <- update_taxa(aligned, resources)
   locals <- c("resolved", "current", "collapsed", "alternatives", "usage_ID", "status_aligned",
               "n_collapsed", "genus_current", "genus_prior", "family_current", "family_prior",
               "higher_rank_suffix", "all_taxa", "aligned_data", "is_collapsed", "accepted_genera",
               "genus_record", "record", "name_record")
+  # FALSE and a missing string between them make every one of these change the result, by an
+  # error or by a different value, unless the locals are protected from columns
   for (col in locals) {
-    shadowed <- aligned
-    shadowed[[col]] <- FALSE
-    out <- update_taxa(shadowed, resources)
-    out[[col]] <- NULL
-    expect_equal(out, expected, info = col)
+    for (value in list(FALSE, NA_character_)) {
+      shadowed <- aligned
+      shadowed[[col]] <- value
+      out <- tryCatch(update_taxa(shadowed, resources), error = function(e) conditionMessage(e))
+      if (!is.character(out)) out[[col]] <- NULL
+      expect_equal(out, expected, info = paste(col, class(value)))
+    }
   }
 })
