@@ -12,8 +12,12 @@ Description: Matches lists of raw taxon names, including misspelt, informal and
   taxonomic ranks. The companion package taxonAlign.dataprep builds and releases those
   datasets, and helps users turn their own references into the format.
 License: MIT + file LICENSE
+URL: https://traitecoevo.github.io/taxonAlign/, https://github.com/traitecoevo/taxonAlign
+BugReports: https://github.com/traitecoevo/taxonAlign/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
+Depends:
+    R (>= 4.5.0)
 Imports:
     APCalign,
     cli,

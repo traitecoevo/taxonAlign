@@ -185,7 +185,7 @@ test_that("include_bracketed_info = FALSE returns a bare name when nothing more 
 })
 
 # match_02a (fuzzy/genus-fallback extension): found via the real AFD data used in the
-# demo-align-Prendergast.qmd vignette -- "Hylaeus (Rhodhylaeus) sp." (a 1-letter-missing typo for the
+# _demo-align-Prendergast.qmd vignette -- "Hylaeus (Rhodhylaeus) sp." (a 1-letter-missing typo for the
 # real AFD subgenus "Rhodohylaeus") resolved only to the bare genus "Hylaeus sp." via the generic
 # match_02b higher-rank loop, silently discarding the subgenus (and even the "sp." itself) with no
 # trace, because the original match_02a block only ever did an exact, membership-gated match -- no

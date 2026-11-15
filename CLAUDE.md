@@ -108,7 +108,8 @@ has since been ported into real functions, and the original file now lives at
 `ignore/match_taxa_for_inverts_202500304-use this.R` (excluded from the build via `.Rbuildignore`, since
 its non-portable filename otherwise trips a `checking for portable file names` `R CMD check` WARNING).
 
-`DESCRIPTION` Imports: `APCalign`, `cli`, `curl`, `dplyr`, `jsonlite`, `nanoparquet`, `rlang`, `stats`,
+`DESCRIPTION` Depends: `R (>= 4.5.0)` (Daniel, 2026-11-15; the code itself needs only 4.1, for the native
+pipe). Imports: `APCalign`, `cli`, `curl`, `dplyr`, `jsonlite`, `nanoparquet`, `rlang`, `stats`,
 `stringdist`, `tools`, `utils` (with `Remotes: traitecoevo/APCalign`, which installs APCalign's GitHub
 master). Every one of these but `APCalign` itself is already an APCalign dependency, so taxonAlign adds
 nothing to an install. `readr` is a suggested package, needed only to read a reference from a CSV path
@@ -131,7 +132,7 @@ stringr/arrow version, and so did `prepare_taxonomic_resources()` on every datas
 release. The one difference: arrow also restored R attributes dataprep's `arrow::write_parquet()`
 stored in a file's metadata (CatalogueOfLife_AU carries `key`, `doi`, `citation`, `version`,
 `country` and two tibbles, `gbif_names` and `unmatched`); nanoparquet reads the data only. Nothing
-here read them, and the manifest has the citation. The `reproduce-EH-workflow.Rmd` vignette (only) additionally needs packages that
+here read them, and the manifest has the citation. The `_reproduce-EH-workflow.Rmd` vignette (only) additionally needs packages that
 are **not** declared as dependencies anywhere (`tidyverse`, `here`) — install these manually if you
 need to run it.
 
@@ -142,10 +143,19 @@ need to run it.
 APC parity tests in `test-apc_equivalence.R` run too, and fails on any ERROR or WARNING. It installs
 APCalign from GitHub master (`Remotes`). To keep the check clean, `.Rbuildignore` keeps out of the
 built package everything that isn't package content: `vignettes/` (none is a registered vignette: the
-`.qmd` files are rendered with Quarto, and `reproduce-EH-workflow.Rmd` reads `../ausinvertraits.addons`),
-`data/` (nothing calls `data()`), `CLAUDE.md`, `.github/`, and `wcvp_MYSG.csv` (committed by accident).
-So `devtools::check()` needs no flags. taxonAlign is headed for CRAN; the readiness list is a GitHub
-issue.
+`.qmd` files are rendered with Quarto, and `_reproduce-EH-workflow.Rmd` reads `../ausinvertraits.addons`),
+`data/` (nothing calls `data()`), `CLAUDE.md`, `.github/`, `wcvp_MYSG.csv` (committed by accident) and
+the pkgdown files. So `devtools::check()` needs no flags. taxonAlign is headed for CRAN; the readiness
+list is [issue #31](https://github.com/traitecoevo/taxonAlign/issues/31).
+
+**pkgdown site** (`_pkgdown.yml`, `.github/workflows/pkgdown.yaml`, as APCalign's): built on every PR,
+deployed to the `gh-pages` branch on a push to `main`, served at https://traitecoevo.github.io/taxonAlign/.
+Articles are `get-started.qmd` and `development-history.qmd`; pkgdown skips any vignette whose name
+starts with `_`, which is how the two that read data outside this repo (`_demo-align-Prendergast.qmd`,
+`_reproduce-EH-workflow.Rmd`) stay out. pkgdown publishes *every* top-level `.md`, so the workflow
+deletes `CLAUDE.md` from its checkout before building -- keep that step. To build locally, install the
+package first (the Quarto articles render in a separate R process that can't see pkgdown's temporary
+install) and move `CLAUDE.md` aside, or delete `docs/CLAUDE.*` after.
 
 `.github/workflows/test-coverage.yaml` measures coverage with covr (also with `NOT_CRAN=true`) and uploads `cobertura.xml` with `codecov/codecov-action` using the org-wide `CODECOV_TOKEN` secret, as traits.use, austraits and traits.build do. Don't switch it back to `covr::codecov()`: Codecov rejects the org token through that route ("Could not find a repository associated with upload token").
 
@@ -191,11 +201,12 @@ parquet files) -- including a full `create_taxonomic_update_lookup()` run on the
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
 against, so it's skipped unless `APCalign` is installed, network access is available, and it isn't
 running under `R CMD check --as-cran`. It flattens APCalign's tables itself (the same `bind_rows()` as
-dataprep's `load_APC()`, repeated so this package's tests don't depend on dataprep). This has also
-failed intermittently across several local runs (`dplyr::mutate()` on a `NULL` `APC$family_accepted`,
-i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning that element) -- looks
-like a real, if intermittent, upstream issue (rate limiting or a partial response on the live APC
-download) rather than anything introduced by taxonAlign, but not yet root-caused; retry if you hit it.
+dataprep's `load_APC()`, repeated so this package's tests don't depend on dataprep). It used to fail intermittently (`dplyr::mutate()` on a `NULL`
+`APC$family_accepted`), locally and on the first CI run (macOS, PR #30): `APCalign::load_taxonomic_resources()`
+asked the GitHub API for the latest release, which allows 60 unauthenticated calls an hour per IP
+address, and returned `NULL` when refused. `helper-apc.R` now names the release (`apc_test_version`,
+so no API call). If nothing loads it skips the tests on a developer's machine but fails on CI (`CI`
+set), giving APCalign's reason, so a mistyped release can't switch them off unnoticed.
 
 README.md is generated from README.qmd — re-render with Quarto after editing it:
 ```
@@ -827,7 +838,7 @@ Architecture of the matching engine itself:
     `stringdist`-based fuzzy comparison, so `0` is the correct answer under the same "exact vs. fuzzy"
     dichotomy every other block uses, even though the substituted and original strings visibly differ.
 - **`match_02a` gained a fuzzy fallback (and a genus-only fallback), matching `match_02y`'s design --
-  found via the real `demo-align-Prendergast.qmd` vignette, not a fixture.** `match_02a` (the
+  found via the real `_demo-align-Prendergast.qmd` vignette, not a fixture.** `match_02a` (the
   `"Genus (Subgenus) sp."` shape, trailing `"sp."` retained) was, before this fix, exact-only and
   *membership-gated* -- it only ever fired when the bracketed pair was already, verbatim, in
   `resources$subgenus_v2$genus_and_subgenus`. Unlike `match_02y` (the bare, no-`"sp."` sibling, fixed
@@ -1006,7 +1017,7 @@ warning** (user: it implies laziness, and the GBIF backbone often doesn't change
 
 ### Vignette and data tying the two together
 
-`vignettes/reproduce-EH-workflow.Rmd` reproduces the original AusInvertAlign workflow end-to-end:
+`vignettes/_reproduce-EH-workflow.Rmd` (renamed with a leading `_` on 2026-11-15 so pkgdown skips it) reproduces the original AusInvertAlign workflow end-to-end:
 loads a taxon reference CSV and an "answer key" (`aligned_names.csv`) from the sibling
 `../ausinvertraits.addons` checkout, calls `prepare_taxonomic_resources()`/`align_taxa()`, and diffs
 the result against the known-correct AusInvertTraits alignment to check the port is faithful. It is
@@ -1040,7 +1051,7 @@ testing a render locally (an `R CMD check` NOTE about "non-portable file paths" 
 
 `vignettes/development-history.qmd` revisits [issue #2](https://github.com/traitecoevo/taxonAlign/issues/2)
 (originally "reproduce current workflow as a vignette", filed as a benchmark-before-refactoring ask) --
-reimplementing `reproduce-EH-workflow.Rmd`'s underlying idea (align the real AusInvertTraits name list
+reimplementing `_reproduce-EH-workflow.Rmd`'s underlying idea (align the real AusInvertTraits name list
 against AFD+iNat and check the result against a real historical answer key) against the *finished*
 package's exported functions, rather than fixing the original prototype vignette's broken external
 paths. Framed explicitly as a historical record, not a tutorial (`get-started.qmd` is that) --
@@ -1075,7 +1086,7 @@ isn't something to run on every render regardless. Confirmed this still renders 
 leftovers as `get-started.qmd` afterward) despite none of its code actually executing, the same "not a
 formal knitr vignette, rendered directly" treatment as `get-started.qmd` -- for the same reason: it
 isn't (yet, pending those three files landing in `inst/extdata/`) self-contained enough for
-`R CMD build` to knit it, same as `reproduce-EH-workflow.Rmd`, so it's kept out of the formal
+`R CMD build` to knit it, same as `_reproduce-EH-workflow.Rmd`, so it's kept out of the formal
 vignette-build path entirely rather
 than left to fail it.
 
@@ -1092,7 +1103,7 @@ missing, right after the tree is fetched -- the same "ensure a possibly-absent c
 anything downstream assumes it's there" defensive pattern used elsewhere in the package (e.g.
 `update_taxa()`'s `if ("genus" %in% names(all_taxa))` check).
 
-`vignettes/demo-align-Prendergast.qmd` is a worked demo against real, messy data rather than a
+`vignettes/_demo-align-Prendergast.qmd` (renamed with a leading `_` on 2026-11-15 so pkgdown skips it; render it locally) is a worked demo against real, messy data rather than a
 hand-built example or a historical record -- requested as "something to show people as a test" of the
 package. **Reworked 2026-10-22**: it now aligns the real `Prendergast_2026_3` plant-pollinator dataset
 (sibling `austraits.build` repo, `../../austraits.build/data/Prendergast_2026_3/data.csv` relative to

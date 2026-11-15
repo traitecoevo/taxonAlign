@@ -13,7 +13,7 @@ execute:
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
-This document is not a tutorial -- [`get-started.qmd`](get-started.qmd) is that. It's a record of *why*
+This document is not a tutorial -- [Get started](get-started.html) is that. It's a record of *why*
 `taxonAlign` exists and the real, messy invertebrate names that shaped its design. Every number and
 example name below is real, drawn from actually running this package against real data during its
 development.
@@ -325,6 +325,6 @@ release before publishing one.
   (above) turned up partway through the project, but nobody went back to it when the first data
   release was built, so the release still used the old route.
 
-See `CLAUDE.md` for the full technical detail behind every claim in this document, and the closed
+See the repository's [`CLAUDE.md`](https://github.com/traitecoevo/taxonAlign/blob/main/CLAUDE.md) for the full technical detail behind every claim in this document, and the closed
 issues on the [GitHub repository](https://github.com/traitecoevo/taxonAlign/issues?q=is%3Aissue) for
 the discussion behind each fix.
