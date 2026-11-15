@@ -391,3 +391,16 @@ test_that("across combined tables, the first-listed table wins, whatever the sta
   expect_equal(prepare_taxonomic_resources(dplyr::bind_rows(first, second))$species$synonym$taxonomic_status[1], "synonym")
   expect_false(".table_order" %in% names(prepare_taxonomic_resources(list(first, second))$species$accepted))
 })
+
+test_that("a column named like one of prepare_taxonomic_resources()'s own variables doesn't change it (#37)", {
+  ref <- sample_taxonomic_resources()
+  expected <- suppressWarnings(prepare_taxonomic_resources(ref))
+  # numeric, so it isn't taken for a taxonomic rank and synthesised into rows
+  for (col in c("zzz", "accepted_id", "resolved")) {
+    shadowed <- ref
+    shadowed[[col]] <- 1
+    out <- suppressWarnings(prepare_taxonomic_resources(shadowed))
+    expect_equal(flatten_resources(out)$binomial, flatten_resources(expected)$binomial, info = col)
+    expect_equal(flatten_resources(out)$taxon_ID, flatten_resources(expected)$taxon_ID, info = col)
+  }
+})

@@ -197,16 +197,16 @@ update_taxa <- function(aligned_data, resources = NULL,
 
   out <- aligned_data |>
     dplyr::mutate(
-      taxonomic_status_aligned = status_aligned,
-      accepted_name_usage_ID = usage_ID,
-      alternative_possible_names = alternatives,
-      accepted_name = dplyr::if_else(resolved & current$taxonomic_status == "accepted", current$canonical_name, NA_character_),
+      taxonomic_status_aligned = .env$status_aligned,
+      accepted_name_usage_ID = .env$usage_ID,
+      alternative_possible_names = .env$alternatives,
+      accepted_name = dplyr::if_else(.env$resolved & .env$current$taxonomic_status == "accepted", .env$current$canonical_name, NA_character_),
       # the name the match leads to, even when that isn't "accepted" -- APC's "excluded" taxa, say:
       # "Achneria brevifolia" -> "Eriachne brevifolia" (excluded), as APCalign suggests; accepted_name
       # stays NA for those
       suggested_name = dplyr::case_when(
         !is.na(.data$accepted_name) ~ .data$accepted_name,
-        resolved & !is.na(current$canonical_name) ~ current$canonical_name,
+        .env$resolved & !is.na(.env$current$canonical_name) ~ .env$current$canonical_name,
         TRUE ~ .data$aligned_name
       ),
       # A name aligned above species keeps its "sp. [...]"/"x [...]" detail, with the accepted name in
@@ -215,41 +215,41 @@ update_taxa <- function(aligned_data, resources = NULL,
       # an identification to genus). A reference's own phrase names ("Jasminum sp. (Beechmont ...)")
       # are names in their own right, not this form.
       suggested_name = dplyr::if_else(
-        resolved & !is.na(current$canonical_name) & !is.na(higher_rank_suffix) & !.data$aligned_name %in% all_taxa$canonical_name,
-        paste0(dplyr::coalesce(.data$accepted_name, current$canonical_name), higher_rank_suffix),
+        .env$resolved & !is.na(.env$current$canonical_name) & !is.na(.env$higher_rank_suffix) & !.data$aligned_name %in% .env$all_taxa$canonical_name,
+        paste0(dplyr::coalesce(.data$accepted_name, .env$current$canonical_name), .env$higher_rank_suffix),
         .data$suggested_name
       ),
       # APCalign's convention: one name, with every other candidate in brackets
       suggested_name = dplyr::case_when(
-        !is.na(collapsed) ~ collapsed,
-        !is.na(alternatives) ~ paste0(.data$suggested_name, " [alternative possible names: ", alternatives, "]"),
+        !is.na(.env$collapsed) ~ .env$collapsed,
+        !is.na(.env$alternatives) ~ paste0(.data$suggested_name, " [alternative possible names: ", .env$alternatives, "]"),
         TRUE ~ .data$suggested_name
       ),
-      accepted_name = dplyr::if_else(!is.na(collapsed), NA_character_, .data$accepted_name),
-      genus = dplyr::if_else(resolved, genus_current, genus_prior),
-      family = dplyr::if_else(resolved, family_current, family_prior),
+      accepted_name = dplyr::if_else(!is.na(.env$collapsed), NA_character_, .data$accepted_name),
+      genus = dplyr::if_else(.env$resolved, .env$genus_current, .env$genus_prior),
+      family = dplyr::if_else(.env$resolved, .env$family_current, .env$family_prior),
       taxon_rank = dplyr::case_when(
-        !is.na(collapsed) ~ "genus",
-        resolved ~ current$taxon_rank,
+        !is.na(.env$collapsed) ~ "genus",
+        .env$resolved ~ .env$current$taxon_rank,
         TRUE ~ .data$taxon_rank
       ),
-      taxonomic_dataset = dplyr::if_else(resolved, current$taxonomic_dataset, .data$taxonomic_dataset),
+      taxonomic_dataset = dplyr::if_else(.env$resolved, .env$current$taxonomic_dataset, .data$taxonomic_dataset),
       taxonomic_status = dplyr::case_when(
-        resolved ~ current$taxonomic_status,
+        .env$resolved ~ .env$current$taxonomic_status,
         is.na(.data$aligned_name) ~ "unknown",
         TRUE ~ .data$taxonomic_status_aligned
       ),
       update_reason = dplyr::case_when(
         is.na(.data$aligned_name) ~ NA_character_,
-        !is.na(collapsed) ~
+        !is.na(.env$collapsed) ~
           "Aligned name leads to more than one accepted name in the same genus; collapsed to genus",
-        !is.na(alternatives) & !is.na(.data$accepted_name) ~
+        !is.na(.env$alternatives) & !is.na(.data$accepted_name) ~
           "Aligned name leads to more than one accepted name; the most likely is suggested, alternatives in brackets",
         !is.na(.data$accepted_name) & .data$accepted_name == .data$aligned_name ~
           "Aligned name is already the current accepted name",
         !is.na(.data$accepted_name) ~ "Updated to the current accepted name",
-        resolved & !current$taxonomic_status %in% "accepted" & dplyr::coalesce(usage_ID != aligned_data$taxon_ID, FALSE) ~
-          paste0("Aligned name leads to a name with taxonomic status '", current$taxonomic_status, "', not an accepted name"),
+        .env$resolved & !.env$current$taxonomic_status %in% "accepted" & dplyr::coalesce(.env$usage_ID != .env$aligned_data$taxon_ID, FALSE) ~
+          paste0("Aligned name leads to a name with taxonomic status '", .env$current$taxonomic_status, "', not an accepted name"),
         TRUE ~ "Aligned name's current status could not be resolved in `resources`"
       )
     )
@@ -275,20 +275,20 @@ update_taxa <- function(aligned_data, resources = NULL,
 
   out |>
     dplyr::mutate(
-      aligned_taxon_ID = aligned_data$taxon_ID,
-      subclass = dplyr::if_else(is_collapsed, NA_character_, col_or_na(all_taxa, "subclass", record)),
-      taxon_distribution = dplyr::if_else(is_collapsed, NA_character_, col_or_na(all_taxa, "taxon_distribution", record)),
+      aligned_taxon_ID = .env$aligned_data$taxon_ID,
+      subclass = dplyr::if_else(.env$is_collapsed, NA_character_, col_or_na(.env$all_taxa, "subclass", .env$record)),
+      taxon_distribution = dplyr::if_else(.env$is_collapsed, NA_character_, col_or_na(.env$all_taxa, "taxon_distribution", .env$record)),
       scientific_name = dplyr::if_else(
-        is_collapsed, accepted_genera$scientific_name[genus_record], all_taxa$scientific_name[name_record]
+        .env$is_collapsed, .env$accepted_genera$scientific_name[.env$genus_record], .env$all_taxa$scientific_name[.env$name_record]
       ),
-      taxon_ID = dplyr::if_else(is_collapsed, accepted_genera$taxon_ID[genus_record], all_taxa$taxon_ID[record]),
-      taxon_ID_genus = accepted_genera$taxon_ID[genus_record],
+      taxon_ID = dplyr::if_else(.env$is_collapsed, .env$accepted_genera$taxon_ID[.env$genus_record], .env$all_taxa$taxon_ID[.env$record]),
+      taxon_ID_genus = .env$accepted_genera$taxon_ID[.env$genus_record],
       scientific_name_ID = dplyr::if_else(
-        is_collapsed, col_or_na(accepted_genera, "scientific_name_ID", genus_record),
-        col_or_na(all_taxa, "scientific_name_ID", name_record)
+        .env$is_collapsed, col_or_na(.env$accepted_genera, "scientific_name_ID", .env$genus_record),
+        col_or_na(.env$all_taxa, "scientific_name_ID", .env$name_record)
       ),
       canonical_name = .data$suggested_name,
       row_number = seq_len(dplyr::n()),
-      number_of_collapsed_taxa = n_collapsed
+      number_of_collapsed_taxa = .env$n_collapsed
     )
 }

@@ -110,3 +110,20 @@ test_that("update_taxa gives a clear, actionable error when resources is a malfo
     "prepare_taxonomic_resources"
   )
 })
+
+test_that("a column named like one of update_taxa()'s own variables doesn't change the result (#37)", {
+  resources <- sample_taxonomic_resources()
+  aligned <- align_taxa(c("Boronia oldname", "Boronia serrulata", "Boronia sp."), resources)
+  expected <- update_taxa(aligned, resources)
+  locals <- c("resolved", "current", "collapsed", "alternatives", "usage_ID", "status_aligned",
+              "n_collapsed", "genus_current", "genus_prior", "family_current", "family_prior",
+              "higher_rank_suffix", "all_taxa", "aligned_data", "is_collapsed", "accepted_genera",
+              "genus_record", "record", "name_record")
+  for (col in locals) {
+    shadowed <- aligned
+    shadowed[[col]] <- FALSE
+    out <- update_taxa(shadowed, resources)
+    out[[col]] <- NULL
+    expect_equal(out, expected, info = col)
+  }
+})
