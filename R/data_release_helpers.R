@@ -23,6 +23,11 @@ taxonAlign_data_release_repo <- "traitecoevo/taxonAlign.dataprep"
 #' @return A character vector of release versions (dates, `"YYYY-MM-DD"`), most recent first; empty
 #'  if GitHub can't be reached.
 #'
+#' @examples
+#' \donttest{
+#' data_release_versions()
+#' }
+#'
 #' @export
 data_release_versions <- function(refresh = FALSE) {
   if (!refresh && !is.null(.taxonAlign_release_cache$versions)) {
@@ -137,6 +142,12 @@ get_data_release_assets <- function(assets, version, cache_dir, refresh_cache = 
 #' @return A named character vector of local file paths, one per file. Downloaded files are cached
 #'  under `<cache_dir>/data_release/<version>/`; if the latest release can't be downloaded, the newest
 #'  release already cached that has every file is used instead (never when `version` is given).
+#'
+#' @examples
+#' \donttest{
+#' # the release's manifest, into a temporary cache
+#' download_data_release_files("manifest.csv", version = "2026-11-14", cache_dir = tempfile())
+#' }
 #'
 #' @export
 download_data_release_files <- function(files,

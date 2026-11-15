@@ -36,3 +36,9 @@ A tibble with one row per dataset: \code{dataset}, \code{asset} (the release fil
 Reads a data release's manifest: the datasets \code{\link[=load_taxonomic_resources]{load_taxonomic_resources()}} can load from it, and
 where each came from. Cite the sources of the datasets you use.
 }
+\examples{
+\donttest{
+data_release_datasets(version = "2026-11-14", cache_dir = tempfile())
+}
+
+}

@@ -26,6 +26,20 @@
 #' @return A tibble with one row per element of `original_name`; see [update_taxa()] for column
 #'  details.
 #'
+#' @examples
+#' reference <- data.frame(
+#'   canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+#'   scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+#'   taxon_rank = c("genus", "species", "species"),
+#'   taxonomic_status = c("accepted", "accepted", "synonym"),
+#'   taxonomic_dataset = "MY_LIST", genus = "Boronia",
+#'   taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+#' )
+#' create_taxonomic_update_lookup(
+#'   c("Boronia serulata", "Boronia oldname", "Boronia sp."),
+#'   reference
+#' )
+#'
 #' @export
 create_taxonomic_update_lookup <- function(original_name,
                                             resources = NULL,
@@ -83,13 +97,13 @@ create_taxonomic_update_lookup <- function(original_name,
     updated_data <- updated_data |>
       dplyr::select(
         # APCalign's own create_taxonomic_update_lookup() columns, in its order...
-        original_name, aligned_name, accepted_name, suggested_name, genus, taxon_rank,
-        taxonomic_dataset, taxonomic_status, scientific_name, aligned_reason, update_reason,
-        number_of_collapsed_taxa,
+        original_name, "aligned_name", "accepted_name", "suggested_name", "genus", "taxon_rank",
+        "taxonomic_dataset", "taxonomic_status", "scientific_name", "aligned_reason", "update_reason",
+        "number_of_collapsed_taxa",
         # ...then taxonAlign's: the IDs traits.build taxon lists need (APCalign has these only with
         # `full = TRUE`), and the rest
-        taxon_ID, taxon_ID_genus, scientific_name_ID, family, taxonomic_status_aligned,
-        alternative_possible_names, chars_changed, identifier
+        "taxon_ID", "taxon_ID_genus", "scientific_name_ID", "family", "taxonomic_status_aligned",
+        "alternative_possible_names", "chars_changed", identifier
       )
   }
 

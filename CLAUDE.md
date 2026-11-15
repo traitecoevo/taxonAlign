@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this package is
 
-`taxonAlign` is an R package (currently pre-release, version 0.0.0.9000) that fuzzy-matches a user's
+`taxonAlign` is an R package (pre-release, version 0.1.0, headed for CRAN -- issue #31) that fuzzy-matches a user's
 raw taxon name lists against a taxonomic reference (`align_taxa()`) and updates each match to its
 currently accepted name (`update_taxa()`, both together in `create_taxonomic_update_lookup()`). The
 reference is either a released dataset (`load_taxonomic_resources()`, downloaded from a dated data
@@ -132,9 +132,7 @@ stringr/arrow version, and so did `prepare_taxonomic_resources()` on every datas
 release. The one difference: arrow also restored R attributes dataprep's `arrow::write_parquet()`
 stored in a file's metadata (CatalogueOfLife_AU carries `key`, `doi`, `citation`, `version`,
 `country` and two tibbles, `gbif_names` and `unmatched`); nanoparquet reads the data only. Nothing
-here read them, and the manifest has the citation. The `_reproduce-EH-workflow.Rmd` vignette (only) additionally needs packages that
-are **not** declared as dependencies anywhere (`tidyverse`, `here`) — install these manually if you
-need to run it.
+here read them, and the manifest has the citation.
 
 ### CI and the build
 
@@ -143,8 +141,8 @@ need to run it.
 APC parity tests in `test-apc_equivalence.R` run too, and fails on any ERROR or WARNING. It installs
 APCalign from GitHub master (`Remotes`). To keep the check clean, `.Rbuildignore` keeps out of the
 built package everything that isn't package content: `vignettes/` (none is a registered vignette: the
-`.qmd` files are rendered with Quarto, and `_reproduce-EH-workflow.Rmd` reads `../ausinvertraits.addons`),
-`data/` (nothing calls `data()`), `CLAUDE.md`, `.github/`, `wcvp_MYSG.csv` (committed by accident) and
+`.qmd` files are rendered with Quarto), `data/` (only untracked local AFD exports; nothing calls `data()`),
+`CLAUDE.md`, `.github/`, `cran-comments.md` and
 the pkgdown files. So `devtools::check()` needs no flags. taxonAlign is headed for CRAN; the readiness
 list is [issue #31](https://github.com/traitecoevo/taxonAlign/issues/31).
 
@@ -158,6 +156,13 @@ package first (the Quarto articles render in a separate R process that can't see
 install) and move `CLAUDE.md` aside, or delete `docs/CLAUDE.*` after.
 
 `.github/workflows/test-coverage.yaml` measures coverage with covr (also with `NOT_CRAN=true`) and uploads `cobertura.xml` with `codecov/codecov-action` using the org-wide `CODECOV_TOKEN` secret, as traits.use, austraits and traits.build do. Don't switch it back to `covr::codecov()`: Codecov rejects the org token through that route ("Could not find a repository associated with upload token").
+
+**Column names in dplyr verbs** (issue #31, 2026-11-15): `.data$col` in data-masking verbs (`mutate()`,
+`filter()`, `arrange()`, `transmute()`, `group_by()`, ...) and a string in tidyselect verbs (`select()`,
+`pull()`), where `.data$` is deprecated -- the austraits-family convention, so R CMD check finds no
+undefined globals (`.data` is imported from rlang in `R/taxonAlign-package.R`). Watch column names that
+are also functions (`family`, `binomial`, `citation`, `source`, `licence`): codetools doesn't flag
+them, R CMD check sometimes does, and a bare one silently means the column only while it exists.
 
 ### Testing
 
@@ -1017,12 +1022,11 @@ warning** (user: it implies laziness, and the GBIF backbone often doesn't change
 
 ### Vignette and data tying the two together
 
-`vignettes/_reproduce-EH-workflow.Rmd` (renamed with a leading `_` on 2026-11-15 so pkgdown skips it) reproduces the original AusInvertAlign workflow end-to-end:
-loads a taxon reference CSV and an "answer key" (`aligned_names.csv`) from the sibling
-`../ausinvertraits.addons` checkout, calls `prepare_taxonomic_resources()`/`align_taxa()`, and diffs
-the result against the known-correct AusInvertTraits alignment to check the port is faithful. It is
-**not self-contained** — it reads paths outside this repo and will not knit standalone.
-`data/aligned_names_b.rds` is a saved output of that vignette run, kept for comparison.
+`vignettes/reproduce-EH-workflow.Rmd` reproduced the original AusInvertAlign workflow end-to-end
+against an answer key in the private sibling `../ausinvertraits.addons` checkout, with its saved output
+in `data/aligned_names_b.rds`. Both were **deleted on 2026-11-15** (Daniel, issue #31: CRAN prep), along
+with `wcvp_MYSG.csv`, which had been committed by accident in a9d74f7; all three are in git history.
+`development-history.qmd` below is the maintained version of the same comparison.
 `data-raw/data-raw.R` is a similar external-path stub for generating package data, not a working
 reproducible data-raw script.
 
@@ -1086,7 +1090,7 @@ isn't something to run on every render regardless. Confirmed this still renders 
 leftovers as `get-started.qmd` afterward) despite none of its code actually executing, the same "not a
 formal knitr vignette, rendered directly" treatment as `get-started.qmd` -- for the same reason: it
 isn't (yet, pending those three files landing in `inst/extdata/`) self-contained enough for
-`R CMD build` to knit it, same as `_reproduce-EH-workflow.Rmd`, so it's kept out of the formal
+`R CMD build` to knit it, as the deleted `reproduce-EH-workflow.Rmd` wasn't, so it's kept out of the formal
 vignette-build path entirely rather
 than left to fail it.
 

@@ -219,6 +219,20 @@ taxonAlign_taxon_rank_specificity <- c(
 #' convention) and `resources$subgenus_v2` additionally holds a `genus_and_subgenus` column (used for
 #' the second).
 #'
+#' @examples
+#' reference <- data.frame(
+#'   canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+#'   scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+#'   taxon_rank = c("genus", "species", "species"),
+#'   taxonomic_status = c("accepted", "accepted", "synonym"),
+#'   taxonomic_dataset = "MY_LIST", genus = "Boronia",
+#'   taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+#' )
+#' # prepare once, then reuse for several lookups
+#' resources <- prepare_taxonomic_resources(reference)
+#' names(resources)
+#' align_taxa("Boronia serulata", resources)
+#'
 #' @export
 prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
                                          taxon_ranks_to_check = NULL) {
@@ -241,14 +255,14 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # integer taxon_ID vs. AFD/APC's character URI/UUID strings)
   resolved <- lapply(resolved, function(tbl) {
     tbl |> dplyr::mutate(
-      taxon_ID = id_as_character(taxon_ID),
-      accepted_name_usage_ID = id_as_character(accepted_name_usage_ID)
+      taxon_ID = id_as_character(.data$taxon_ID),
+      accepted_name_usage_ID = id_as_character(.data$accepted_name_usage_ID)
     )
   })
   # no prompt: the order tables were supplied in *is* the priority; `.table_order` records it, for the
   # sort below
   taxonomic_resources <- dplyr::bind_rows(resolved, .id = ".table_order") |>
-    dplyr::mutate(.table_order = match(.table_order, names(resolved)))
+    dplyr::mutate(.table_order = match(.data$.table_order, names(resolved)))
 
   # dummy placeholder for blank cells -- fuzzy matching doesn't cope with blank/duplicate cells
   zzz <- "zzzz zzzz"
@@ -261,7 +275,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # "match" this row's NA canonical_name, in every match block that does
   # `i <- some_value %in% resources$...$canonical_name`-style lookups.
   n_before <- nrow(taxonomic_resources)
-  taxonomic_resources <- taxonomic_resources |> dplyr::filter(!is.na(canonical_name))
+  taxonomic_resources <- taxonomic_resources |> dplyr::filter(!is.na(.data$canonical_name))
   n_dropped <- n_before - nrow(taxonomic_resources)
   if (n_dropped > 0) {
     warning(
@@ -285,13 +299,13 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # for other ranks too (e.g. "Family"/"Order"/"Tribe"/"Subfamily").
   n_before <- nrow(taxonomic_resources)
   taxonomic_resources <- taxonomic_resources |>
-    dplyr::filter(tolower(canonical_name) != tolower(taxon_rank)) |>
+    dplyr::filter(tolower(.data$canonical_name) != tolower(.data$taxon_rank)) |>
     # ... and a rank word followed only by a short placeholder code ("Genus A", "Genus 1", recorded as a
     # name in the AFD's NSL format), which matched every "Genus 1 sp.01 Corinnidae"-style morphospecies
     # code. Deliberately this narrow: APC's informal phrase names ("Genus sp. Yalgoo (J.M.Ward s.n.
     # 11/7/1999)") also start with "Genus" but are real, exactly matchable names
-    dplyr::filter(!(tolower(extract_genus(canonical_name)) %in% c("species", taxonAlign_taxon_rank_specificity) &
-      grepl("^\\S+\\s+[A-Z0-9]{1,3}$", canonical_name)))
+    dplyr::filter(!(tolower(extract_genus(.data$canonical_name)) %in% c("species", taxonAlign_taxon_rank_specificity) &
+      grepl("^\\S+\\s+[A-Z0-9]{1,3}$", .data$canonical_name)))
   n_dropped <- n_before - nrow(taxonomic_resources)
   if (n_dropped > 0) {
     warning(
@@ -397,10 +411,10 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
       target = values[tgt],
       target_ok = taxonomic_resources$taxonomic_status[tgt] %in% "accepted"
     ) |>
-      dplyr::filter(target_ok & !is.na(target) & target != value) |>
-      dplyr::distinct(value, target) |>
-      dplyr::mutate(target_ID = unname(accepted_id[target])) |>
-      dplyr::filter(!is.na(target_ID))
+      dplyr::filter(.data$target_ok & !is.na(.data$target) & .data$target != .data$value) |>
+      dplyr::distinct(.data$value, .data$target) |>
+      dplyr::mutate(target_ID = unname(accepted_id[.data$target])) |>
+      dplyr::filter(!is.na(.data$target_ID))
 
     synonym_rows <- dplyr::tibble(
       canonical_name = links$value, scientific_name = links$value, taxon_rank = rep(col, nrow(links)),
@@ -431,14 +445,14 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # status (GBIF's plain "synonym" for Lichenostomus leucotis beat the AFD's "Generic combination",
   # with the AFD listed first). The sort is stable, so ties keep each table's own row order.
   taxonomic_resources <- taxonomic_resources |>
-    dplyr::arrange(.table_order, factor(taxonomic_status, levels = taxonAlign_taxonomic_status_priority)) |>
+    dplyr::arrange(.data$.table_order, factor(.data$taxonomic_status, levels = taxonAlign_taxonomic_status_priority)) |>
     dplyr::select(-".table_order")
 
   taxonomic_resources <- taxonomic_resources |>
     dplyr::mutate(
-      word_one = extract_genus(canonical_name),
-      taxon_rank = APCalign::standardise_taxon_rank(taxon_rank),
-      taxon_rank2 = ifelse(taxon_rank %in% c("subspecies", "species", "form", "variety"), "species", taxon_rank),
+      word_one = extract_genus(.data$canonical_name),
+      taxon_rank = APCalign::standardise_taxon_rank(.data$taxon_rank),
+      taxon_rank2 = ifelse(.data$taxon_rank %in% c("subspecies", "species", "form", "variety"), "species", .data$taxon_rank),
       ## references differ in whether a species-level name carries its subgenus: AFD's CSV export
       ## writes "Pardalotus (Pardalotinus) striatus", most other sources (incl. the NSL exports) write
       ## "Pardalotus striatus". Every matching key below is built from the subgenus-free form, so a
@@ -449,27 +463,27 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
       ## subgenus name in `canonical_name` (what the plain subgenus-name matching needs); their
       ## `display_name` is always the full "Genus (Subgenus)" form.
       display_name = dplyr::case_when(
-        taxon_rank == "subgenus" & !is.na(genus) & !grepl("(", canonical_name, fixed = TRUE) ~
-          paste0(genus, " (", canonical_name, ")"),
-        TRUE ~ canonical_name
+        .data$taxon_rank == "subgenus" & !is.na(.data$genus) & !grepl("(", .data$canonical_name, fixed = TRUE) ~
+          paste0(.data$genus, " (", .data$canonical_name, ")"),
+        TRUE ~ .data$canonical_name
       ),
       canonical_name = ifelse(
-        taxon_rank2 == "species", strip_subgenus_from_name(canonical_name), canonical_name
+        .data$taxon_rank2 == "species", strip_subgenus_from_name(.data$canonical_name), .data$canonical_name
       ),
       ## strip_names removes punctuation and filler words associated with infraspecific taxa (subsp,
       ## var, f, ser)
-      stripped_canonical = strip_names_keep_hyphens(canonical_name),
+      stripped_canonical = strip_names_keep_hyphens(.data$canonical_name),
       ## strip_names_extra removes extra filler words associated with species name cases (x, sp) --
       ## essential for the 2/3-word matches, since those words shouldn't count as one of the words
-      stripped_canonical2 = APCalign::strip_names_extra(stripped_canonical),
-      stripped_scientific = strip_names_keep_hyphens(scientific_name),
-      binomial = ifelse(taxon_rank == "species", word(stripped_canonical2, 1, 2), zzz),
-      binomial = ifelse(is.na(binomial), zzz, binomial),
-      binomial = base::replace(binomial, duplicated(binomial), zzz),
-      word_one_stripped = extract_genus(stripped_canonical),
-      trinomial = word(stripped_canonical2, 1, 3),
-      trinomial = ifelse(is.na(trinomial), zzz, trinomial),
-      trinomial = base::replace(trinomial, duplicated(trinomial), zzz)
+      stripped_canonical2 = APCalign::strip_names_extra(.data$stripped_canonical),
+      stripped_scientific = strip_names_keep_hyphens(.data$scientific_name),
+      binomial = ifelse(.data$taxon_rank == "species", word(.data$stripped_canonical2, 1, 2), zzz),
+      binomial = ifelse(is.na(.data$binomial), zzz, .data$binomial),
+      binomial = base::replace(.data$binomial, duplicated(.data$binomial), zzz),
+      word_one_stripped = extract_genus(.data$stripped_canonical),
+      trinomial = word(.data$stripped_canonical2, 1, 3),
+      trinomial = ifelse(is.na(.data$trinomial), zzz, .data$trinomial),
+      trinomial = base::replace(.data$trinomial, duplicated(.data$trinomial), zzz)
     )
 
   # split by taxon rank -- unlike APCalign, higher ranks beyond genus/family are expected and kept.
@@ -523,7 +537,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # names that write the bracketed `Genus (Subgenus)` convention) -- see @details.
   if (!is.null(resources[["subgenus"]])) {
     resources$subgenus_v2 <- resources$subgenus |>
-      dplyr::mutate(genus_and_subgenus = paste0(genus, " (", canonical_name, ")"))
+      dplyr::mutate(genus_and_subgenus = paste0(.data$genus, " (", .data$canonical_name, ")"))
 
     # `$<-` above appends subgenus_v2 at the very end of the list regardless of where "subgenus" itself
     # sits -- reorder so it's positioned immediately after "subgenus" instead, keeping the two parallel

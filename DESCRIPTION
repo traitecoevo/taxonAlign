@@ -1,6 +1,6 @@
 Package: taxonAlign
 Title: Align and Update Taxonomic Names Against Any Taxonomic Reference
-Version: 0.0.0.9001
+Version: 0.1.0
 Authors@R: c(
     person(given = "Elizabeth", family = "Wenk", role = c("aut", "ctb", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
     person(given = "Fonti", family = "Kar", role = c("aut", "cre"), email = "f.kar@unsw.edu.au", comment = c(ORCID = "0000-0002-2760-3974"))
@@ -9,12 +9,13 @@ Description: Matches lists of raw taxon names, including misspelt, informal and
   morphospecies names, to a taxonomic reference, and updates them to their currently accepted
   names. The reference can be one or more released datasets (versioned, so results are
   reproducible) or the user's own tables, in a documented format, at any combination of
-  taxonomic ranks. The companion package taxonAlign.dataprep builds and releases those
+  taxonomic ranks. The companion package 'taxonAlign.dataprep' builds and releases those
   datasets, and helps users turn their own references into the format.
 License: MIT + file LICENSE
 URL: https://traitecoevo.github.io/taxonAlign/, https://github.com/traitecoevo/taxonAlign
 BugReports: https://github.com/traitecoevo/taxonAlign/issues
 Encoding: UTF-8
+Language: en-GB
 Roxygen: list(markdown = TRUE)
 Depends:
     R (>= 4.5.0)
@@ -31,6 +32,7 @@ Imports:
     tools,
     utils
 Suggests:
+    arrow,
     knitr,
     readr,
     rmarkdown,

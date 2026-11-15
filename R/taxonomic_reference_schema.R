@@ -83,7 +83,7 @@ taxonomic_reference_schema <- function() {
 #' @return `x`, invisibly, if it passes. Otherwise an error listing every problem found.
 #'
 #' @examples
-#' reference <- tibble::tibble(
+#' reference <- data.frame(
 #'   canonical_name = c("Boronia serrulata", "Boronia oldname"),
 #'   scientific_name = c("Boronia serrulata Sm.", "Boronia oldname Sm."),
 #'   taxon_rank = "species", taxonomic_status = c("accepted", "synonym"),

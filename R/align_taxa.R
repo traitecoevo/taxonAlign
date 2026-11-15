@@ -62,6 +62,18 @@
 #'  match, the actual edit distance (Damerau-Levenshtein) for a fuzzy match, and `NA` when nothing
 #'  matched at all.
 #'
+#' @examples
+#' reference <- data.frame(
+#'   canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+#'   scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+#'   taxon_rank = c("genus", "species", "species"),
+#'   taxonomic_status = c("accepted", "accepted", "synonym"),
+#'   taxonomic_dataset = "MY_LIST", genus = "Boronia",
+#'   taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+#' )
+#' # a misspelling and a synonym
+#' align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+#'
 #' @export
 align_taxa <- function(original_name,
                         resources = NULL,
@@ -162,7 +174,7 @@ align_taxa <- function(original_name,
   }
 
   out <- dplyr::bind_rows(taxa$checked, taxa$tocheck) |>
-    dplyr::mutate(known = !is.na(aligned_name))
+    dplyr::mutate(known = !is.na(.data$aligned_name))
 
   # matching ran on subgenus-free names; put the matched record's name back as its reference writes it
   # (with subgenus, and "Genus (Subgenus)" at subgenus rank) -- see restore_display_names()
@@ -171,9 +183,9 @@ align_taxa <- function(original_name,
   if (!full) {
     out <- out |>
       dplyr::select(
-        original_name, cleaned_name, aligned_name, taxonomic_dataset, taxon_rank,
-        taxonomic_status, taxon_ID, accepted_name_usage_ID, aligned_reason, alignment_code,
-        chars_changed, identifier
+        original_name, "cleaned_name", "aligned_name", "taxonomic_dataset", "taxon_rank",
+        "taxonomic_status", "taxon_ID", "accepted_name_usage_ID", "aligned_reason", "alignment_code",
+        "chars_changed", identifier
       )
   }
 

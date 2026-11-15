@@ -101,3 +101,16 @@ authorship, then canonical name), then progressively more lenient fuzzy matches,
 first and then at each higher taxonomic rank present in \code{resources}. See \code{match_taxa()} for the
 full sequence of match attempts.
 }
+\examples{
+reference <- data.frame(
+  canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+  scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+  taxon_rank = c("genus", "species", "species"),
+  taxonomic_status = c("accepted", "accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = "Boronia",
+  taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+)
+# a misspelling and a synonym
+align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+
+}
