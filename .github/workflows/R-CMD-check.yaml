@@ -1,0 +1,66 @@
+# Workflow derived from https://github.com/r-lib/actions/tree/v2/examples, in the same form as
+# APCalign's, with CRAN's R versions (devel, release, oldrel) since taxonAlign is headed for CRAN. Need help debugging build failures? Start at
+# https://github.com/r-lib/actions#where-to-find-help
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+name: R-CMD-check
+
+permissions: read-all
+
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
+
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: macos-latest,   r: 'release'}
+          - {os: windows-latest, r: 'release'}
+          - {os: ubuntu-latest,  r: 'devel', http-user-agent: 'release'}
+          - {os: ubuntu-latest,  r: 'release'}
+          - {os: ubuntu-latest,  r: 'oldrel-1'}
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+      # Run the tests skipped on CRAN too: test-apc_equivalence.R, the parity check against APCalign
+      # on live APC data, needs it (and network access, which the runners have).
+      NOT_CRAN: true
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.config.r }}
+          http-user-agent: ${{ matrix.config.http-user-agent }}
+          use-public-rspm: true
+
+      # Installs APCalign from GitHub master, per DESCRIPTION's Remotes.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+
+      # Fails on an ERROR or WARNING (the default); NOTEs are reported only.
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          upload-snapshots: true
+          args: 'c("--no-manual", "--as-cran")'
+          build_args: 'c("--no-manual")'
+
+      - name: Show testthat output
+        if: always()
+        run: |
+          find check -name 'testthat.Rout*' -exec cat '{}' \; || true
+        shell: bash

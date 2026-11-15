@@ -9,5 +9,11 @@
 ^data-raw$
 # raw reference exports kept locally for development -- not package content (issue #26)
 ^inst/extdata$
-# raw AFD exports kept locally for development -- not package content (issue #26)
-^data/AFD_
+# not package data: raw AFD exports kept locally for development (issue #26), and
+# aligned_names_b.rds, a saved output of reproduce-EH-workflow.Rmd. Nothing calls data().
+^data$
+# reads ../ausinvertraits.addons, so it can't be built anywhere else (see CLAUDE.md); kept out of the
+# build like development-history.qmd and get-started.qmd, which are rendered with Quarto instead
+^vignettes/reproduce-EH-workflow\.Rmd$
+^CLAUDE\.md$
+^\.github$
