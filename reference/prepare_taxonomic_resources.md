@@ -28,9 +28,10 @@ prepare_taxonomic_resources(
 
 - taxonomic_resources:
 
-  A tibble, a path to a CSV file, or a (optionally named) list of either
-  – one element per taxonomic reference table to combine. Each table
-  must be in taxonAlign's taxonomic reference format (see
+  A tibble, a path to a CSV file (read with readr, which must be
+  installed), or a (optionally named) list of either – one element per
+  taxonomic reference table to combine. Each table must be in
+  taxonAlign's taxonomic reference format (see
   [`taxonomic_reference_schema()`](https://traitecoevo.github.io/taxonAlign/reference/taxonomic_reference_schema.md)):
   at least the columns `canonical_name`, `scientific_name`,
   `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`, `genus`,

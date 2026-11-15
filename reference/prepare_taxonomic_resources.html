@@ -70,7 +70,8 @@ a list of tables) rather than prepared <code>resources</code>; call it yourself 
 
 
 <dl><dt id="arg-taxonomic-resources">taxonomic_resources<a class="anchor" aria-label="anchor" href="#arg-taxonomic-resources"></a></dt>
-<dd><p>A tibble, a path to a CSV file, or a (optionally named) list of either –
+<dd><p>A tibble, a path to a CSV file (read with readr, which must be installed),
+or a (optionally named) list of either –
 one element per taxonomic reference table to combine. Each table must be in taxonAlign's
 taxonomic reference format (see <code><a href="taxonomic_reference_schema.html">taxonomic_reference_schema()</a></code>): at least the columns
 <code>canonical_name</code>, <code>scientific_name</code>, <code>taxon_rank</code>, <code>taxonomic_status</code>, <code>taxonomic_dataset</code>,
