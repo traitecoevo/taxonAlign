@@ -149,8 +149,7 @@ list is [issue #31](https://github.com/traitecoevo/taxonAlign/issues/31).
 **pkgdown site** (`_pkgdown.yml`, `.github/workflows/pkgdown.yaml`, as APCalign's): built on every PR,
 deployed to the `gh-pages` branch on a push to `main`, served at https://traitecoevo.github.io/taxonAlign/.
 Articles are `get-started.qmd` and `development-history.qmd`; pkgdown skips any vignette whose name
-starts with `_`, which is how the two that read data outside this repo (`_demo-align-Prendergast.qmd`,
-`_reproduce-EH-workflow.Rmd`) stay out. pkgdown publishes *every* top-level `.md`, so the workflow
+starts with `_`, which is how `_demo-align-Prendergast.qmd` (reads `../../austraits.build`) stays out. pkgdown publishes *every* top-level `.md`, so the workflow
 deletes `CLAUDE.md` from its checkout before building -- keep that step. To build locally, install the
 package first (the Quarto articles render in a separate R process that can't see pkgdown's temporary
 install) and move `CLAUDE.md` aside, or delete `docs/CLAUDE.*` after.
@@ -1022,7 +1021,7 @@ warning** (user: it implies laziness, and the GBIF backbone often doesn't change
 
 ### Vignette and data tying the two together
 
-`vignettes/reproduce-EH-workflow.Rmd` reproduced the original AusInvertAlign workflow end-to-end
+`vignettes/_reproduce-EH-workflow.Rmd` reproduced the original AusInvertAlign workflow end-to-end
 against an answer key in the private sibling `../ausinvertraits.addons` checkout, with its saved output
 in `data/aligned_names_b.rds`. Both were **deleted on 2026-11-15** (Daniel, issue #31: CRAN prep), along
 with `wcvp_MYSG.csv`, which had been committed by accident in a9d74f7; all three are in git history.
@@ -1055,7 +1054,7 @@ testing a render locally (an `R CMD check` NOTE about "non-portable file paths" 
 
 `vignettes/development-history.qmd` revisits [issue #2](https://github.com/traitecoevo/taxonAlign/issues/2)
 (originally "reproduce current workflow as a vignette", filed as a benchmark-before-refactoring ask) --
-reimplementing `_reproduce-EH-workflow.Rmd`'s underlying idea (align the real AusInvertTraits name list
+reimplementing the deleted `_reproduce-EH-workflow.Rmd`'s underlying idea (align the real AusInvertTraits name list
 against AFD+iNat and check the result against a real historical answer key) against the *finished*
 package's exported functions, rather than fixing the original prototype vignette's broken external
 paths. Framed explicitly as a historical record, not a tutorial (`get-started.qmd` is that) --

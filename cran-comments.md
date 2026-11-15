@@ -11,6 +11,6 @@ win-builder (devel, release), mac builder, R-hub -->
 
 ## Notes for CRAN
 
-* Examples and tests that download data are wrapped in `\donttest{}` or skipped on CRAN; downloads
-  go to a temporary directory in examples, and to `tools::R_user_dir("taxonAlign", "cache")` only when
+* Examples that download data are in `\donttest{}` and run only when `curl::has_internet()`; tests
+  that download are skipped on CRAN. Downloads go to a temporary directory in examples, and to `tools::R_user_dir("taxonAlign", "cache")` only when
   a user calls the functions.

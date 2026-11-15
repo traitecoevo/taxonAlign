@@ -330,8 +330,9 @@ match_taxa <- function(
 
   taxa$tocheck <- taxa$tocheck |>
     dplyr::mutate(
-      identifier_string = ifelse(is.na(identifier), NA_character_, paste0(" [", identifier, "]")),
-      identifier_string2 = ifelse(is.na(identifier), NA_character_, paste0("; ", identifier))
+      # the column, not match_taxa()'s `identifier` argument (full length; the column is deduplicated)
+      identifier_string = ifelse(is.na(.data$identifier), NA_character_, paste0(" [", .data$identifier, "]")),
+      identifier_string2 = ifelse(is.na(.data$identifier), NA_character_, paste0("; ", .data$identifier))
     )
 
   ## Various stripped versions of the string to match, and versions with 1, 2 and 3 words (genus,

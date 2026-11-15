@@ -72,7 +72,8 @@
 #'   taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
 #' )
 #' # a misspelling and a synonym
-#' align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+#' aligned <- align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+#' aligned[, c("original_name", "aligned_name", "taxonomic_status", "aligned_reason")]
 #'
 #' @export
 align_taxa <- function(original_name,
@@ -150,8 +151,8 @@ align_taxa <- function(original_name,
     ) |>
     # take unique original_name/identifier combinations, so each name is only processed once (or
     # multiple times if paired with distinct identifiers)
-    dplyr::filter(!duplicated(paste0(original_name, identifier))) |>
-    dplyr::filter(APCalign::standardise_names(original_name) != "")
+    dplyr::filter(!duplicated(paste0(.data$original_name, .data$identifier))) |>
+    dplyr::filter(APCalign::standardise_names(.data$original_name) != "")
 
   taxa <- redistribute(taxa)
 
@@ -183,9 +184,9 @@ align_taxa <- function(original_name,
   if (!full) {
     out <- out |>
       dplyr::select(
-        original_name, "cleaned_name", "aligned_name", "taxonomic_dataset", "taxon_rank",
+        "original_name", "cleaned_name", "aligned_name", "taxonomic_dataset", "taxon_rank",
         "taxonomic_status", "taxon_ID", "accepted_name_usage_ID", "aligned_reason", "alignment_code",
-        "chars_changed", identifier
+        "chars_changed", "identifier"
       )
   }
 
