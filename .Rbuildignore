@@ -12,8 +12,11 @@
 # not package data: raw AFD exports kept locally for development (issue #26), and
 # aligned_names_b.rds, a saved output of reproduce-EH-workflow.Rmd. Nothing calls data().
 ^data$
-# reads ../ausinvertraits.addons, so it can't be built anywhere else (see CLAUDE.md); kept out of the
-# build like development-history.qmd and get-started.qmd, which are rendered with Quarto instead
-^vignettes/reproduce-EH-workflow\.Rmd$
+# no registered vignettes: get-started.qmd, development-history.qmd and demo-align-Prendergast.qmd
+# are rendered with Quarto as standalone pages, and reproduce-EH-workflow.Rmd reads
+# ../ausinvertraits.addons, so it can't be built anywhere else (see CLAUDE.md)
+^vignettes$
+# a WCVP extract committed by accident with a9d74f7 -- not package content
+^wcvp_MYSG\.csv$
 ^CLAUDE\.md$
 ^\.github$
