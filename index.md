@@ -1,0 +1,156 @@
+# taxonAlign
+
+## What you can use these packages for
+
+- **Align taxon names to any taxonomic reference you choose** –
+  correcting misspellings, updating synonyms to the currently accepted
+  name, and matching names only identified to genus, family or any other
+  rank. *(taxonAlign)*
+- **Generate a taxonomic reference list for any taxon group, from any
+  region** – for example, as the taxonomic reference for a
+  [traits.build](https://github.com/traitecoevo/traits.build) database –
+  from GBIF, the Catalogue of Life, the World Checklist of Vascular
+  Plants, or your own table.
+  *([taxonAlign.dataprep](https://github.com/traitecoevo/taxonAlign.dataprep))*
+- **Work directly with Australia’s National Species Lists** for animals,
+  fungi, vascular plants, bryophytes, lichens and algae – both packages
+  are designed around them. The animal, fungi, bryophyte, lichen and
+  algae lists are published as dated, ready-to-use reference lists;
+  vascular plants come from the Australian Plant Census. *(both)*
+
+## Two packages
+
+The work is split between two packages:
+
+- **[taxonAlign](https://github.com/traitecoevo/taxonAlign)** aligns
+  names and updates them to the currently accepted name. It also
+  downloads the ready-made reference lists (the National Species Lists,
+  and GBIF’s list of Australian animals) from dated data releases. If
+  your taxa are covered by one of those lists, or you already have a
+  reference table in taxonAlign’s format, it’s all you need.
+- **[taxonAlign.dataprep](https://github.com/traitecoevo/taxonAlign.dataprep)**
+  builds reference lists – from GBIF, the Catalogue of Life, the World
+  Checklist of Vascular Plants, the Australian Plant Census, or your own
+  table – and builds taxonAlign’s data releases.
+
+## Installation
+
+Neither package is on CRAN. To align and update names, install
+taxonAlign:
+
+``` r
+
+# install.packages("pak")
+pak::pak("traitecoevo/taxonAlign")
+```
+
+To build your own reference lists as well, install taxonAlign.dataprep,
+which installs taxonAlign along with it:
+
+``` r
+
+pak::pak("traitecoevo/taxonAlign.dataprep")
+```
+
+## About this package
+
+`taxonAlign` helps you:
+
+1.  **Fuzzy-match a list of raw taxon names** against a taxonomic
+    reference, resolving misspellings, synonyms, and names only
+    identifiable to a higher rank (`genus sp.`), to maximise how many of
+    your names align successfully.
+2.  **Update outdated names to the currently accepted/valid name**, as
+    long as the taxonomic reference you are using includes synonyms and
+    specifies the taxonomic status of all names.
+
+The reference can be one or more of the dated reference lists taxonAlign
+publishes – the Australian National Species List lists (animals from the
+Australian Faunal Directory, algae, bryophytes, fungi, lichens) and a
+GBIF list of Australian animals – your own table, or any mix of these.
+
+It’s inspired by [APCalign](https://traitecoevo.github.io/APCalign/)’s
+approach to aligning taxon names to the Australian Plant Census,
+generalised so the reference doesn’t have to be APC/APNI and the taxa
+don’t have to be plants and names of any taxonomic rank present in your
+reference (species, genus, family, or anything else) can be matched.
+
+## Workflow
+
+| Function | What it does |
+|----|----|
+| [`load_taxonomic_resources()`](https://traitecoevo.github.io/taxonAlign/reference/load_taxonomic_resources.md) | Load one or more released reference lists – `"NSL_animals"` (the Australian Faunal Directory), `"NSL_algae"`, `"NSL_bryophytes"`, `"NSL_fungi"`, `"NSL_lichens"`, `"GBIF_AU"` – from a dated data release (downloaded once, then kept on your computer). |
+| [`data_release_versions()`](https://traitecoevo.github.io/taxonAlign/reference/data_release_versions.md), [`data_release_datasets()`](https://traitecoevo.github.io/taxonAlign/reference/data_release_datasets.md) | List the available data releases, and the datasets in one; name a release with `version =` to make an alignment reproducible. |
+| [`taxonomic_reference_schema()`](https://traitecoevo.github.io/taxonAlign/reference/taxonomic_reference_schema.md), [`check_taxonomic_reference()`](https://traitecoevo.github.io/taxonAlign/reference/check_taxonomic_reference.md) | The format a reference table needs to be in, and a check that a table is in it. |
+| [`prepare_taxonomic_resources()`](https://traitecoevo.github.io/taxonAlign/reference/prepare_taxonomic_resources.md) | Combine one or more reference tables (released, your own, or any mix) into the structure the matching functions work on. |
+| [`align_taxa()`](https://traitecoevo.github.io/taxonAlign/reference/align_taxa.md) | Match a list of raw taxon names against a reference, via exact and fuzzy matching. |
+| [`update_taxa()`](https://traitecoevo.github.io/taxonAlign/reference/update_taxa.md) | Resolve a matched (possibly synonymous) name forward to its current accepted name. |
+| [`create_taxonomic_update_lookup()`](https://traitecoevo.github.io/taxonAlign/reference/create_taxonomic_update_lookup.md) | Run [`align_taxa()`](https://traitecoevo.github.io/taxonAlign/reference/align_taxa.md) and [`update_taxa()`](https://traitecoevo.github.io/taxonAlign/reference/update_taxa.md) together in one call – the easiest way to go from raw names to a lookup table of accepted names. |
+
+## Example
+
+For Australian taxa, load one or more of the released reference lists.
+Each is downloaded the first time and stored on your computer, so after
+that it works offline; naming the release (`version`) makes an alignment
+reproducible. When a name appears in more than one list, the first
+listed wins:
+
+``` r
+
+library(taxonAlign)
+
+animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"), version = "2026-10-07")
+create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), animals)
+```
+
+Any table in taxonAlign’s reference format works the same way. Here’s a
+tiny one for the painted lady butterfly, *Vanessa cardui*: its current
+accepted name, plus the name it was long known by, in the genus
+*Cynthia*:
+
+``` r
+
+library(taxonAlign)
+
+my_reference <- tibble::tibble(
+  canonical_name = c("Vanessa cardui", "Cynthia cardui"),
+  scientific_name = c("Vanessa cardui (Linnaeus, 1758)", "Cynthia cardui (Linnaeus, 1758)"),
+  taxon_rank = "species", taxonomic_status = c("accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = c("Vanessa", "Cynthia"),
+  taxon_ID = c("1", "2"), accepted_name_usage_ID = c("1", "1")
+)
+```
+
+[`create_taxonomic_update_lookup()`](https://traitecoevo.github.io/taxonAlign/reference/create_taxonomic_update_lookup.md)
+then matches a list of raw names – an already-correct name, a historical
+synonym, and a misspelling – and resolves each to its current accepted
+name in one call:
+
+``` r
+
+create_taxonomic_update_lookup(
+  c("Vanessa cardui", "Cynthia cardui", "Vanessa carduii"),
+  my_reference
+) |>
+  dplyr::select(original_name, aligned_name, accepted_name, taxonomic_status_aligned)
+#> # A tibble: 3 × 4
+#>   original_name   aligned_name   accepted_name  taxonomic_status_aligned
+#>   <chr>           <chr>          <chr>          <chr>                   
+#> 1 Vanessa cardui  Vanessa cardui Vanessa cardui accepted                
+#> 2 Cynthia cardui  Cynthia cardui Vanessa cardui synonym                 
+#> 3 Vanessa carduii Vanessa cardui Vanessa cardui accepted
+```
+
+`Cynthia cardui` updates to the current accepted name,
+`taxonomic_status_aligned` records that it was a synonym, and the
+misspelling (`carduii`, one letter off) is corrected via fuzzy matching.
+
+See [Get
+started](https://traitecoevo.github.io/taxonAlign/articles/get-started.html)
+for a full walkthrough of every function, including building your own
+reference table by hand, combining several sources, matching names of
+every rank (not just species), and an end-to-end “update a list of raw
+field names” workflow. See [Development
+history](https://traitecoevo.github.io/taxonAlign/articles/development-history.html)
+for why this package exists and the real, messy invertebrate names that
+shaped its design.
