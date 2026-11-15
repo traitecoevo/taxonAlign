@@ -178,7 +178,8 @@ taxonAlign_taxon_rank_specificity <- c(
 #' reference data the user supplies -- at whatever set of taxonomic ranks it happens to contain, not
 #' just genus/species/family.
 #'
-#' @param taxonomic_resources A tibble, a path to a CSV file, or a (optionally named) list of either --
+#' @param taxonomic_resources A tibble, a path to a CSV file (read with readr, which must be installed),
+#'  or a (optionally named) list of either --
 #'  one element per taxonomic reference table to combine. Each table must be in taxonAlign's
 #'  taxonomic reference format (see [taxonomic_reference_schema()]): at least the columns
 #'  `canonical_name`, `scientific_name`, `taxon_rank`, `taxonomic_status`, `taxonomic_dataset`,
@@ -232,13 +233,13 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
 
   tables <- normalise_taxonomic_resources_input(taxonomic_resources)
   dataset_versions <- taxonomic_dataset_versions(tables)
-  resolved <- purrr::imap(tables, resolve_taxonomic_resources_table)
+  resolved <- Map(resolve_taxonomic_resources_table, tables, names(tables))
 
   # normalise taxon_ID/accepted_name_usage_ID to character on each table *before* combining --
   # bind_rows() below errors outright ("Can't combine ..$taxon_ID <character> and ..$taxon_ID <integer>")
   # rather than coercing, whenever two supplied tables disagree on this column's type (e.g. GBIF's
   # integer taxon_ID vs. AFD/APC's character URI/UUID strings)
-  resolved <- purrr::map(resolved, function(tbl) {
+  resolved <- lapply(resolved, function(tbl) {
     tbl |> dplyr::mutate(
       taxon_ID = as.character(taxon_ID),
       accepted_name_usage_ID = as.character(accepted_name_usage_ID)
@@ -320,10 +321,10 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # comment above) excludes specific columns known with certainty to never be hierarchy columns,
   # regardless of type.
   extra_cols <- setdiff(names(taxonomic_resources), c(taxonAlign_required_cols, taxonAlign_non_hierarchy_cols))
-  extra_cols <- extra_cols[purrr::map_lgl(taxonomic_resources[extra_cols], is.character)]
+  extra_cols <- extra_cols[vapply(taxonomic_resources[extra_cols], is.character, logical(1))]
   implied_rank_cols <- union("genus", extra_cols)
 
-  synthesised_rows <- purrr::map(implied_rank_cols, function(col) {
+  synthesised_rows <- lapply(implied_rank_cols, function(col) {
     values <- taxonomic_resources[[col]]
     # only a row at this rank or below names a taxon at this rank: APCalign's family tables fill
     # `genus` with the family's own name, which made every APC family ("Asteraceae") a synthesised
@@ -462,11 +463,11 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
       ## essential for the 2/3-word matches, since those words shouldn't count as one of the words
       stripped_canonical2 = APCalign::strip_names_extra(stripped_canonical),
       stripped_scientific = strip_names_keep_hyphens(scientific_name),
-      binomial = ifelse(taxon_rank == "species", stringr::word(stripped_canonical2, start = 1, end = 2), zzz),
+      binomial = ifelse(taxon_rank == "species", word(stripped_canonical2, 1, 2), zzz),
       binomial = ifelse(is.na(binomial), zzz, binomial),
       binomial = base::replace(binomial, duplicated(binomial), zzz),
       word_one_stripped = extract_genus(stripped_canonical),
-      trinomial = stringr::word(stripped_canonical2, start = 1, end = 3),
+      trinomial = word(stripped_canonical2, 1, 3),
       trinomial = ifelse(is.na(trinomial), zzz, trinomial),
       trinomial = base::replace(trinomial, duplicated(trinomial), zzz)
     )
@@ -569,7 +570,7 @@ normalise_taxonomic_resources_input <- function(taxonomic_resources) {
   } else if (is.character(taxonomic_resources) && length(taxonomic_resources) == 1) {
     tables <- list(read_taxonomic_resources_file(taxonomic_resources))
   } else if (is.list(taxonomic_resources) && length(taxonomic_resources) > 0) {
-    tables <- purrr::map(
+    tables <- lapply(
       taxonomic_resources,
       function(x) if (is.character(x) && length(x) == 1) read_taxonomic_resources_file(x) else x
     )
@@ -593,6 +594,7 @@ read_taxonomic_resources_file <- function(path) {
   if (!file.exists(path)) {
     stop("`taxonomic_resources` names a file that doesn't exist: ", path, call. = FALSE)
   }
+  rlang::check_installed("readr", reason = "to read a reference table from a CSV file.")
   readr::read_csv(path, show_col_types = FALSE, progress = FALSE)
 }
 

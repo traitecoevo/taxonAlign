@@ -102,6 +102,7 @@ create_taxonomic_update_lookup <- function(original_name,
 # every count is of distinct input names.
 #' @noRd
 summarise_update_lookup <- function(aligned, updated, taxonomic_splits) {
+  if (is.null(aligned) || is.null(updated)) return(character(0))
   first <- !is.na(aligned$original_name) & !duplicated(aligned$original_name)
   aligned <- aligned[first, ]
   rank <- aligned$taxon_rank
@@ -126,15 +127,17 @@ summarise_update_lookup <- function(aligned, updated, taxonomic_splits) {
   }
   changed <- !is.na(new_name) & !is.na(upd$aligned_name) & new_name != upd$aligned_name & !split
 
+  # counts in blue, as APCalign prints them (plain text where the console has no colour)
+  num <- function(x) cli::col_blue(sum(x))
   by_dataset <- table(dataset[is_species])
   lines <- c(
-    paste0("Summary of ", nrow(aligned), " names:"),
-    paste0("  -> ", sum(is_species), " aligned to a species or infraspecific taxon",
-           if (length(by_dataset) > 0) paste0(" (", paste(by_dataset, "in", names(by_dataset), collapse = ", "), ")")),
-    paste0("  -> ", sum(is_genus), " aligned only to a genus and ", sum(is_family), " only to a family"),
-    if (any(is_other)) paste0("  -> ", sum(is_other), " aligned to another rank"),
-    paste0("  -> ", sum(!is_aligned), " could not be aligned"),
-    paste0("  -> ", sum(changed), " aligned names were updated to a different name (e.g. a synonym to ",
+    paste0("Summary of ", num(rep(TRUE, nrow(aligned))), " names:"),
+    paste0("  -> ", num(is_species), " aligned to a species or infraspecific taxon",
+           if (length(by_dataset) > 0) paste0(" (", paste(cli::col_blue(by_dataset), "in", names(by_dataset), collapse = ", "), ")")),
+    paste0("  -> ", num(is_genus), " aligned only to a genus and ", num(is_family), " only to a family"),
+    if (any(is_other)) paste0("  -> ", num(is_other), " aligned to another rank"),
+    paste0("  -> ", num(!is_aligned), " could not be aligned"),
+    paste0("  -> ", num(changed), " aligned names were updated to a different name (e.g. a synonym to ",
            "its accepted name, or an outdated genus to the current one)")
   )
   if (any(split)) {
@@ -143,7 +146,7 @@ summarise_update_lookup <- function(aligned, updated, taxonomic_splits) {
     } else {
       "`suggested_name` gives the most likely species and lists the alternatives in square brackets"
     }
-    lines <- c(lines, paste0("  -> ", sum(split), " names could refer to more than one currently accepted taxon. ",
+    lines <- c(lines, paste0("  -> ", num(split), " names could refer to more than one currently accepted taxon. ",
                              "With `taxonomic_splits = \"", taxonomic_splits, "\"`, ", note, "."))
   }
   lines

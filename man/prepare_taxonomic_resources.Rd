@@ -10,7 +10,8 @@ prepare_taxonomic_resources(
 )
 }
 \arguments{
-\item{taxonomic_resources}{A tibble, a path to a CSV file, or a (optionally named) list of either --
+\item{taxonomic_resources}{A tibble, a path to a CSV file (read with readr, which must be installed),
+or a (optionally named) list of either --
 one element per taxonomic reference table to combine. Each table must be in taxonAlign's
 taxonomic reference format (see \code{\link[=taxonomic_reference_schema]{taxonomic_reference_schema()}}): at least the columns
 \code{canonical_name}, \code{scientific_name}, \code{taxon_rank}, \code{taxonomic_status}, \code{taxonomic_dataset},

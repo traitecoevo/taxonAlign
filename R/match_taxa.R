@@ -107,7 +107,7 @@ rank_rows <- function(resources, rank, status = c("any", "accepted", "synonym"))
   status <- match.arg(status)
   tbl <- resources[[rank]]
   if (is.null(tbl) || nrow(tbl) == 0) return(NULL)
-  one_word <- !grepl("\\s", sub("^[xX×]\\s+", "", tbl$canonical_name))
+  one_word <- !grepl("\\s", sub("^[xX\u00d7]\\s+", "", tbl$canonical_name))
   keep <- one_word & switch(status,
     any = TRUE,
     accepted = tbl$taxonomic_status %in% "accepted",
@@ -344,11 +344,11 @@ match_taxa <- function(
         update_na_with(strip_names_keep_hyphens(cleaned_name)),
       stripped_name2 = stripped_name2 |>
         update_na_with(APCalign::strip_names_extra(stripped_name)),
-      trinomial = stringr::word(stripped_name2, start = 1, end = 3),
-      binomial = stringr::word(stripped_name2, start = 1, end = 2),
+      trinomial = word(stripped_name2, 1, 3),
+      binomial = word(stripped_name2, 1, 2),
       word_one = extract_genus(original_name),
       word_one_stripped = extract_genus(stripped_name),
-      ignore_bracketed_words = stringr::str_remove(original_name, " \\(.*\\)")
+      ignore_bracketed_words = re_replace(original_name, " \\(.*\\)", "")
     )
 
   taxa <- redistribute_progress(taxa, pb)
@@ -357,11 +357,11 @@ match_taxa <- function(
 
   # A name ending in "sp." -- "Genus sp.", or "Genus 1 sp." (APCalign allows only the first).
   is_genus_sp <- function(x) {
-    stringr::str_detect(x, "[:space:]sp\\.$") & stringr::str_count(x, " ") %in% c(1, 2)
+    re_detect(x, "[\\s\\p{Z}\\x85]sp\\.$") & count_fixed(x, " ") %in% c(1, 2)
   }
   # TRUE where the name is nothing more than one word -- see include_bracketed_info.
   bare_one_word <- function(taxa, i, words = 1) {
-    !include_bracketed_info & stringr::str_count(stringr::str_trim(taxa$tocheck$cleaned_name[i]), "\\S+") == words
+    !include_bracketed_info & re_count(trim(taxa$tocheck$cleaned_name[i]), "[^\\s\\p{Z}\\x85]+") == words
   }
 
   # ---- match_01: exact matches -----------------------------------------------------------------------
@@ -389,14 +389,14 @@ match_taxa <- function(
   # don't have can't fall through to the generic higher-rank blocks and silently lose the subgenus
   # ("Hylaeus (Rhodhylaeus) sp.", a typo for Rhodohylaeus, once aligned to plain "Hylaeus sp.").
   is_bracketed_subgenus_sp <- function(x) {
-    stringr::str_detect(x, "[:space:]sp\\.$") &
-      stringr::str_detect(second_word(x), "^\\(.*\\)$") &
-      stringr::str_count(x, " ") == 2
+    re_detect(x, "[\\s\\p{Z}\\x85]sp\\.$") &
+      re_detect(second_word(x), "^\\(.*\\)$") &
+      count_fixed(x, " ") == 2
   }
   sv2 <- resources$subgenus_v2
   if (any(is_bracketed_subgenus_sp(taxa$tocheck$cleaned_name))) {
     if (!is.null(sv2)) {
-      pair <- stringr::word(taxa$tocheck$cleaned_name, 1, 2)
+      pair <- word(taxa$tocheck$cleaned_name, 1, 2)
       i <- is_bracketed_subgenus_sp(taxa$tocheck$cleaned_name) & pair %in% sv2$genus_and_subgenus
       ii <- match(pair[i], sv2$genus_and_subgenus)
       taxa <- apply_match(taxa, i, sv2, ii, genus_sp_name(taxa, i, sv2$genus_and_subgenus[ii]),
@@ -405,7 +405,7 @@ match_taxa <- function(
       if (done(taxa)) return(finish_match_taxa(taxa))
 
       detected <- is_bracketed_subgenus_sp(taxa$tocheck$cleaned_name)
-      pair <- stringr::word(taxa$tocheck$cleaned_name, 1, 2)
+      pair <- word(taxa$tocheck$cleaned_name, 1, 2)
       hit <- rep(NA_character_, nrow(taxa$tocheck))
       if (any(detected)) hit[detected] <- fuzzy_match_genera(pair[detected], sv2$genus_and_subgenus)
       i <- detected & !is.na(hit)
@@ -432,10 +432,10 @@ match_taxa <- function(
   # The NSL's marker form of the same subgenus concept, looked up as the equivalent "Genus (Subgenus)"
   # pair (taxonAlign.dataprep's load_NSL() stores the bare subgenus name in canonical_name).
   is_marker_subgenus <- function(x) {
-    stringr::str_count(x, " ") == 2 &
-      stringr::str_detect(second_word(x), stringr::regex("^subg\\.?$", ignore_case = TRUE))
+    count_fixed(x, " ") == 2 &
+      re_detect(second_word(x), "(?i)^subg\\.?$")
   }
-  marker_key <- function(x) paste0(stringr::word(x, 1), " (", stringr::word(x, 3), ")")
+  marker_key <- function(x) paste0(word(x, 1), " (", word(x, 3), ")")
   if (any(is_marker_subgenus(taxa$tocheck$cleaned_name))) {
     if (!is.null(sv2)) {
       key <- marker_key(taxa$tocheck$cleaned_name)
@@ -476,11 +476,11 @@ match_taxa <- function(
   # Quarantined before species-level matching: strip_names() keeps the bracketed word, so it would sit
   # where a species epithet does and could fuzzy-match an unrelated species.
   is_bracketed_subgenus <- function(x) {
-    stringr::str_count(x, " ") == 1 & stringr::str_detect(second_word(x), "^\\(.*\\)$")
+    count_fixed(x, " ") == 1 & re_detect(second_word(x), "^\\(.*\\)$")
   }
   if (any(is_bracketed_subgenus(taxa$tocheck$cleaned_name))) {
     if (!is.null(sv2)) {
-      pair <- stringr::word(taxa$tocheck$cleaned_name, 1, 2)
+      pair <- word(taxa$tocheck$cleaned_name, 1, 2)
       i <- is_bracketed_subgenus(taxa$tocheck$cleaned_name) & pair %in% sv2$genus_and_subgenus
       ii <- match(pair[i], sv2$genus_and_subgenus)
       taxa <- apply_match(taxa, i, sv2, ii,
@@ -490,7 +490,7 @@ match_taxa <- function(
       if (done(taxa)) return(finish_match_taxa(taxa))
 
       detected <- is_bracketed_subgenus(taxa$tocheck$cleaned_name)
-      pair <- stringr::word(taxa$tocheck$cleaned_name, 1, 2)
+      pair <- word(taxa$tocheck$cleaned_name, 1, 2)
       hit <- rep(NA_character_, nrow(taxa$tocheck))
       if (any(detected)) hit[detected] <- fuzzy_match_genera(pair[detected], sv2$genus_and_subgenus)
       i <- detected & !is.na(hit)
@@ -541,9 +541,7 @@ match_taxa <- function(
     for (sub in english_ending_substitutions) {
       tbl <- rank_rows(resources, sub$rank)
       if (is.null(tbl) || nrow(tbl) == 0) next
-      candidate <- stringr::str_replace(
-        taxa$tocheck$word_one_stripped, stringr::regex(sub$vernacular, ignore_case = TRUE), sub$formal
-      )
+      candidate <- re_replace(taxa$tocheck$word_one_stripped, paste0("(?i)", sub$vernacular), sub$formal)
       i <- !is.na(candidate) & candidate != taxa$tocheck$word_one_stripped & candidate %in% tbl$canonical_name
       ii <- match(candidate[i], tbl$canonical_name)
       taxa <- apply_match(taxa, i, tbl, ii,
@@ -584,12 +582,12 @@ match_taxa <- function(
   # ---- match_04: intergrade ("--") and indecision ("/") names, to genus (APCalign 03/04) -------------
   if (intergrades_affinis) {
     is_intergrade_indecision <- function(cleaned_name) {
-      is_intergrade <- stringr::str_detect(cleaned_name, "\\ -- |\\--")
-      is_indecision <- (stringr::str_detect(cleaned_name, "[:alpha:]\\/") |
-                          stringr::str_detect(cleaned_name, "\\s\\/")) &
-        !stringr::str_detect(cleaned_name, "[:digit:]") &
-        !stringr::str_detect(cleaned_name, "\\(") &
-        !stringr::str_detect(cleaned_name, "\\'")
+      is_intergrade <- re_detect(cleaned_name, "\\ -- |\\--")
+      is_indecision <- (re_detect(cleaned_name, "\\p{L}\\/") |
+                          re_detect(cleaned_name, "[\\s\\p{Z}\\x85]\\/")) &
+        !re_detect(cleaned_name, "\\p{Nd}") &
+        !re_detect(cleaned_name, "\\(") &
+        !re_detect(cleaned_name, "\\'")
       is_intergrade | is_indecision
     }
     taxa <- match_special_case_to_genus(
@@ -628,12 +626,12 @@ match_taxa <- function(
   # standardise_names()'s "aff." abbreviation -- "Themognatha affinis affinis" is a real tautonymous
   # subspecies, not an affinity.
   if (intergrades_affinis) {
-    not_before_rank_marker <- "(?!\\s+(?:subsp|ssp|subvar|var|forma|form|ser|series|cv|f)\\.?(?:\\s|$))"
-    affinis_qualifier <- paste0(" affinis", not_before_rank_marker, "\\s")
+    not_before_rank_marker <- "(?![\\s\\p{Z}\\x85]+(?:subsp|ssp|subvar|var|forma|form|ser|series|cv|f)\\.?(?:[\\s\\p{Z}\\x85]|$))"
+    affinis_qualifier <- paste0(" affinis", not_before_rank_marker, "[\\s\\p{Z}\\x85]")
     is_affinis <- function(cleaned_name) {
-      stringr::str_detect(cleaned_name, "[Aa]ff[\\.\\s]") |
-        stringr::str_detect(cleaned_name, affinis_qualifier) |
-        stringr::str_detect(cleaned_name, " cf[\\.\\s]")
+      re_detect(cleaned_name, "[Aa]ff[.\\s\\p{Z}\\x85]") |
+        re_detect(cleaned_name, affinis_qualifier) |
+        re_detect(cleaned_name, " cf[.\\s\\p{Z}\\x85]")
     }
     taxa <- match_reference_name(taxa, accepted, "ignore_bracketed_words", "canonical_name",
       "Taxon name suggests a graded/\"affinis\"/\"cf.\" identification, but exactly matches a real, accepted name",
@@ -683,7 +681,7 @@ match_taxa <- function(
   # Onopordum illyricum", which a misspelling must still fuzzy-match in match_05).
   if (hybrids) {
     taxa <- match_special_case_to_genus(
-      taxa, resources, detect_fn = function(x) stringr::str_detect(x, " [xX] "), bracket_sep = " x [",
+      taxa, resources, detect_fn = function(x) re_detect(x, " [xX] "), bracket_sep = " x [",
       reason_text = "Taxon name includes ' x ', indicating a hybrid taxon; can only be aligned to genus rank.",
       alignment_code_exact = "match_08a_hybrid_exact_genus",
       alignment_code_fuzzy = "match_08b_hybrid_fuzzy_genus",
@@ -725,8 +723,8 @@ match_taxa <- function(
   # A valid binomial followed by notes or an invalid infraspecific epithet. Not for "Genus (Subgenus)
   # ...": there the second word isn't an epithet.
   no_bracket <- function(taxa) {
-    !stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(") &
-      !stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "\\)$")
+    !re_detect(second_word(taxa$tocheck$cleaned_name), "^\\(") &
+      !re_detect(second_word(taxa$tocheck$cleaned_name), "\\)$")
   }
   taxa <- match_reference_name(taxa, accepted, "binomial", "binomial",
     "Exact match of the first two words of the taxon name to an accepted canonical name",
@@ -766,8 +764,8 @@ match_taxa <- function(
 
   # ---- match_12a: "Genus (Subgenus) <anything>" to subgenus (taxonAlign) ----------------------------
   if (!is.null(sv2)) {
-    pair <- stringr::word(taxa$tocheck$cleaned_name, 1, 2)
-    i <- stringr::str_detect(second_word(taxa$tocheck$cleaned_name), "^\\(.*\\)$") & pair %in% sv2$genus_and_subgenus
+    pair <- word(taxa$tocheck$cleaned_name, 1, 2)
+    i <- re_detect(second_word(taxa$tocheck$cleaned_name), "^\\(.*\\)$") & pair %in% sv2$genus_and_subgenus
     ii <- match(pair[i], sv2$genus_and_subgenus)
     taxa <- apply_match(taxa, i, sv2, ii,
                         higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bare = bare_one_word(taxa, i, 2)),

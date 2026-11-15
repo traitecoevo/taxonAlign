@@ -54,8 +54,8 @@ write_sample_release <- function(dir = withr::local_tempdir(.local_envir = paren
     taxonomic_status = "accepted", taxonomic_dataset = "GBIF", genus = c("Vanessa", "Vanessa", "Thylacinus"),
     taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "3"), extinct = c(NA, FALSE, TRUE)
   )
-  arrow::write_parquet(animals, file.path(dir, "NSL_animals.parquet"))
-  arrow::write_parquet(gbif, file.path(dir, "GBIF_AU.parquet"))
+  nanoparquet::write_parquet(animals, file.path(dir, "NSL_animals.parquet"))
+  nanoparquet::write_parquet(gbif, file.path(dir, "GBIF_AU.parquet"))
   readr::write_csv(tibble::tibble(
     dataset = c("NSL_animals", "GBIF_AU", NA), asset = c("NSL_animals.parquet", "GBIF_AU.parquet", "nsl_animals_taxon.parquet"),
     type = c("ready", "ready", "raw"), rows = c(3, 3, 10), columns = c(8, 9, 30), source = "test", retrieved = "2026-10-07",

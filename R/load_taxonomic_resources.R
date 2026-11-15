@@ -88,7 +88,7 @@ load_taxonomic_resources <- function(datasets,
   }
 
   result <- lapply(files, function(file) {
-    reference <- dplyr::as_tibble(arrow::read_parquet(file))
+    reference <- dplyr::as_tibble(nanoparquet::read_parquet(file))
     if (!include_extinct && "extinct" %in% names(reference)) {
       reference <- reference[!(reference$extinct %in% TRUE), ]
     }
@@ -122,7 +122,12 @@ data_release_datasets <- function(version = NULL,
     if (!file.exists(file)) stop("Couldn't find a data release manifest at \"", file, "\".", call. = FALSE)
     release <- path
   }
-  manifest <- readr::read_csv(file, col_types = readr::cols(.default = readr::col_character()), progress = FALSE)
+  # every column as text, "" and "NA" read as missing and surrounding spaces trimmed, as
+  # readr::read_csv() did (readr is only a suggested package)
+  manifest <- dplyr::as_tibble(utils::read.csv(
+    file, colClasses = "character", na.strings = c("", "NA"), strip.white = TRUE,
+    check.names = FALSE, encoding = "UTF-8"
+  ))
   if (!all(c("dataset", "asset", "type") %in% names(manifest))) {
     stop(
       "The manifest of data release ", release, " doesn't list datasets -- it may be from before ",
