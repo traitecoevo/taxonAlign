@@ -147,12 +147,12 @@ create_taxonomic_update_lookup(
 `taxonomic_status_aligned` records that it was a synonym, and the
 misspelling (`carduii`, one letter off) is corrected via fuzzy matching.
 
-See [`vignettes/get-started.qmd`](vignettes/get-started.qmd) for a full
+See [Get started](https://traitecoevo.github.io/taxonAlign/articles/get-started.html) for a full
 walkthrough of every function, including building your own reference
 table by hand, combining several sources, matching names of every rank
 (not just species), and an end-to-end “update a list of raw field names”
 workflow. See
-[`vignettes/development-history.qmd`](vignettes/development-history.qmd)
+[Development history](https://traitecoevo.github.io/taxonAlign/articles/development-history.html)
 for why this package exists and the real, messy invertebrate names that
 shaped its design.
 
