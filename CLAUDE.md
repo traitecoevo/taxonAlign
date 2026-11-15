@@ -164,6 +164,8 @@ undefined globals (`.data` is imported from rlang in `R/taxonAlign-package.R`). 
 are also functions (`family`, `binomial`, `citation`, `source`, `licence`): codetools doesn't flag
 them, R CMD check sometimes does, and a bare one silently means the column only while it exists.
 
+The other half (issue #37): a *local* variable or package constant used inside a verb is written `.env$x`. Bare, a column of the same name takes precedence -- a user column called `resolved` made `update_taxa()` stop updating synonyms, with no error. `.env$` looks up through the enclosing environments, so it reaches package constants too, and never sees columns. So inside a dplyr verb nothing is left bare, apart from base constants such as `.Machine`. Functions can stay bare: R's lookup for a call skips a column that isn't a function. `test-update_taxa.R` and `test-prepare_taxonomic_resources.R` shadow each local with a column; add a name there when you add a local to a verb.
+
 ### Testing
 
 `tests/testthat/test-prepare_taxonomic_resources.R`, `test-align_taxa.R`, `test-match_taxa.R`,

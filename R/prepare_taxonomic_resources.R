@@ -262,7 +262,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # no prompt: the order tables were supplied in *is* the priority; `.table_order` records it, for the
   # sort below
   taxonomic_resources <- dplyr::bind_rows(resolved, .id = ".table_order") |>
-    dplyr::mutate(.table_order = match(.data$.table_order, names(resolved)))
+    dplyr::mutate(.table_order = match(.data$.table_order, names(.env$resolved)))
 
   # dummy placeholder for blank cells -- fuzzy matching doesn't cope with blank/duplicate cells
   zzz <- "zzzz zzzz"
@@ -304,7 +304,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     # name in the AFD's NSL format), which matched every "Genus 1 sp.01 Corinnidae"-style morphospecies
     # code. Deliberately this narrow: APC's informal phrase names ("Genus sp. Yalgoo (J.M.Ward s.n.
     # 11/7/1999)") also start with "Genus" but are real, exactly matchable names
-    dplyr::filter(!(tolower(extract_genus(.data$canonical_name)) %in% c("species", taxonAlign_taxon_rank_specificity) &
+    dplyr::filter(!(tolower(extract_genus(.data$canonical_name)) %in% c("species", .env$taxonAlign_taxon_rank_specificity) &
       grepl("^\\S+\\s+[A-Z0-9]{1,3}$", .data$canonical_name)))
   n_dropped <- n_before - nrow(taxonomic_resources)
   if (n_dropped > 0) {
@@ -413,7 +413,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
     ) |>
       dplyr::filter(.data$target_ok & !is.na(.data$target) & .data$target != .data$value) |>
       dplyr::distinct(.data$value, .data$target) |>
-      dplyr::mutate(target_ID = unname(accepted_id[.data$target])) |>
+      dplyr::mutate(target_ID = unname(.env$accepted_id[.data$target])) |>
       dplyr::filter(!is.na(.data$target_ID))
 
     synonym_rows <- dplyr::tibble(
@@ -445,7 +445,7 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # status (GBIF's plain "synonym" for Lichenostomus leucotis beat the AFD's "Generic combination",
   # with the AFD listed first). The sort is stable, so ties keep each table's own row order.
   taxonomic_resources <- taxonomic_resources |>
-    dplyr::arrange(.data$.table_order, factor(.data$taxonomic_status, levels = taxonAlign_taxonomic_status_priority)) |>
+    dplyr::arrange(.data$.table_order, factor(.data$taxonomic_status, levels = .env$taxonAlign_taxonomic_status_priority)) |>
     dplyr::select(-".table_order")
 
   taxonomic_resources <- taxonomic_resources |>
@@ -477,13 +477,13 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
       ## essential for the 2/3-word matches, since those words shouldn't count as one of the words
       stripped_canonical2 = APCalign::strip_names_extra(.data$stripped_canonical),
       stripped_scientific = strip_names_keep_hyphens(.data$scientific_name),
-      binomial = ifelse(.data$taxon_rank == "species", word(.data$stripped_canonical2, 1, 2), zzz),
-      binomial = ifelse(is.na(.data$binomial), zzz, .data$binomial),
-      binomial = base::replace(.data$binomial, duplicated(.data$binomial), zzz),
+      binomial = ifelse(.data$taxon_rank == "species", word(.data$stripped_canonical2, 1, 2), .env$zzz),
+      binomial = ifelse(is.na(.data$binomial), .env$zzz, .data$binomial),
+      binomial = base::replace(.data$binomial, duplicated(.data$binomial), .env$zzz),
       word_one_stripped = extract_genus(.data$stripped_canonical),
       trinomial = word(.data$stripped_canonical2, 1, 3),
-      trinomial = ifelse(is.na(.data$trinomial), zzz, .data$trinomial),
-      trinomial = base::replace(.data$trinomial, duplicated(.data$trinomial), zzz)
+      trinomial = ifelse(is.na(.data$trinomial), .env$zzz, .data$trinomial),
+      trinomial = base::replace(.data$trinomial, duplicated(.data$trinomial), .env$zzz)
     )
 
   # split by taxon rank -- unlike APCalign, higher ranks beyond genus/family are expected and kept.
