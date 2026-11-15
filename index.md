@@ -146,7 +146,7 @@ create_taxonomic_update_lookup(
 misspelling (`carduii`, one letter off) is corrected via fuzzy matching.
 
 See [Get
-started](https://traitecoevo.github.io/taxonAlign/articles/get-started.html)
+started](https://traitecoevo.github.io/taxonAlign/articles/taxonAlign.html)
 for a full walkthrough of every function, including building your own
 reference table by hand, combining several sources, matching names of
 every rank (not just species), and an end-to-end “update a list of raw

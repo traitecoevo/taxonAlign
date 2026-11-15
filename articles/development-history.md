@@ -1,7 +1,7 @@
 # How and why taxonAlign was built
 
 This document is not a tutorial – [Get
-started](https://traitecoevo.github.io/taxonAlign/articles/get-started.md)
+started](https://traitecoevo.github.io/taxonAlign/articles/taxonAlign.md)
 is that. It’s a record of *why* `taxonAlign` exists and the real, messy
 invertebrate names that shaped its design. Every number and example name
 below is real, drawn from actually running this package against real
