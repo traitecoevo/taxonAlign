@@ -127,6 +127,8 @@ built package everything that isn't package content: `vignettes/` (none is a reg
 So `devtools::check()` needs no flags. taxonAlign is headed for CRAN; the readiness list is a GitHub
 issue.
 
+`.github/workflows/test-coverage.yaml` measures coverage with covr (also with `NOT_CRAN=true`) and uploads `cobertura.xml` with `codecov/codecov-action` using the org-wide `CODECOV_TOKEN` secret, as traits.use, austraits and traits.build do. Don't switch it back to `covr::codecov()`: Codecov rejects the org token through that route ("Could not find a repository associated with upload token").
+
 ### Testing
 
 `tests/testthat/test-prepare_taxonomic_resources.R`, `test-align_taxa.R`, `test-match_taxa.R`,
