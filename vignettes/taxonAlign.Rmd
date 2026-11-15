@@ -1,6 +1,8 @@
 ---
 title: "Getting started with taxonAlign"
-output: rmarkdown::html_vignette
+output:
+  rmarkdown::html_vignette:
+    toc: true
 vignette: >
   %\VignetteIndexEntry{Getting started with taxonAlign}
   %\VignetteEngine{knitr::rmarkdown}
@@ -47,7 +49,7 @@ global taxonomic resource, your own table, or several combined.
 
 The simplest starting point is one of the reference lists published as taxonAlign **data
 releases**: dated, fixed copies of each list, so that an alignment can be repeated exactly later by
-naming the release it used. The first release contains:
+naming the release it used. The releases contain:
 
 | Dataset | Reference | Source |
 |---|---|---|
@@ -57,6 +59,7 @@ naming the release it used. The first release contains:
 | `"NSL_fungi"` | Fungi | NSL export (AFL taxa, AFNI names) |
 | `"NSL_lichens"` | Lichens | NSL export (ALC taxa, ALNI names) |
 | `"GBIF_AU"` | Animals recorded in Australia (GBIF) | GBIF Backbone taxonomy: taxa with Australian occurrence records, plus their synonyms. In the `2026-10-07` release; replaced by `"CatalogueOfLife_AU"` from the next one, as GBIF has replaced its Backbone with the Catalogue of Life Extended Release |
+| `"CatalogueOfLife_AU"` | Animals recorded in Australia (Catalogue of Life) | Catalogue of Life Extended Release (COL26.10 XR): animal names with Australian records. From the `2026-11-14` release. |
 
 `data_release_versions()` lists the releases available, most recent first, and
 `data_release_datasets()` lists what's in one, with each dataset's source, retrieval date, licence and
@@ -65,8 +68,8 @@ citation:
 ```{r}
 #| eval: false
 data_release_versions()
-#> [1] "2026-10-07"
-data_release_datasets("2026-10-07")
+#> [1] "2026-11-14" "2026-10-07"
+data_release_datasets("2026-11-14")
 ```
 
 `load_taxonomic_resources()` loads one or more datasets. Each is downloaded the first time you use it
@@ -76,12 +79,12 @@ functions:
 
 ```{r}
 #| eval: false
-animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"))
+animals <- load_taxonomic_resources(c("NSL_animals", "CatalogueOfLife_AU"))
 create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), animals)
 ```
 
 When you load more than one dataset, the order you name them in is their priority: a name found in
-`"NSL_animals"` is matched there, and `"GBIF_AU"` is only used for names the AFD doesn't have.
+`"NSL_animals"` is matched there, and `"CatalogueOfLife_AU"` is only used for names the AFD doesn't have.
 
 GBIF's occurrence records include fossil specimens, so taxa GBIF flags as extinct are left out by
 default, as they would otherwise produce spurious matches. GBIF's flag doesn't distinguish fossils
@@ -232,7 +235,7 @@ status wins). This is how you'd combine released lists with your own data:
 # your own list first, then the AFD, then GBIF for anything neither of those has
 resources <- prepare_taxonomic_resources(c(
   list(mine = my_reference),
-  load_taxonomic_resources(c("NSL_animals", "GBIF_AU"))
+  load_taxonomic_resources(c("NSL_animals", "CatalogueOfLife_AU"))
 ))
 ```
 

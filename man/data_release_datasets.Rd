@@ -38,7 +38,10 @@ where each came from. Cite the sources of the datasets you use.
 }
 \examples{
 \donttest{
-data_release_datasets(version = "2026-11-14", cache_dir = tempfile())
+# needs the internet
+if (curl::has_internet()) {
+  data_release_datasets(version = "2026-11-14", cache_dir = tempfile())
+}
 }
 
 }

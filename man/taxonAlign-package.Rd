@@ -6,7 +6,7 @@
 \alias{taxonAlign-package}
 \title{taxonAlign: Align and Update Taxonomic Names Against Any Taxonomic Reference}
 \description{
-Matches lists of raw taxon names, including misspelt, informal and morphospecies names, to a taxonomic reference, and updates them to their currently accepted names. The reference can be one or more released datasets (versioned, so results are reproducible) or the user's own tables, in a documented format, at any combination of taxonomic ranks. The companion package taxonAlign.dataprep builds and releases those datasets, and helps users turn their own references into the format.
+Matches lists of raw taxon names, including misspelt, informal and morphospecies names, to a taxonomic reference, and updates them to their currently accepted names. The reference can be one or more released datasets (versioned, so results are reproducible) or the user's own tables, in a documented format, at any combination of taxonomic ranks. The companion package 'taxonAlign.dataprep' builds and releases those datasets, and helps users turn their own references into the format.
 }
 \seealso{
 Useful links:

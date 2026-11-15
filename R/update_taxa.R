@@ -84,7 +84,8 @@
 #' )
 #' aligned <- align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
 #' # "Boronia oldname" is a synonym, updated to its accepted name
-#' update_taxa(aligned, reference)
+#' updated <- update_taxa(aligned, reference)
+#' updated[, c("original_name", "aligned_name", "accepted_name", "update_reason")]
 #'
 #' @export
 update_taxa <- function(aligned_data, resources = NULL,
@@ -230,13 +231,13 @@ update_taxa <- function(aligned_data, resources = NULL,
       taxon_rank = dplyr::case_when(
         !is.na(collapsed) ~ "genus",
         resolved ~ current$taxon_rank,
-        TRUE ~ taxon_rank
+        TRUE ~ .data$taxon_rank
       ),
       taxonomic_dataset = dplyr::if_else(resolved, current$taxonomic_dataset, .data$taxonomic_dataset),
       taxonomic_status = dplyr::case_when(
         resolved ~ current$taxonomic_status,
         is.na(.data$aligned_name) ~ "unknown",
-        TRUE ~ taxonomic_status_aligned
+        TRUE ~ .data$taxonomic_status_aligned
       ),
       update_reason = dplyr::case_when(
         is.na(.data$aligned_name) ~ NA_character_,

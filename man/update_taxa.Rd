@@ -104,6 +104,7 @@ reference <- data.frame(
 )
 aligned <- align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
 # "Boronia oldname" is a synonym, updated to its accepted name
-update_taxa(aligned, reference)
+updated <- update_taxa(aligned, reference)
+updated[, c("original_name", "aligned_name", "accepted_name", "update_reason")]
 
 }

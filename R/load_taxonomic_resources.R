@@ -53,9 +53,12 @@
 #'
 #' @examples
 #' \donttest{
-#' # the lichen list from the National Species List (a few MB), into a temporary cache
-#' lichens <- load_taxonomic_resources("NSL_lichens", version = "2026-11-14", cache_dir = tempfile())
-#' create_taxonomic_update_lookup(c("Cladonia rangiferina", "Usnea inermis"), lichens)
+#' # needs the internet: the lichen list from the National Species List (a few MB), into a
+#' # temporary cache; a misspelling ("inermsi") is corrected
+#' if (curl::has_internet()) {
+#'   lichens <- load_taxonomic_resources("NSL_lichens", version = "2026-11-14", cache_dir = tempfile())
+#'   create_taxonomic_update_lookup(c("Cladia aggregata", "Usnea inermsi"), lichens)
+#' }
 #' }
 #'
 #' @export
@@ -111,7 +114,10 @@ load_taxonomic_resources <- function(datasets,
 #'
 #' @examples
 #' \donttest{
-#' data_release_datasets(version = "2026-11-14", cache_dir = tempfile())
+#' # needs the internet
+#' if (curl::has_internet()) {
+#'   data_release_datasets(version = "2026-11-14", cache_dir = tempfile())
+#' }
 #' }
 #'
 #' @export

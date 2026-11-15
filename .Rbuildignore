@@ -20,6 +20,8 @@
 ^vignettes/\.gitignore$
 ^vignettes/\.quarto$
 ^vignettes/.*_files$
+^vignettes/.*\.html$
+^vignettes/.*\.knit\.md$
 ^CLAUDE\.md$
 ^\.github$
 # the pkgdown site

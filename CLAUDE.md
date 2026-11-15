@@ -1022,7 +1022,7 @@ warning** (user: it implies laziness, and the GBIF backbone often doesn't change
 
 ### Vignette and data tying the two together
 
-`vignettes/reproduce-EH-workflow.Rmd` reproduced the original AusInvertAlign workflow end-to-end
+`vignettes/_reproduce-EH-workflow.Rmd` reproduced the original AusInvertAlign workflow end-to-end
 against an answer key in the private sibling `../ausinvertraits.addons` checkout, with its saved output
 in `data/aligned_names_b.rds`. Both were **deleted on 2026-11-15** (Daniel, issue #31: CRAN prep), along
 with `wcvp_MYSG.csv`, which had been committed by accident in a9d74f7; all three are in git history.
@@ -1042,7 +1042,7 @@ must not need the network. It is also the pkgdown site's "Get started" page.
 
 `vignettes/development-history.qmd` revisits [issue #2](https://github.com/traitecoevo/taxonAlign/issues/2)
 (originally "reproduce current workflow as a vignette", filed as a benchmark-before-refactoring ask) --
-reimplementing `_reproduce-EH-workflow.Rmd`'s underlying idea (align the real AusInvertTraits name list
+reimplementing the deleted `_reproduce-EH-workflow.Rmd`'s underlying idea (align the real AusInvertTraits name list
 against AFD+iNat and check the result against a real historical answer key) against the *finished*
 package's exported functions, rather than fixing the original prototype vignette's broken external
 paths. Framed explicitly as a historical record, not a tutorial (`taxonAlign.Rmd` is that) --

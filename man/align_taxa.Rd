@@ -111,6 +111,7 @@ reference <- data.frame(
   taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
 )
 # a misspelling and a synonym
-align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+aligned <- align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+aligned[, c("original_name", "aligned_name", "taxonomic_status", "aligned_reason")]
 
 }

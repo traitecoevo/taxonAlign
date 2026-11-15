@@ -41,8 +41,10 @@ never need this directly. \code{\link[=data_release_versions]{data_release_versi
 }
 \examples{
 \donttest{
-# the release's manifest, into a temporary cache
-download_data_release_files("manifest.csv", version = "2026-11-14", cache_dir = tempfile())
+# needs the internet: the release's manifest, into a temporary cache
+if (curl::has_internet()) {
+  download_data_release_files("manifest.csv", version = "2026-11-14", cache_dir = tempfile())
+}
 }
 
 }
