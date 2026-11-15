@@ -6,11 +6,25 @@ test_that("prepare_taxonomic_resources errors clearly when required columns are 
 })
 
 test_that("prepare_taxonomic_resources reads a CSV file path", {
+  skip_if_not_installed("readr")
   path <- withr::local_tempfile(fileext = ".csv")
   readr::write_csv(sample_taxonomic_resources(), path)
 
   resources <- prepare_taxonomic_resources(path)
   expect_true("Boronia serrulata" %in% resources$species$accepted$canonical_name)
+})
+
+test_that("numeric IDs become their digits, not scientific notation", {
+  # readr reads a numeric CSV column, and nanoparquet a parquet INT64 column, as double
+  ref <- sample_taxonomic_resources()
+  ids <- match(ref$accepted_name_usage_ID, ref$taxon_ID)
+  ref$taxon_ID <- as.double(seq_len(nrow(ref)) * 100000)
+  ref$accepted_name_usage_ID <- ref$taxon_ID[ids]
+  resources <- suppressWarnings(prepare_taxonomic_resources(ref))
+  expect_true("100000" %in% flatten_resources(resources)$taxon_ID)
+  expect_false(any(grepl("e+", flatten_resources(resources)$taxon_ID, fixed = TRUE)))
+  expect_equal(id_as_character(c(100000, NA, 12345678901)), c("100000", NA, "12345678901"))
+  expect_equal(id_as_character(c("a", NA)), c("a", NA))
 })
 
 test_that("prepare_taxonomic_resources gives a clear, actionable error when taxonomic_resources is missing", {

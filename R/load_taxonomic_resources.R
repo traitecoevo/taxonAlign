@@ -122,12 +122,18 @@ data_release_datasets <- function(version = NULL,
     if (!file.exists(file)) stop("Couldn't find a data release manifest at \"", file, "\".", call. = FALSE)
     release <- path
   }
-  # every column as text, "" and "NA" read as missing and surrounding spaces trimmed, as
-  # readr::read_csv() did (readr is only a suggested package)
-  manifest <- dplyr::as_tibble(utils::read.csv(
+  # every column as text, "" and "NA" read as missing and surrounding spaces trimmed (inside quotes
+  # too), as readr::read_csv() did (readr is only a suggested package)
+  manifest <- utils::read.csv(
     file, colClasses = "character", na.strings = c("", "NA"), strip.white = TRUE,
     check.names = FALSE, encoding = "UTF-8"
-  ))
+  )
+  manifest[] <- lapply(manifest, function(col) {
+    col <- trimws(col)
+    col[col %in% ""] <- NA_character_
+    col
+  })
+  manifest <- dplyr::as_tibble(manifest)
   if (!all(c("dataset", "asset", "type") %in% names(manifest))) {
     stop(
       "The manifest of data release ", release, " doesn't list datasets -- it may be from before ",

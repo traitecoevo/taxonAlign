@@ -348,7 +348,9 @@ match_taxa <- function(
       binomial = word(stripped_name2, 1, 2),
       word_one = extract_genus(original_name),
       word_one_stripped = extract_genus(stripped_name),
-      ignore_bracketed_words = re_replace(original_name, " \\(.*\\)", "")
+      # `[^\\v]` rather than `.`: original_name is raw input, and ICU's `.` (stringr) stops at every line
+      # terminator, PCRE's only at "\\n"; PCRE's `\\v` is exactly ICU's line terminators
+      ignore_bracketed_words = re_replace(original_name, " \\([^\\v]*\\)", "")
     )
 
   taxa <- redistribute_progress(taxa, pb)

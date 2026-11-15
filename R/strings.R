@@ -2,11 +2,14 @@
 #
 # Vendored from APCalign's R/strings.R and R/word.R (traitecoevo/APCalign#302), which keeps them
 # internal. Keep the two in step: a fix to one belongs in the other. taxonAlign takes only the helpers
-# it uses, and adds re_count().
+# it uses, and adds re_count(); the others are APCalign's text unchanged.
 #
 # The rules, from APCalign's notes:
 # - Patterns are Perl regular expressions (PCRE), not ICU. ICU's bare POSIX classes are written as
-#   Unicode properties: `[:alpha:]` -> `\\p{L}`, `[:digit:]` -> `\\p{Nd}`, `[:punct:]` -> `\\p{P}`, and
+#   Unicode properties: `[:alpha:]` -> `\\p{L}` (close enough, not exact: ICU's also takes letter
+#   numbers such as U+2160 and some combining marks -- APCalign's queries are transliterated first, and
+#   taxonAlign's reference names in the 2026-11-14 release show no difference), `[:digit:]` ->
+#   `\\p{Nd}`, `[:punct:]` -> `\\p{P}`, and
 #   `[:space:]` or `\\s` -> `[\\s\\p{Z}\\x85]`. A bare `[:space:]` (outside a bracket expression) is
 #   not a class in PCRE at all. PCRE's own `\\s`, `\\d` and `\\b` know only ASCII.
 # - A character above U+00FF goes in the R string as a `\\u` escape, never in the regex as `\\x{...}`:
@@ -16,9 +19,11 @@
 # - stringi drops a byte-order mark (U+FEFF) at the very start of a string in some functions (trim,
 #   lower and sentence case, splitting) but not others (detect, replace). The helpers copy that.
 #
-# Lower and sentence case follow ICU exactly, using `case_table` (R/sysdata.rda), copied from
+# Lower and sentence case follow ICU, as APCalign's do, using `case_table` (R/sysdata.rda), copied from
 # APCalign's R/sysdata.rda (built by APCalign's data-raw/ascii_table.R from stringi 1.8.7, ICU 74.1).
-# Re-copy it from there if APCalign rebuilds it.
+# Re-copy it from there if APCalign rebuilds it. Not exact for every script (e.g. a final Greek sigma,
+# letters added in newer Unicode versions), which can't arise here: extract_genus() runs
+# APCalign::standardise_names(), which transliterates to ASCII, first.
 
 # Remove a byte-order mark at the start of each string.
 #' @noRd
@@ -46,10 +51,26 @@ re_extract <- function(x, pattern) {
   out
 }
 
-# Replace the first match (stringr::str_replace() with one pattern).
+# Replace the first match. Like stringr::str_replace(), `pattern` may be a
+# vector the same length as `x` (one pattern per element), and other lengths
+# are an error. An NA pattern gives an NA result, where stringr::str_replace()
+# stops with an error.
 #' @noRd
 re_replace <- function(x, pattern, replacement) {
-  sub(pattern, replacement, x, perl = TRUE)
+  if (length(pattern) == 1L) {
+    if (is.na(pattern)) return(rep(NA_character_, length(x)))
+    return(sub(pattern, replacement, x, perl = TRUE))
+  }
+  if (length(pattern) != length(x)) {
+    stop("`pattern` must have length 1 or the same length as `x`.", call. = FALSE)
+  }
+  out <- rep(NA_character_, length(x))
+  ok <- !is.na(pattern)
+  if (any(ok)) {
+    out[ok] <- mapply(function(s, p) sub(p, replacement, s, perl = TRUE),
+                      x[ok], pattern[ok], USE.NAMES = FALSE)
+  }
+  out
 }
 
 #' @noRd

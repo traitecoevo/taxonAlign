@@ -241,8 +241,8 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # integer taxon_ID vs. AFD/APC's character URI/UUID strings)
   resolved <- lapply(resolved, function(tbl) {
     tbl |> dplyr::mutate(
-      taxon_ID = as.character(taxon_ID),
-      accepted_name_usage_ID = as.character(accepted_name_usage_ID)
+      taxon_ID = id_as_character(taxon_ID),
+      accepted_name_usage_ID = id_as_character(accepted_name_usage_ID)
     )
   })
   # no prompt: the order tables were supplied in *is* the priority; `.table_order` records it, for the
@@ -558,6 +558,17 @@ prepare_taxonomic_resources <- function(taxonomic_resources = NULL,
   # APCalign does (#281 there): the same names against the same data give the same output
   attr(resources, "dataset_versions") <- dataset_versions
   resources
+}
+
+# IDs as text. A numeric ID column is written out in full: as.character() gives "1e+05" for 100000,
+# and IDs arrive as doubles from readr (any numeric column in a CSV) and from nanoparquet (a parquet
+# INT64 column, which arrow used to return as integer).
+#' @noRd
+id_as_character <- function(x) {
+  if (!is.numeric(x)) return(as.character(x))
+  out <- format(x, scientific = FALSE, trim = TRUE, digits = 15)
+  out[is.na(x)] <- NA_character_
+  out
 }
 
 # Normalises `taxonomic_resources` (a data frame, a file path, or a list of either, optionally named) into

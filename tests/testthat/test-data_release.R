@@ -56,11 +56,11 @@ write_sample_release <- function(dir = withr::local_tempdir(.local_envir = paren
   )
   nanoparquet::write_parquet(animals, file.path(dir, "NSL_animals.parquet"))
   nanoparquet::write_parquet(gbif, file.path(dir, "GBIF_AU.parquet"))
-  readr::write_csv(tibble::tibble(
+  utils::write.csv(data.frame(
     dataset = c("NSL_animals", "GBIF_AU", NA), asset = c("NSL_animals.parquet", "GBIF_AU.parquet", "nsl_animals_taxon.parquet"),
     type = c("ready", "ready", "raw"), rows = c(3, 3, 10), columns = c(8, 9, 30), source = "test", retrieved = "2026-10-07",
     source_md5 = NA, licence = "CC BY", citation = "test"
-  ), file.path(dir, "manifest.csv"))
+  ), file.path(dir, "manifest.csv"), row.names = FALSE, na = "")
   dir
 }
 
@@ -162,4 +162,21 @@ test_that("a failed re-download leaves the cached copy as it was", {
   expect_error(download_data_release_asset("nsl_fungi_taxon.parquet", "2026-10-08", cache, refresh_cache = TRUE, quiet = TRUE), "Couldn't download")
   expect_equal(readLines(dest), "cached")
   expect_false(file.exists(paste0(dest, ".part")))
+})
+
+test_that("a release file written by arrow (as dataprep writes them) reads the same", {
+  skip_if_not_installed("arrow")
+  release <- write_sample_release()
+  ref <- nanoparquet::read_parquet(file.path(release, "NSL_animals.parquet"))
+  arrow::write_parquet(ref, file.path(release, "NSL_animals.parquet"))
+  out <- load_taxonomic_resources("NSL_animals", path = release)$NSL_animals
+  expect_equal(as.data.frame(out), as.data.frame(ref), ignore_attr = TRUE)
+})
+
+test_that("a manifest's quoted fields are trimmed, as readr did", {
+  release <- write_sample_release()
+  manifest <- readLines(file.path(release, "manifest.csv"))
+  manifest[2] <- sub('"test"', '" test "', manifest[2], fixed = TRUE)
+  writeLines(manifest, file.path(release, "manifest.csv"))
+  expect_equal(data_release_datasets(path = release)$source[1], "test")
 })

@@ -122,8 +122,9 @@ helpers in `R/strings.R` (`re_detect()`, `re_extract()`, `word()`, `split_i()`, 
 vendored from APCalign's `R/strings.R`/`R/word.R` with `R/sysdata.rda`'s `case_table` copied from
 APCalign's; keep them in step with APCalign's (a fix in one belongs in the other), and read the
 ICU -> PCRE traps in that file's header before writing a pattern (a bare `[:space:]` is not a class in
-PCRE; `\s`/`\d` are ASCII-only; characters above U+00FF as `\u` escapes). `tests/testthat/test-strings.R`
-pins every stringr-vs-base difference. Verified on the switch (2026-11-15): 4,388 name lookups (benchmark, APCalign's
+PCRE; `\s`/`\d` are ASCII-only; characters above U+00FF as `\u` escapes). `tests/testthat/test-strings.R` pins
+the helpers against stringr, and checks each translated pattern against its stringr original on
+awkward input. Verified on the switch (2026-11-15): 4,388 name lookups (benchmark, APCalign's
 `species.csv`, messy input, seeded typos) against APC, NSL_animals + CatalogueOfLife_AU, and the four
 other NSL groups, both `taxonomic_splits` options and `align_taxa()`, gave identical results to the
 stringr/arrow version, and so did `prepare_taxonomic_resources()` on every dataset in the 2026-11-14
@@ -184,7 +185,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-491 expectations, all passing as of the last `devtools::test()` run (2026-11-15), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
+507 expectations, all passing as of the last `devtools::test()` run (2026-11-15), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare

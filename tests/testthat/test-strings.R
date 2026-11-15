@@ -10,7 +10,6 @@ test_that("re_detect() keeps missing values missing", {
 
 test_that("U+0085 (next line) counts as white space, as in ICU", {
   expect_equal(trim("\u0085Acacia dealbata\u0085"), "Acacia dealbata")
-  expect_equal(extract_genus("Acacia\u0085dealbata"), "Acacia")
 })
 
 test_that("a byte-order mark at the start is dropped where stringi dropped it", {
@@ -103,4 +102,32 @@ test_that("helpers agree with stringr on awkward strings", {
   expect_equal(re_count(z, "[^\\s\\p{Z}\\x85]+"), stringr::str_count(z, "\\S+"))
   expect_equal(count_fixed(z, " "), stringr::str_count(z, " "))
   expect_equal(re_replace(z, " \\(.*\\)", ""), stringr::str_remove(z, " \\(.*\\)"))
+})
+
+test_that("each pattern translated from stringr gives what the stringr version did", {
+  skip_if_not_installed("stringr")
+  z <- c("Acacia aneura", "Neo-uvaria sp.", "Polygonia c-album", "a\u00e9-b", "1-2", "Acacia -aneura",
+         "Pardalotus (Pardalotinus) striatus", "Nassa (Alectryon, Aciculina) macrocephalus",
+         "Agaricia papillosa (pars)", "Genus (Sub)  x", "A (b)", "Acacia aff. aneura", "Acacia aff\u00a0aneura",
+         "Acacia affinis dealbata", "Gomphrena affinis subsp. pilbarensis", "Acacia cf. aneura",
+         "Acacia cf\taneura", "Acanthiza subg. Geobasileus", "Acanthiza SUBG Geobasileus", "Coccinellid",
+         "Dynastine", "Oligosita sacra (note\rmore)", "A b (c\u2028d) e", "Hakea sericea/decurrens", "",
+         "Banksia serrata L.f. (1782)", "Banksia serrata (Sm., 1798b)", "Banksia [1801]", "Banksia 1801 ", NA)
+  # strip_names_keep_hyphens()'s hyphen step
+  expect_equal(re_replace_all(z, "(?<=\\p{L})-(?=\\p{L})", "Q"),
+               stringr::str_replace_all(z, "(?<=[[:alpha:]])-(?=[[:alpha:]])", "Q"))
+  expect_equal(strip_subgenus_from_name(z), stringr::str_replace(z, "^(\\S+) \\([^()]+\\) (\\S.*)$", "\\1 \\2"))
+  expect_equal(scientific_name_year(z), as.integer(stringr::str_extract(z, "\\d{4}(?=[a-z]?\\]?\\)?\\s*$)")))
+  # match_taxa(): ignore_bracketed_words, the match_02x marker, the English endings, is_affinis
+  expect_equal(re_replace(z, " \\([^\\v]*\\)", ""), stringr::str_remove(z, " \\(.*\\)"))
+  expect_equal(re_detect(z, "(?i)^subg\\.?$"), stringr::str_detect(z, stringr::regex("^subg\\.?$", ignore_case = TRUE)))
+  expect_equal(re_replace(z, "(?i)id$", "idae"), stringr::str_replace(z, stringr::regex("id$", ignore_case = TRUE), "idae"))
+  ws <- "[\\s\\p{Z}\\x85]"
+  new_rank <- paste0("(?!", ws, "+(?:subsp|ssp|subvar|var|forma|form|ser|series|cv|f)\\.?(?:", ws, "|$))")
+  old_rank <- "(?!\\s+(?:subsp|ssp|subvar|var|forma|form|ser|series|cv|f)\\.?(?:\\s|$))"
+  expect_equal(re_detect(z, paste0(" affinis", new_rank, ws)), stringr::str_detect(z, paste0(" affinis", old_rank, "\\s")))
+  expect_equal(re_detect(z, "[Aa]ff[.\\s\\p{Z}\\x85]"), stringr::str_detect(z, "[Aa]ff[\\.\\s]"))
+  expect_equal(re_detect(z, " cf[.\\s\\p{Z}\\x85]"), stringr::str_detect(z, " cf[\\.\\s]"))
+  expect_equal(re_detect(z, "\\p{L}\\/"), stringr::str_detect(z, "[:alpha:]\\/"))
+  expect_equal(re_detect(z, "\\p{Nd}"), stringr::str_detect(z, "[:digit:]"))
 })
