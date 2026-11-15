@@ -5,3 +5,5 @@ ignore/
 # raw reference exports -- read by taxonAlign.dataprep's loaders, not by this package (issue #26)
 inst/extdata/
 data/AFD_*/
+# the pkgdown site, built by CI into the gh-pages branch
+docs/

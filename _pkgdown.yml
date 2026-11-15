@@ -1,0 +1,41 @@
+url: https://traitecoevo.github.io/taxonAlign/
+template:
+  bootstrap: 5
+  bootswatch: litera
+
+navbar:
+  bg: light
+  type: light
+  structure:
+    left:  [intro, reference, articles]
+    right: [search, github]
+  components:
+    github:
+      icon: fab fa-github fa-lg
+      aria-label: GitHub
+      href: https://github.com/traitecoevo/taxonAlign/
+
+articles:
+- title: Articles
+  navbar: ~
+  contents:
+  - get-started
+  - development-history
+
+reference:
+- title: Align and update taxon names
+  contents:
+  - create_taxonomic_update_lookup
+  - align_taxa
+  - update_taxa
+- title: Load released reference data
+  contents:
+  - load_taxonomic_resources
+  - data_release_versions
+  - data_release_datasets
+  - download_data_release_files
+- title: Use your own reference
+  contents:
+  - taxonomic_reference_schema
+  - check_taxonomic_reference
+  - prepare_taxonomic_resources

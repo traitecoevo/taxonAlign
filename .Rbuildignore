@@ -10,13 +10,18 @@
 # raw reference exports kept locally for development -- not package content (issue #26)
 ^inst/extdata$
 # not package data: raw AFD exports kept locally for development (issue #26), and
-# aligned_names_b.rds, a saved output of reproduce-EH-workflow.Rmd. Nothing calls data().
+# aligned_names_b.rds, a saved output of vignettes/_reproduce-EH-workflow.Rmd. Nothing calls data().
 ^data$
-# no registered vignettes: get-started.qmd, development-history.qmd and demo-align-Prendergast.qmd
-# are rendered with Quarto as standalone pages, and reproduce-EH-workflow.Rmd reads
-# ../ausinvertraits.addons, so it can't be built anywhere else (see CLAUDE.md)
+# no registered vignettes: get-started.qmd and development-history.qmd are pkgdown articles,
+# rendered with Quarto; pkgdown skips the files starting "_", which read data outside this repo
+# (_demo-align-Prendergast.qmd: ../../austraits.build; _reproduce-EH-workflow.Rmd:
+# ../ausinvertraits.addons) and so are rendered locally only
 ^vignettes$
 # a WCVP extract committed by accident with a9d74f7 -- not package content
 ^wcvp_MYSG\.csv$
 ^CLAUDE\.md$
 ^\.github$
+# the pkgdown site
+^_pkgdown\.yml$
+^docs$
+^pkgdown$

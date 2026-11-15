@@ -123,9 +123,18 @@ APC parity tests in `test-apc_equivalence.R` run too, and fails on any ERROR or 
 APCalign from GitHub master (`Remotes`). To keep the check clean, `.Rbuildignore` keeps out of the
 built package everything that isn't package content: `vignettes/` (none is a registered vignette: the
 `.qmd` files are rendered with Quarto, and `reproduce-EH-workflow.Rmd` reads `../ausinvertraits.addons`),
-`data/` (nothing calls `data()`), `CLAUDE.md`, `.github/`, and `wcvp_MYSG.csv` (committed by accident).
-So `devtools::check()` needs no flags. taxonAlign is headed for CRAN; the readiness list is a GitHub
-issue.
+`data/` (nothing calls `data()`), `CLAUDE.md`, `.github/`, `wcvp_MYSG.csv` (committed by accident) and
+the pkgdown files. So `devtools::check()` needs no flags. taxonAlign is headed for CRAN; the readiness
+list is [issue #31](https://github.com/traitecoevo/taxonAlign/issues/31).
+
+**pkgdown site** (`_pkgdown.yml`, `.github/workflows/pkgdown.yaml`, as APCalign's): built on every PR,
+deployed to the `gh-pages` branch on a push to `main`, served at https://traitecoevo.github.io/taxonAlign/.
+Articles are `get-started.qmd` and `development-history.qmd`; pkgdown skips any vignette whose name
+starts with `_`, which is how the two that read data outside this repo (`_demo-align-Prendergast.qmd`,
+`_reproduce-EH-workflow.Rmd`) stay out. pkgdown publishes *every* top-level `.md`, so the workflow
+deletes `CLAUDE.md` from its checkout before building -- keep that step. To build locally, install the
+package first (the Quarto articles render in a separate R process that can't see pkgdown's temporary
+install) and move `CLAUDE.md` aside, or delete `docs/CLAUDE.*` after.
 
 `.github/workflows/test-coverage.yaml` measures coverage with covr (also with `NOT_CRAN=true`) and uploads `cobertura.xml` with `codecov/codecov-action` using the org-wide `CODECOV_TOKEN` secret, as traits.use, austraits and traits.build do. Don't switch it back to `covr::codecov()`: Codecov rejects the org token through that route ("Could not find a repository associated with upload token").
 
@@ -984,7 +993,7 @@ warning** (user: it implies laziness, and the GBIF backbone often doesn't change
 
 ### Vignette and data tying the two together
 
-`vignettes/reproduce-EH-workflow.Rmd` reproduces the original AusInvertAlign workflow end-to-end:
+`vignettes/_reproduce-EH-workflow.Rmd` (renamed with a leading `_` on 2026-11-15 so pkgdown skips it) reproduces the original AusInvertAlign workflow end-to-end:
 loads a taxon reference CSV and an "answer key" (`aligned_names.csv`) from the sibling
 `../ausinvertraits.addons` checkout, calls `prepare_taxonomic_resources()`/`align_taxa()`, and diffs
 the result against the known-correct AusInvertTraits alignment to check the port is faithful. It is
@@ -1070,7 +1079,7 @@ missing, right after the tree is fetched -- the same "ensure a possibly-absent c
 anything downstream assumes it's there" defensive pattern used elsewhere in the package (e.g.
 `update_taxa()`'s `if ("genus" %in% names(all_taxa))` check).
 
-`vignettes/demo-align-Prendergast.qmd` is a worked demo against real, messy data rather than a
+`vignettes/_demo-align-Prendergast.qmd` (renamed with a leading `_` on 2026-11-15 so pkgdown skips it; render it locally) is a worked demo against real, messy data rather than a
 hand-built example or a historical record -- requested as "something to show people as a test" of the
 package. **Reworked 2026-10-22**: it now aligns the real `Prendergast_2026_3` plant-pollinator dataset
 (sibling `austraits.build` repo, `../../austraits.build/data/Prendergast_2026_3/data.csv` relative to
