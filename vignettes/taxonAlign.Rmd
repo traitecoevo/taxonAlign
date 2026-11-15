@@ -1,16 +1,14 @@
 ---
 title: "Getting started with taxonAlign"
-format:
-  html:
-    toc: true
-    toc-depth: 3
-    code-fold: false
-execute:
-  warning: false
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with taxonAlign}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}
-knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", warning = FALSE)
 ```
 
 `taxonAlign` aligns a list of raw taxon names against a taxonomic reference -- matching

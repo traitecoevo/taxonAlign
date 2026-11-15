@@ -10,9 +10,6 @@ navbar:
     left:  [intro, reference, articles]
     right: [search, github]
   components:
-    intro:
-      text: Get started
-      href: articles/get-started.html
     github:
       icon: fab fa-github fa-lg
       aria-label: GitHub
@@ -22,7 +19,6 @@ articles:
 - title: Articles
   navbar: ~
   contents:
-  - get-started
   - development-history
 
 reference:

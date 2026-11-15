@@ -11,11 +11,15 @@
 ^inst/extdata$
 # not package data: raw AFD exports kept locally for development (issue #26); nothing calls data()
 ^data$
-# no registered vignettes: get-started.qmd and development-history.qmd are pkgdown articles,
-# rendered with Quarto; pkgdown skips files starting "_": _demo-align-Prendergast.qmd reads
+# the one registered vignette is taxonAlign.Rmd; development-history.qmd is a pkgdown article only,
+# rendered with Quarto, and pkgdown skips files starting "_": _demo-align-Prendergast.qmd reads
 # ../../austraits.build, so it is rendered locally only
 # NB every line here, comments too, is read as a regular expression: keep brackets balanced
-^vignettes$
+^vignettes/development-history\.qmd$
+^vignettes/_demo-align-Prendergast\.qmd$
+^vignettes/\.gitignore$
+^vignettes/\.quarto$
+^vignettes/.*_files$
 ^CLAUDE\.md$
 ^\.github$
 # the pkgdown site
