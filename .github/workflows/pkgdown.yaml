@@ -38,7 +38,8 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::pkgdown, local::.
+          # the quarto R package too, not just the CLI installed above: pkgdown reads .qmd articles with it
+          extra-packages: any::pkgdown, any::quarto, local::.
           needs: website
 
       # pkgdown publishes every top-level .md file and can't be told to skip one; CLAUDE.md is
