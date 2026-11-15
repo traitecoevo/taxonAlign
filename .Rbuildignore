@@ -13,9 +13,10 @@
 # aligned_names_b.rds, a saved output of vignettes/_reproduce-EH-workflow.Rmd. Nothing calls data().
 ^data$
 # no registered vignettes: get-started.qmd and development-history.qmd are pkgdown articles,
-# rendered with Quarto; pkgdown skips the files starting "_", which read data outside this repo
-# (_demo-align-Prendergast.qmd: ../../austraits.build; _reproduce-EH-workflow.Rmd:
-# ../ausinvertraits.addons) and so are rendered locally only
+# rendered with Quarto; pkgdown skips the files starting "_", which read data outside this repo,
+# and so are rendered locally only: _demo-align-Prendergast.qmd reads ../../austraits.build,
+# _reproduce-EH-workflow.Rmd reads ../ausinvertraits.addons
+# NB every line here, comments too, is read as a regular expression: keep brackets balanced
 ^vignettes$
 # a WCVP extract committed by accident with a9d74f7 -- not package content
 ^wcvp_MYSG\.csv$
