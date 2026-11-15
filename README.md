@@ -5,6 +5,7 @@
 
 <!-- badges: start -->
 
+[![Codecov test coverage](https://codecov.io/gh/traitecoevo/taxonAlign/graph/badge.svg)](https://app.codecov.io/gh/traitecoevo/taxonAlign)
 <!-- badges: end -->
 
 ## What you can use these packages for
