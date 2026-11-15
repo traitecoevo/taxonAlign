@@ -148,8 +148,9 @@ list is [issue #31](https://github.com/traitecoevo/taxonAlign/issues/31).
 
 **pkgdown site** (`_pkgdown.yml`, `.github/workflows/pkgdown.yaml`, as APCalign's): built on every PR,
 deployed to the `gh-pages` branch on a push to `main`, served at https://traitecoevo.github.io/taxonAlign/.
-Articles are `get-started.qmd` and `development-history.qmd`; pkgdown skips any vignette whose name
-starts with `_`, which is how `_demo-align-Prendergast.qmd` (reads `../../austraits.build`) stays out. pkgdown publishes *every* top-level `.md`, so the workflow
+The "Get started" page is the registered vignette `vignettes/taxonAlign.Rmd` (pkgdown puts a vignette
+named after the package there); `development-history.qmd` is an article; pkgdown skips any vignette whose
+name starts with `_`, which keeps `_demo-align-Prendergast.qmd` (reads `../../austraits.build`) out. pkgdown publishes *every* top-level `.md`, so the workflow
 deletes `CLAUDE.md` from its checkout before building -- keep that step. To build locally, install the
 package first (the Quarto articles render in a separate R process that can't see pkgdown's temporary
 install) and move `CLAUDE.md` aside, or delete `docs/CLAUDE.*` after.
@@ -1029,35 +1030,22 @@ with `wcvp_MYSG.csv`, which had been committed by accident in a9d74f7; all three
 `data-raw/data-raw.R` is a similar external-path stub for generating package data, not a working
 reproducible data-raw script.
 
-`vignettes/get-started.qmd`, by contrast, **is** self-contained and does actually build -- a
-user-facing "getting started" walkthrough covering every exported function (`load_taxonomic_resources()`
-and the release helpers, `taxonomic_reference_schema()`/`check_taxonomic_reference()`,
-`prepare_taxonomic_resources()`, `align_taxa()`, `update_taxa()`, `create_taxonomic_update_lookup()`) in
-the order you'd actually use them, pointing at taxonAlign.dataprep for building references from other
-sources (its own `vignettes/get-started.qmd` took over the GBIF/taxadb/APC/AFD/interactive sections), ending in a realistic "update a list of raw field names" workflow
-(issue #22 -- keep this list, and the vignette's own worked examples, current as further functions/
-parameters are exported; `library(taxonAlign)` in a real render uses the *installed* package, not
-`devtools::load_all()`'s in-session version, so re-run `devtools::install()` before re-rendering if
-you've made source changes this session and the render doesn't reflect them). Deliberately **not**
-registered as a formal R/knitr
-vignette (no `%\VignetteIndexEntry`/`%\VignetteEngine` comments) -- it's meant to be rendered directly
-via `quarto render vignettes/get-started.qmd` and published as a static page (e.g. GitHub Pages), not
-built via `R CMD build`/`devtools::build_vignettes()`; `DESCRIPTION`'s `VignetteBuilder: knitr` is
-unrelated to it. Verified to `quarto render` cleanly end to end (using real, small, fast examples --
-a tiny hand-built reference table, plus a real live GBIF call for a small genus with only a handful of
-descendants) -- confirm this keeps working after any change to `align_taxa()`/`update_taxa()`/
-`create_taxonomic_update_lookup()`'s output shape. Quarto's own build leaves a `get-started_files/`
-support directory and a `.knit.md` alongside the rendered `.html` -- both are `.gitignore`'d in
-`vignettes/.gitignore`, matching the existing `*.html`/`*.R` entries there; clean them up manually if
-testing a render locally (an `R CMD check` NOTE about "non-portable file paths" pointed at
-`get-started_files/libs/...` is this leftover directory, not a real problem, if you forget to).
+`vignettes/taxonAlign.Rmd` (was `get-started.qmd`; made a registered knitr vignette on 2026-11-15 for
+CRAN, issue #31) is self-contained and builds with `R CMD build` -- a user-facing walkthrough covering
+every exported function (`load_taxonomic_resources()` and the release helpers,
+`taxonomic_reference_schema()`/`check_taxonomic_reference()`, `prepare_taxonomic_resources()`,
+`align_taxa()`, `update_taxa()`, `create_taxonomic_update_lookup()`) in the order you'd actually use
+them, pointing at taxonAlign.dataprep for building references from other sources, ending in a realistic
+"update a list of raw field names" workflow (issue #22 -- keep it current as functions and parameters
+are added). Chunks that download a release are `#| eval: false`: CRAN builds vignettes, and a vignette
+must not need the network. It is also the pkgdown site's "Get started" page.
 
 `vignettes/development-history.qmd` revisits [issue #2](https://github.com/traitecoevo/taxonAlign/issues/2)
 (originally "reproduce current workflow as a vignette", filed as a benchmark-before-refactoring ask) --
 reimplementing the deleted `_reproduce-EH-workflow.Rmd`'s underlying idea (align the real AusInvertTraits name list
 against AFD+iNat and check the result against a real historical answer key) against the *finished*
 package's exported functions, rather than fixing the original prototype vignette's broken external
-paths. Framed explicitly as a historical record, not a tutorial (`get-started.qmd` is that) --
+paths. Framed explicitly as a historical record, not a tutorial (`taxonAlign.Rmd` is that) --
 narrates why the package exists (real, messy invertebrate names, generically attributed to "an
 Australian invertebrates trait database" throughout rather than naming AusInvertTraits or its sibling
 `ausinvertraits`/`ausinvertraits.addons` repos directly -- **those are private repos**, so this
@@ -1086,8 +1074,8 @@ those three exports land in `inst/extdata/` as planned, but the database's own r
 isn't this package's data to ship, and the whole multi-minute alignment plus live GBIF fetch still
 isn't something to run on every render regardless. Confirmed this still renders cleanly end to end
 (`quarto render vignettes/development-history.qmd`, cleaning up the same `*_files/`/`.knit.md`/`.html`
-leftovers as `get-started.qmd` afterward) despite none of its code actually executing, the same "not a
-formal knitr vignette, rendered directly" treatment as `get-started.qmd` -- for the same reason: it
+leftovers afterward) despite none of its code actually executing, the same "not a
+formal knitr vignette, rendered directly" treatment -- because it
 isn't (yet, pending those three files landing in `inst/extdata/`) self-contained enough for
 `R CMD build` to knit it, as the deleted `reproduce-EH-workflow.Rmd` wasn't, so it's kept out of the formal
 vignette-build path entirely rather
