@@ -14,13 +14,13 @@ Source:
 [`DESCRIPTION`](https://github.com/traitecoevo/taxonAlign/blob/main/DESCRIPTION)
 
 Wenk E, Kar F (2026). *taxonAlign: Align and Update Taxonomic Names
-Against Any Taxonomic Reference*. R package version 0.0.0.9001,
+Against Any Taxonomic Reference*. R package version 0.1.0,
 <https://traitecoevo.github.io/taxonAlign/>.
 
     @Manual{,
       title = {taxonAlign: Align and Update Taxonomic Names Against Any Taxonomic Reference},
       author = {Elizabeth Wenk and Fonti Kar},
       year = {2026},
-      note = {R package version 0.0.0.9001},
+      note = {R package version 0.1.0},
       url = {https://traitecoevo.github.io/taxonAlign/},
     }

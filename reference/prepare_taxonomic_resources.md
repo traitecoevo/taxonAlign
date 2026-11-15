@@ -94,3 +94,28 @@ contains subgenus-rank rows, `resources$subgenus` holds the plain
 subgenus names (used for the first convention) and
 `resources$subgenus_v2` additionally holds a `genus_and_subgenus` column
 (used for the second).
+
+## Examples
+
+``` r
+reference <- data.frame(
+  canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+  scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+  taxon_rank = c("genus", "species", "species"),
+  taxonomic_status = c("accepted", "accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = "Boronia",
+  taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+)
+# prepare once, then reuse for several lookups
+resources <- prepare_taxonomic_resources(reference)
+names(resources)
+#> [1] "species" "genus"  
+align_taxa("Boronia serulata", resources)
+#> # A tibble: 1 × 12
+#>   original_name    identifier cleaned_name     aligned_name    taxonomic_dataset
+#>   <chr>            <chr>      <chr>            <chr>           <chr>            
+#> 1 Boronia serulata NA         Boronia serulata Boronia serrul… MY_LIST          
+#> # ℹ 7 more variables: taxon_rank <chr>, taxonomic_status <chr>, taxon_ID <chr>,
+#> #   accepted_name_usage_ID <chr>, aligned_reason <chr>, alignment_code <chr>,
+#> #   chars_changed <int>
+```

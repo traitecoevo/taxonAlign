@@ -136,3 +136,25 @@ One thing this deliberately does **not** do, relative to APCalign's
   only the genus (not the species) has changed. That's a nice refinement
   but doesn't obviously generalize across arbitrary ranks the way the
   rest of this does, so it's omitted here.
+
+## Examples
+
+``` r
+reference <- data.frame(
+  canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+  scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+  taxon_rank = c("genus", "species", "species"),
+  taxonomic_status = c("accepted", "accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = "Boronia",
+  taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+)
+aligned <- align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+# "Boronia oldname" is a synonym, updated to its accepted name
+updated <- update_taxa(aligned, reference)
+updated[, c("original_name", "aligned_name", "accepted_name", "update_reason")]
+#> # A tibble: 2 × 4
+#>   original_name    aligned_name      accepted_name     update_reason            
+#>   <chr>            <chr>             <chr>             <chr>                    
+#> 1 Boronia serulata Boronia serrulata Boronia serrulata Aligned name is already …
+#> 2 Boronia oldname  Boronia oldname   Boronia serrulata Updated to the current a…
+```

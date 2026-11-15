@@ -54,3 +54,17 @@ A named character vector of local file paths, one per file. Downloaded
 files are cached under `<cache_dir>/data_release/<version>/`; if the
 latest release can't be downloaded, the newest release already cached
 that has every file is used instead (never when `version` is given).
+
+## Examples
+
+``` r
+# \donttest{
+# needs the internet: the release's manifest, into a temporary cache
+if (curl::has_internet()) {
+  download_data_release_files("manifest.csv", version = "2026-11-14", cache_dir = tempfile())
+}
+#> Downloading manifest.csv (data release 2026-11-14)...
+#>                                                            manifest.csv 
+#> "/tmp/Rtmpd8tuXB/file1a2a43103891/data_release/2026-11-14/manifest.csv" 
+# }
+```

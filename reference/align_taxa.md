@@ -149,3 +149,24 @@ uses to resolve a matched synonym forward to its current accepted name.
 name being matched and the reference name it matched – `0` for every
 exact match, the actual edit distance (Damerau-Levenshtein) for a fuzzy
 match, and `NA` when nothing matched at all.
+
+## Examples
+
+``` r
+reference <- data.frame(
+  canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+  scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+  taxon_rank = c("genus", "species", "species"),
+  taxonomic_status = c("accepted", "accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = "Boronia",
+  taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+)
+# a misspelling and a synonym
+aligned <- align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+aligned[, c("original_name", "aligned_name", "taxonomic_status", "aligned_reason")]
+#> # A tibble: 2 × 4
+#>   original_name    aligned_name      taxonomic_status aligned_reason            
+#>   <chr>            <chr>             <chr>            <chr>                     
+#> 1 Boronia serulata Boronia serrulata accepted         Fuzzy match of taxon name…
+#> 2 Boronia oldname  Boronia oldname   synonym          Exact match of taxon name…
+```

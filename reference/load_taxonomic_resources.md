@@ -104,8 +104,29 @@ GBIF fetch, taxadb, the AFD's own export, APC).
 ## Examples
 
 ``` r
-if (FALSE) { # \dontrun{
-animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"), version = "2026-10-07")
-create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), animals)
-} # }
+# \donttest{
+# needs the internet: the lichen list from the National Species List (a few MB), into a
+# temporary cache; a misspelling ("inermsi") is corrected
+if (curl::has_internet()) {
+  lichens <- load_taxonomic_resources("NSL_lichens", version = "2026-11-14", cache_dir = tempfile())
+  create_taxonomic_update_lookup(c("Cladia aggregata", "Usnea inermsi"), lichens)
+}
+#> Downloading manifest.csv (data release 2026-11-14)...
+#> Downloading NSL_lichens.parquet (data release 2026-11-14)...
+#> Summary of 2 names:
+#>   -> 2 aligned to a species or infraspecific taxon (2 in ALC)
+#>   -> 0 aligned only to a genus and 0 only to a family
+#>   -> 0 could not be aligned
+#>   -> 0 aligned names were updated to a different name (e.g. a synonym to its accepted name, or an outdated genus to the current one)
+#> # A tibble: 2 × 20
+#>   original_name    aligned_name    accepted_name suggested_name genus taxon_rank
+#>   <chr>            <chr>           <chr>         <chr>          <chr> <chr>     
+#> 1 Cladia aggregata Cladia aggrega… Cladia aggre… Cladia aggreg… Clad… species   
+#> 2 Usnea inermsi    Usnea inermis   Usnea inermis Usnea inermis  Usnea species   
+#> # ℹ 14 more variables: taxonomic_dataset <chr>, taxonomic_status <chr>,
+#> #   scientific_name <chr>, aligned_reason <chr>, update_reason <chr>,
+#> #   number_of_collapsed_taxa <int>, taxon_ID <chr>, taxon_ID_genus <chr>,
+#> #   scientific_name_ID <chr>, family <chr>, taxonomic_status_aligned <chr>,
+#> #   alternative_possible_names <chr>, chars_changed <int>, identifier <chr>
+# }
 ```

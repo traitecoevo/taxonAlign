@@ -25,3 +25,12 @@ data_release_versions(refresh = FALSE)
 
 A character vector of release versions (dates, `"YYYY-MM-DD"`), most
 recent first; empty if GitHub can't be reached.
+
+## Examples
+
+``` r
+# \donttest{
+data_release_versions()
+#> [1] "2026-11-14" "2026-10-07"
+# }
+```

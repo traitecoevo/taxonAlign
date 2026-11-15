@@ -87,3 +87,36 @@ create_taxonomic_update_lookup(
 A tibble with one row per element of `original_name`; see
 [`update_taxa()`](https://traitecoevo.github.io/taxonAlign/reference/update_taxa.md)
 for column details.
+
+## Examples
+
+``` r
+reference <- data.frame(
+  canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+  scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+  taxon_rank = c("genus", "species", "species"),
+  taxonomic_status = c("accepted", "accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = "Boronia",
+  taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+)
+create_taxonomic_update_lookup(
+  c("Boronia serulata", "Boronia oldname", "Boronia sp."),
+  reference
+)
+#> Summary of 3 names:
+#>   -> 2 aligned to a species or infraspecific taxon (2 in MY_LIST)
+#>   -> 1 aligned only to a genus and 0 only to a family
+#>   -> 0 could not be aligned
+#>   -> 1 aligned names were updated to a different name (e.g. a synonym to its accepted name, or an outdated genus to the current one)
+#> # A tibble: 3 × 20
+#>   original_name    aligned_name    accepted_name suggested_name genus taxon_rank
+#>   <chr>            <chr>           <chr>         <chr>          <chr> <chr>     
+#> 1 Boronia serulata Boronia serrul… Boronia serr… Boronia serru… Boro… species   
+#> 2 Boronia oldname  Boronia oldname Boronia serr… Boronia serru… Boro… species   
+#> 3 Boronia sp.      Boronia sp.     Boronia       Boronia sp.    Boro… genus     
+#> # ℹ 14 more variables: taxonomic_dataset <chr>, taxonomic_status <chr>,
+#> #   scientific_name <chr>, aligned_reason <chr>, update_reason <chr>,
+#> #   number_of_collapsed_taxa <int>, taxon_ID <chr>, taxon_ID_genus <chr>,
+#> #   scientific_name_ID <chr>, family <chr>, taxonomic_status_aligned <chr>,
+#> #   alternative_possible_names <chr>, chars_changed <int>, identifier <chr>
+```
