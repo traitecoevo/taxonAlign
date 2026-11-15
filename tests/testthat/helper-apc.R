@@ -4,9 +4,21 @@
 # skipped unless APCalign is installed and the network is available.
 apc_test_cache <- new.env(parent = emptyenv())
 
+# A named APC release, so loading it never asks the GitHub API for the latest one: that call is limited
+# to 60 an hour per IP address without authentication, and on shared CI runners it failed, leaving
+# APCalign's resources NULL (macOS, PR #30). Both packages are compared on the same data, so any release
+# will do; move it forward now and then.
+apc_test_version <- "2026-11-15"
+
 load_apc_resources_for_test <- function() {
   if (!is.null(apc_test_cache$loaded)) return(apc_test_cache$loaded)
-  suppressMessages(APC <- APCalign::load_taxonomic_resources())
+  suppressMessages(APC <- APCalign::load_taxonomic_resources(version = apc_test_version))
+  # a failed download is the network's problem, not a difference between the packages
+  needed <- c("APC", "APC_accepted", "APC_synonyms", "genera_accepted", "genera_synonym",
+              "family_accepted", "family_synonym")
+  if (is.null(APC) || !all(needed %in% names(APC))) {
+    testthat::skip(paste("couldn't load APC release", apc_test_version, "with APCalign"))
+  }
   flat <- dplyr::bind_rows(
     APC$APC_accepted, APC$APC_synonyms,
     APC$genera_accepted, APC$genera_synonym,

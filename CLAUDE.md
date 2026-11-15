@@ -171,11 +171,11 @@ parquet files) -- including a full `create_taxonomic_update_lookup()` run on the
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
 against, so it's skipped unless `APCalign` is installed, network access is available, and it isn't
 running under `R CMD check --as-cran`. It flattens APCalign's tables itself (the same `bind_rows()` as
-dataprep's `load_APC()`, repeated so this package's tests don't depend on dataprep). This has also
-failed intermittently across several local runs (`dplyr::mutate()` on a `NULL` `APC$family_accepted`,
-i.e. a live `APCalign::load_taxonomic_resources()` call sometimes not returning that element) -- looks
-like a real, if intermittent, upstream issue (rate limiting or a partial response on the live APC
-download) rather than anything introduced by taxonAlign, but not yet root-caused; retry if you hit it.
+dataprep's `load_APC()`, repeated so this package's tests don't depend on dataprep). It used to fail intermittently (`dplyr::mutate()` on a `NULL`
+`APC$family_accepted`), locally and on the first CI run (macOS, PR #30): `APCalign::load_taxonomic_resources()`
+asked the GitHub API for the latest release, which allows 60 unauthenticated calls an hour per IP
+address, and returned `NULL` when refused. `helper-apc.R` now names the release (`apc_test_version`,
+so no API call), and skips the tests, with a message, if the download still fails.
 
 README.md is generated from README.qmd — re-render with Quarto after editing it:
 ```
