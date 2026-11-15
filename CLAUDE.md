@@ -175,7 +175,8 @@ dataprep's `load_APC()`, repeated so this package's tests don't depend on datapr
 `APC$family_accepted`), locally and on the first CI run (macOS, PR #30): `APCalign::load_taxonomic_resources()`
 asked the GitHub API for the latest release, which allows 60 unauthenticated calls an hour per IP
 address, and returned `NULL` when refused. `helper-apc.R` now names the release (`apc_test_version`,
-so no API call), and skips the tests, with a message, if the download still fails.
+so no API call). If nothing loads it skips the tests on a developer's machine but fails on CI (`CI`
+set), giving APCalign's reason, so a mistyped release can't switch them off unnoticed.
 
 README.md is generated from README.qmd — re-render with Quarto after editing it:
 ```

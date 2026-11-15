@@ -12,12 +12,30 @@ apc_test_version <- "2026-11-15"
 
 load_apc_resources_for_test <- function() {
   if (!is.null(apc_test_cache$loaded)) return(apc_test_cache$loaded)
-  suppressMessages(APC <- APCalign::load_taxonomic_resources(version = apc_test_version))
-  # a failed download is the network's problem, not a difference between the packages
+  # APCalign's messages are kept, to say why if loading fails
+  messages <- character(0)
+  APC <- withCallingHandlers(
+    APCalign::load_taxonomic_resources(version = apc_test_version),
+    message = function(m) {
+      messages <<- c(messages, trimws(conditionMessage(m)))
+      invokeRestart("muffleMessage")
+    }
+  )
+  # Nothing loaded: offline on a developer's machine, skip; on CI, where the release download is
+  # reliable once no API call is made, fail -- a mistyped `apc_test_version` or an unreadable file
+  # would otherwise switch these tests off unnoticed.
+  if (is.null(APC)) {
+    why <- paste0("couldn't load APC release ", apc_test_version, " with APCalign: ",
+                  paste(messages, collapse = " "))
+    if (nzchar(Sys.getenv("CI"))) stop(why, call. = FALSE)
+    testthat::skip(why)
+  }
+  # Loaded but incomplete is a change in APCalign, never the network's fault
   needed <- c("APC", "APC_accepted", "APC_synonyms", "genera_accepted", "genera_synonym",
               "family_accepted", "family_synonym")
-  if (is.null(APC) || !all(needed %in% names(APC))) {
-    testthat::skip(paste("couldn't load APC release", apc_test_version, "with APCalign"))
+  missing <- setdiff(needed, names(APC))
+  if (length(missing) > 0) {
+    stop("APCalign's resources no longer include: ", paste(missing, collapse = ", "), call. = FALSE)
   }
   flat <- dplyr::bind_rows(
     APC$APC_accepted, APC$APC_synonyms,
