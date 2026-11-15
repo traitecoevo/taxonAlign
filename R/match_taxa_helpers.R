@@ -256,10 +256,10 @@ update_na_with <- function(current, new) {
 redistribute <- function(data) {
   data[["checked"]] <- dplyr::bind_rows(data[["checked"]],
                                         data[["tocheck"]] |>
-                                          dplyr::filter(checked))
+                                          dplyr::filter(.data$checked))
 
   data[["tocheck"]] <-
-    data[["tocheck"]] |> dplyr::filter(!checked)
+    data[["tocheck"]] |> dplyr::filter(!.data$checked)
   data
 }
 

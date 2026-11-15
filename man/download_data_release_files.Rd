@@ -39,3 +39,12 @@ Downloads (or finds already cached) any files from a data release -- the ready d
 never need this directly. \code{\link[=data_release_versions]{data_release_versions()}} lists the releases; each release's
 \code{manifest.csv} lists its files.
 }
+\examples{
+\donttest{
+# needs the internet: the release's manifest, into a temporary cache
+if (curl::has_internet()) {
+  download_data_release_files("manifest.csv", version = "2026-11-14", cache_dir = tempfile())
+}
+}
+
+}

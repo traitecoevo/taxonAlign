@@ -62,10 +62,10 @@ build_split_table <- function(all_taxa) {
     target_year = scientific_name_year(target$scientific_name)
   ) |>
     # a record pointing at itself (e.g. "unplaced") or at nothing isn't a second accepted taxon
-    dplyr::filter(!is.na(target_canonical) & target_ID != taxon_ID & target_status %in% "accepted") |>
+    dplyr::filter(!is.na(.data$target_canonical) & .data$target_ID != .data$taxon_ID & .data$target_status %in% "accepted") |>
     # a species listed as a synonym of its own nominotypical infraspecific taxon ("Newgenus beta" ->
     # "Newgenus beta beta", "Acacia aneura" -> "Acacia aneura var. aneura") isn't a second taxon
-    dplyr::filter(!is_nominotypical_of(target_canonical, canonical_name)) |>
+    dplyr::filter(!is_nominotypical_of(.data$target_canonical, .data$canonical_name)) |>
     # Two or more *different* accepted taxa, not merely two accepted records. With references combined,
     # the same accepted name is often in more than one: a name listed as a synonym of "Nesoptilotis
     # leucotis" in both the AFD and GBIF isn't ambiguous, and would otherwise list its own accepted name
@@ -73,30 +73,30 @@ build_split_table <- function(all_taxa) {
     # one reference, the name as it writes it decides: "Ogma (Seriespinula) australis" and "Ogma
     # (Pateracephalanema) australis" are different taxa that only share a name once the subgenus is
     # removed (and a reference listing the very same name twice is one taxon).
-    dplyr::group_by(canonical_name, target_canonical, target_dataset) |>
-    dplyr::mutate(target_key = if (dplyr::n_distinct(target_name) > 1) target_name else target_canonical) |>
-    dplyr::group_by(canonical_name) |>
-    dplyr::filter(dplyr::n_distinct(target_key) > 1) |>
+    dplyr::group_by(.data$canonical_name, .data$target_canonical, .data$target_dataset) |>
+    dplyr::mutate(target_key = if (dplyr::n_distinct(.data$target_name) > 1) .data$target_name else .data$target_canonical) |>
+    dplyr::group_by(.data$canonical_name) |>
+    dplyr::filter(dplyr::n_distinct(.data$target_key) > 1) |>
     dplyr::mutate(
-      status_rank = taxonomic_status_rank(status),
-      epithet_rank = as.integer(last_word(target_canonical) != last_word(canonical_name)),
+      status_rank = taxonomic_status_rank(.data$status),
+      epithet_rank = as.integer(last_word(.data$target_canonical) != last_word(.data$canonical_name)),
       # same number of words: a trinomial goes to the subspecies, a binomial to the species
-      word_count_rank = as.integer(re_count(target_canonical, "[^\\s\\p{Z}\\x85]+") != re_count(canonical_name, "[^\\s\\p{Z}\\x85]+")),
-      older_rank = as.integer(!(!is.na(target_year) & !is.na(record_year) & target_year <= record_year)),
-      year_rank = dplyr::coalesce(target_year, .Machine$integer.max)
+      word_count_rank = as.integer(re_count(.data$target_canonical, "[^\\s\\p{Z}\\x85]+") != re_count(.data$canonical_name, "[^\\s\\p{Z}\\x85]+")),
+      older_rank = as.integer(!(!is.na(.data$target_year) & !is.na(.data$record_year) & .data$target_year <= .data$record_year)),
+      year_rank = dplyr::coalesce(.data$target_year, .Machine$integer.max)
     ) |>
-    dplyr::arrange(status_rank, epithet_rank, word_count_rank, older_rank, year_rank, source_order, .by_group = TRUE) |>
-    dplyr::distinct(target_key, .keep_all = TRUE)
+    dplyr::arrange(.data$status_rank, .data$epithet_rank, .data$word_count_rank, .data$older_rank, .data$year_rank, .data$source_order, .by_group = TRUE) |>
+    dplyr::distinct(.data$target_key, .keep_all = TRUE)
 
   if (nrow(cand) == 0) return(empty_split_table())
 
   cand |>
     dplyr::summarise(
-      taxon_rank = taxon_rank[1],
-      chosen_ID = taxon_ID[1],
-      alternative_possible_names = paste0(target_name[-1], " (", status[-1], ")", collapse = " | "),
-      all_possible_names = paste0(target_name, " (", status, ")", collapse = " | "),
-      shared_genus = if (dplyr::n_distinct(target_genus) == 1 && !is.na(target_genus[1])) target_genus[1] else NA_character_,
+      taxon_rank = .data$taxon_rank[1],
+      chosen_ID = .data$taxon_ID[1],
+      alternative_possible_names = paste0(.data$target_name[-1], " (", .data$status[-1], ")", collapse = " | "),
+      all_possible_names = paste0(.data$target_name, " (", .data$status, ")", collapse = " | "),
+      shared_genus = if (dplyr::n_distinct(.data$target_genus) == 1 && !is.na(.data$target_genus[1])) .data$target_genus[1] else NA_character_,
       n_possible_names = dplyr::n(),
       .groups = "drop"
     )

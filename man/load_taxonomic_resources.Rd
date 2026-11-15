@@ -69,9 +69,13 @@ The releases are built by the \code{taxonAlign.dataprep} package, which also has
 building a reference from other sources (a live GBIF fetch, taxadb, the AFD's own export, APC).
 }
 \examples{
-\dontrun{
-animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"), version = "2026-10-07")
-create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), animals)
+\donttest{
+# needs the internet: the lichen list from the National Species List (a few MB), into a
+# temporary cache; a misspelling ("inermsi") is corrected
+if (curl::has_internet()) {
+  lichens <- load_taxonomic_resources("NSL_lichens", version = "2026-11-14", cache_dir = tempfile())
+  create_taxonomic_update_lookup(c("Cladia aggregata", "Usnea inermsi"), lichens)
+}
 }
 
 }

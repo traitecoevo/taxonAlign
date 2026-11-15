@@ -52,9 +52,13 @@
 #'  `"data_release"` attribute.
 #'
 #' @examples
-#' \dontrun{
-#' animals <- load_taxonomic_resources(c("NSL_animals", "GBIF_AU"), version = "2026-10-07")
-#' create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), animals)
+#' \donttest{
+#' # needs the internet: the lichen list from the National Species List (a few MB), into a
+#' # temporary cache; a misspelling ("inermsi") is corrected
+#' if (curl::has_internet()) {
+#'   lichens <- load_taxonomic_resources("NSL_lichens", version = "2026-11-14", cache_dir = tempfile())
+#'   create_taxonomic_update_lookup(c("Cladia aggregata", "Usnea inermsi"), lichens)
+#' }
 #' }
 #'
 #' @export
@@ -108,6 +112,14 @@ load_taxonomic_resources <- function(datasets,
 #' @return A tibble with one row per dataset: `dataset`, `asset` (the release file), `rows`, `source`,
 #'  `retrieved`, `licence` and `citation`. The release is recorded in its `"data_release"` attribute.
 #'
+#' @examples
+#' \donttest{
+#' # needs the internet
+#' if (curl::has_internet()) {
+#'   data_release_datasets(version = "2026-11-14", cache_dir = tempfile())
+#' }
+#' }
+#'
 #' @export
 data_release_datasets <- function(version = NULL,
                                   path = NULL,
@@ -142,7 +154,8 @@ data_release_datasets <- function(version = NULL,
   }
   ready <- manifest[manifest$type %in% "ready", ]
   out <- dplyr::transmute(
-    ready, dataset, asset, rows = as.integer(rows), source, retrieved, licence, citation
+    ready, .data$dataset, .data$asset, rows = as.integer(.data$rows), .data$source, .data$retrieved,
+    .data$licence, .data$citation
   )
   attr(out, "data_release") <- release
   out

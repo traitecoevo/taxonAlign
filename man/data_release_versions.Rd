@@ -19,3 +19,9 @@ The reference data \code{\link[=load_taxonomic_resources]{load_taxonomic_resourc
 alignment can be reproduced exactly by naming the release it used. This lists the releases
 available online, most recent first; \code{\link[=data_release_datasets]{data_release_datasets()}} lists what's in one.
 }
+\examples{
+\donttest{
+data_release_versions()
+}
+
+}

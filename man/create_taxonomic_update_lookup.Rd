@@ -55,3 +55,18 @@ details.
 The one-call convenience pipeline: \code{\link[=align_taxa]{align_taxa()}} followed by \code{\link[=update_taxa]{update_taxa()}}. Matches each name in
 \code{original_name} against \code{resources}, then resolves that match forward to its current accepted name.
 }
+\examples{
+reference <- data.frame(
+  canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+  scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+  taxon_rank = c("genus", "species", "species"),
+  taxonomic_status = c("accepted", "accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = "Boronia",
+  taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+)
+create_taxonomic_update_lookup(
+  c("Boronia serulata", "Boronia oldname", "Boronia sp."),
+  reference
+)
+
+}

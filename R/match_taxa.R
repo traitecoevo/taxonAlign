@@ -330,27 +330,28 @@ match_taxa <- function(
 
   taxa$tocheck <- taxa$tocheck |>
     dplyr::mutate(
-      identifier_string = ifelse(is.na(identifier), NA_character_, paste0(" [", identifier, "]")),
-      identifier_string2 = ifelse(is.na(identifier), NA_character_, paste0("; ", identifier))
+      # the column, not match_taxa()'s `identifier` argument (full length; the column is deduplicated)
+      identifier_string = ifelse(is.na(.data$identifier), NA_character_, paste0(" [", .data$identifier, "]")),
+      identifier_string2 = ifelse(is.na(.data$identifier), NA_character_, paste0("; ", .data$identifier))
     )
 
   ## Various stripped versions of the string to match, and versions with 1, 2 and 3 words (genus,
   ## binomial, trinomial).
   taxa$tocheck <- taxa$tocheck |>
     dplyr::mutate(
-      cleaned_name = cleaned_name |>
-        update_na_with(APCalign::standardise_names(original_name)),
-      stripped_name = stripped_name |>
-        update_na_with(strip_names_keep_hyphens(cleaned_name)),
-      stripped_name2 = stripped_name2 |>
-        update_na_with(APCalign::strip_names_extra(stripped_name)),
-      trinomial = word(stripped_name2, 1, 3),
-      binomial = word(stripped_name2, 1, 2),
-      word_one = extract_genus(original_name),
-      word_one_stripped = extract_genus(stripped_name),
+      cleaned_name = .data$cleaned_name |>
+        update_na_with(APCalign::standardise_names(.data$original_name)),
+      stripped_name = .data$stripped_name |>
+        update_na_with(strip_names_keep_hyphens(.data$cleaned_name)),
+      stripped_name2 = .data$stripped_name2 |>
+        update_na_with(APCalign::strip_names_extra(.data$stripped_name)),
+      trinomial = word(.data$stripped_name2, 1, 3),
+      binomial = word(.data$stripped_name2, 1, 2),
+      word_one = extract_genus(.data$original_name),
+      word_one_stripped = extract_genus(.data$stripped_name),
       # `[^\\v]` rather than `.`: original_name is raw input, and ICU's `.` (stringr) stops at every line
       # terminator, PCRE's only at "\\n"; PCRE's `\\v` is exactly ICU's line terminators
-      ignore_bracketed_words = re_replace(original_name, " \\([^\\v]*\\)", "")
+      ignore_bracketed_words = re_replace(.data$original_name, " \\([^\\v]*\\)", "")
     )
 
   taxa <- redistribute_progress(taxa, pb)

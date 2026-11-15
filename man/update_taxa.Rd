@@ -93,3 +93,18 @@ genus (not the species) has changed. That's a nice refinement but doesn't obviou
 across arbitrary ranks the way the rest of this does, so it's omitted here.
 }
 }
+\examples{
+reference <- data.frame(
+  canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+  scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+  taxon_rank = c("genus", "species", "species"),
+  taxonomic_status = c("accepted", "accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = "Boronia",
+  taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+)
+aligned <- align_taxa(c("Boronia serulata", "Boronia oldname"), reference)
+# "Boronia oldname" is a synonym, updated to its accepted name
+updated <- update_taxa(aligned, reference)
+updated[, c("original_name", "aligned_name", "accepted_name", "update_reason")]
+
+}

@@ -26,7 +26,7 @@ drops (with a warning) a record with no \code{canonical_name}. Use this check on
 going to share or release, so that other people get the same results from it that you do.
 }
 \examples{
-reference <- tibble::tibble(
+reference <- data.frame(
   canonical_name = c("Boronia serrulata", "Boronia oldname"),
   scientific_name = c("Boronia serrulata Sm.", "Boronia oldname Sm."),
   taxon_rank = "species", taxonomic_status = c("accepted", "synonym"),

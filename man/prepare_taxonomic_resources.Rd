@@ -66,3 +66,18 @@ subgenus-rank rows, \code{resources$subgenus} holds the plain subgenus names (us
 convention) and \code{resources$subgenus_v2} additionally holds a \code{genus_and_subgenus} column (used for
 the second).
 }
+\examples{
+reference <- data.frame(
+  canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
+  scientific_name = c("Boronia Sm.", "Boronia serrulata Sm.", "Boronia oldname Sm."),
+  taxon_rank = c("genus", "species", "species"),
+  taxonomic_status = c("accepted", "accepted", "synonym"),
+  taxonomic_dataset = "MY_LIST", genus = "Boronia",
+  taxon_ID = c("1", "2", "3"), accepted_name_usage_ID = c("1", "2", "2")
+)
+# prepare once, then reuse for several lookups
+resources <- prepare_taxonomic_resources(reference)
+names(resources)
+align_taxa("Boronia serulata", resources)
+
+}
