@@ -11,3 +11,6 @@ First release.
   fetch them.
 * `taxonomic_reference_schema()`, `check_taxonomic_reference()` and `prepare_taxonomic_resources()`
   let you use your own reference tables.
+* A name that is nothing more than a genus, family or other higher-rank name stays as written
+  (`"Banksia"`), where APCalign gives `"Banksia sp. [Banksia]"`: the input didn't say `"sp."`.
+  `include_bracketed_info = TRUE` gives APCalign's form.

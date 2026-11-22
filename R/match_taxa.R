@@ -255,11 +255,10 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #'  rather than a specific genus. Defaults to `FALSE`.
 #' @param identifier A dataset, location or other identifier,
 #'  which defaults to NA.
-#' @param include_bracketed_info Logical; `TRUE` (the default) gives every higher-rank-only match
-#'  APCalign's `"<rank name> sp. [<original name>; <identifier>]"` form. `FALSE` drops the brackets when
-#'  the name is nothing more than the matched rank's own name (a bare `"Banksia"`, or a bare
-#'  `"Genus (Subgenus)"`), giving just that name; a name with anything more keeps the brackets either
-#'  way.
+#' @param include_bracketed_info Logical; `FALSE` (the default) leaves a name that is nothing more
+#'  than the matched rank's own name (a bare `"Banksia"`, or a bare `"Genus (Subgenus)"`) as that name.
+#'  `TRUE` gives it APCalign's `"<rank name> sp. [<original name>; <identifier>]"` form. A name with
+#'  anything more keeps the brackets either way.
 #' @param progress Logical; if `TRUE`, prints a text progress bar (`utils::txtProgressBar()`) tracking
 #'  what fraction of `taxa$tocheck` has been resolved so far, updated after every match block. Defaults
 #'  to `FALSE`.
@@ -277,7 +276,7 @@ match_taxa <- function(
     intergrades_affinis = TRUE,
     consider_english_name_endings = FALSE,
     identifier = NA_character_,
-    include_bracketed_info = TRUE,
+    include_bracketed_info = FALSE,
     progress = FALSE
 ) {
 

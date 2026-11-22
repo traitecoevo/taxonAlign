@@ -202,7 +202,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-507 expectations, all passing as of the last `devtools::test()` run (2026-11-15), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
+550 expectations, all passing as of the last `devtools::test()` run (2026-11-22), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -247,12 +247,20 @@ Several statements further down describe the earlier port and are superseded whe
   *closest* name across all ranks wins, ties to the broader rank (issue #12 survives only as the
   tie-break). `rank_rows()` restricts first-word matching to one-word names (a multi-word name at an odd
   rank, e.g. APNI "[unranked]" cultivars, used to match by its first word).
-- `include_bracketed_info` defaults to `TRUE` (APCalign's form; user's decision 2026-11-14).
+- `include_bracketed_info` defaults to `FALSE` again (user, 2026-11-22, reversing 2026-11-14's `TRUE`):
+  a bare higher-rank name stays as written (`"Sapindaceae"`, not `"Sapindaceae sp. [Sapindaceae; id]"`)
+  -- "leaving sp. off if sp. or spp. isn't in the input string is a good enough rule". Found via
+  MYtraits.build#195/#196, where bare flora family/genus names came out in two different forms. The
+  user rejected deciding by dataset type (taxonAlign isn't plant-specific, and its input is just a name
+  list) and kept the argument rather than removing it. Only *bare* names change; anything more
+  (`"Genus BF01"`, `"Genus aff. x"`) keeps APCalign's bracketed form. The APC parity tests pass
+  `include_bracketed_info = TRUE`.
 - `update_taxa()`: a name aligned above species keeps its "sp. [...]"/"x [...]" detail with the
   accepted (or followed) name spliced in ("Ptilinopus sp. [Megaloprepia magnifica]"); a synonym leading
   to a non-accepted taxon (APC "excluded") suggests that taxon, `accepted_name` NA.
 - `hybrids`/`intergrades_affinis` default to `TRUE` (user, 2026-11-14; APCalign always detects them).
-- **Approved differences from APCalign** (user, 2026-11-14), and the only ones: `accepted_name`/IDs
+- **Approved differences from APCalign** (user, 2026-11-14; the bare-name one 2026-11-22), and the only ones: a bare
+  higher-rank name stays bare by default (see `include_bracketed_info` above); `accepted_name`/IDs
   filled for genus-level matches ("for some animal groups id-ing to genus is as good as it gets"); no
   alternatives for a match to an *accepted* name that is also another record's synonym (APCalign lists
   them, "Acaena x ovina"; on the AFD that added them to 5 plain accepted vertebrate names); taxonAlign's

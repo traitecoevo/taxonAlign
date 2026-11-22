@@ -1,3 +1,7 @@
+# Every taxonAlign call here passes include_bracketed_info = TRUE: APCalign always gives a bare name
+# as "<name> sp. [<name>; <identifier>]", and taxonAlign's default (plain bare names, user's decision
+# 2026-11-22) is an approved difference.
+#
 # Issue #10: confirm that, given the *same* real APC data, taxonAlign's align_taxa()/
 # create_taxonomic_update_lookup() align/update a curated set of real names the same way APCalign's
 # own align_taxa()/create_taxonomic_update_lookup() do -- not just plausible-looking output on a
@@ -54,7 +58,7 @@ test_that("taxonAlign aligns/updates a curated set of real names the same way AP
   # the matching engine itself, and should agree on aligned_name/taxon_rank for every name regardless
   # of rank -- this is checked *before* either package's update step, which is where their designs
   # deliberately diverge (see below).
-  aligned_taxonAlign <- align_taxa(taxa, resources) |> dplyr::arrange(original_name)
+  aligned_taxonAlign <- align_taxa(taxa, resources, include_bracketed_info = TRUE) |> dplyr::arrange(original_name)
   aligned_APCalign <- suppressMessages(APCalign::align_taxa(taxa, resources = APC, quiet = TRUE)) |>
     dplyr::arrange(original_name)
 
@@ -71,7 +75,7 @@ test_that("taxonAlign aligns/updates a curated set of real names the same way AP
   # keeps the aligned name's original rank ("species"). Both are documented design generalisations (see
   # CLAUDE.md), not discrepancies to chase -- so only accepted_name is compared here, and only for
   # species-complex ranks where the two conventions can't diverge.
-  updated_taxonAlign <- create_taxonomic_update_lookup(taxa, resources) |> dplyr::arrange(original_name)
+  updated_taxonAlign <- create_taxonomic_update_lookup(taxa, resources, include_bracketed_info = TRUE) |> dplyr::arrange(original_name)
   updated_APCalign <- suppressMessages(
     APCalign::create_taxonomic_update_lookup(taxa, resources = APC, quiet = TRUE)
   ) |>
@@ -84,7 +88,7 @@ test_that("taxonAlign aligns/updates a curated set of real names the same way AP
 
   # the APCalign columns taxonAlign added (traitecoevo/taxonAlign.dataprep#1) mean the same thing:
   # the accepted taxon's IDs, authorship and distribution, where APCalign gives one
-  full_taxonAlign <- create_taxonomic_update_lookup(taxa, resources, full = TRUE) |> dplyr::arrange(original_name)
+  full_taxonAlign <- create_taxonomic_update_lookup(taxa, resources, full = TRUE, include_bracketed_info = TRUE) |> dplyr::arrange(original_name)
   full_APCalign <- suppressMessages(
     APCalign::create_taxonomic_update_lookup(taxa, resources = APC, quiet = TRUE, full = TRUE)
   ) |>
@@ -124,7 +128,7 @@ test_that("taxonAlign matches oddball/edge-case real names the same way APCalign
     "Acacia aneura var. aneura (widespread)"  # valid trinomial plus trailing free-text notes
   )
 
-  out_taxonAlign <- align_taxa(taxa, resources, hybrids = TRUE, intergrades_affinis = TRUE)
+  out_taxonAlign <- align_taxa(taxa, resources, hybrids = TRUE, intergrades_affinis = TRUE, include_bracketed_info = TRUE)
   out_APCalign <- suppressMessages(APCalign::align_taxa(taxa, resources = APC, quiet = TRUE))
 
   expect_equal(out_taxonAlign$original_name, out_APCalign$original_name)
@@ -165,7 +169,8 @@ test_that("APCalign's benchmark names align and update the same way in both pack
   ))
   a_up <- suppressMessages(APCalign::update_taxonomy(a_al, resources = loaded$APC, taxonomic_splits = "most_likely_species", quiet = TRUE))
   t_al <- align_taxa(names, loaded$resources, imprecise_fuzzy_matches = TRUE, hybrids = TRUE,
-                     intergrades_affinis = TRUE, identifier = idf, full = TRUE)
+                     intergrades_affinis = TRUE, identifier = idf, full = TRUE,
+                     include_bracketed_info = TRUE)
   t_up <- update_taxa(t_al, loaded$resources)
 
   a_al <- a_al[match(names, a_al$original_name), ]

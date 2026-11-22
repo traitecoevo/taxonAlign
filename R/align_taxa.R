@@ -36,12 +36,12 @@
 #'  a recognised informal English vernacular name ending (e.g. `"-id"`, `"-ine"`, `"-oid"`) for its
 #'  formal Latin equivalent and attempt an exact match on the corrected name. Defaults to `FALSE`. See
 #'  `?match_taxa`.
-#' @param include_bracketed_info Logical; `TRUE` (the default) gives every higher-rank-only match
-#'  APCalign's `"<rank name> sp. [<original name>; <identifier>]"` form, e.g. `"Banksia sp. [Banksia]"`
-#'  for a bare `"Banksia"`. `FALSE` drops the brackets when the name is nothing more than the matched
-#'  rank's own name (a bare single word, or a bare `"Genus (Subgenus)"`), giving just `"Banksia"`;
-#'  `original_name` keeps the raw input either way, and a name with anything more keeps the brackets
-#'  regardless. See `?match_taxa`.
+#' @param include_bracketed_info Logical. `FALSE` (the default) leaves a name that is nothing more
+#'  than a genus, family or other higher-rank name (a bare `"Banksia"`, or a bare `"Genus (Subgenus)"`)
+#'  as that name: `"Banksia"`, with no `" sp."` added, since the input didn't say `"sp."`. `TRUE` gives
+#'  it APCalign's form, `"Banksia sp. [Banksia; <identifier>]"`. A name with anything more than the
+#'  higher-rank name (`"Banksia sp."`, `"Banksia sp. 1"`, `"Banksia aff. ericifolia"`) gets APCalign's
+#'  form either way (`"Banksia sp. [Banksia sp. 1; <identifier>]"`), which keeps that extra text.
 #' @param quiet Accepted for compatibility with APCalign's function of the same name; this
 #'  function prints nothing either way.
 #' @param progress Logical; if `TRUE`, prints a text progress bar tracking what fraction of
@@ -87,7 +87,7 @@ align_taxa <- function(original_name,
                         hybrids = TRUE,
                         intergrades_affinis = TRUE,
                         consider_english_name_endings = FALSE,
-                        include_bracketed_info = TRUE,
+                        include_bracketed_info = FALSE,
                         progress = FALSE,
                         full = FALSE,
                         quiet = FALSE) {
