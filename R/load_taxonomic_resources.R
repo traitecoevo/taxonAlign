@@ -49,7 +49,9 @@
 #'
 #' @return A named list of tibbles, one per dataset, each in taxonAlign's reference format (see
 #'  [taxonomic_reference_schema()]). The release it came from is recorded in each tibble's
-#'  `"data_release"` attribute.
+#'  `"data_release"` attribute. If the release can't be had (offline with nothing cached, GitHub not
+#'  answering, or no such release), `NULL`, invisibly, with a message saying why, as APCalign's
+#'  `load_taxonomic_resources()` does.
 #'
 #' @examples
 #' \donttest{
@@ -74,6 +76,7 @@ load_taxonomic_resources <- function(datasets,
   }
 
   manifest <- data_release_datasets(version, path, refresh_cache, cache_dir, quiet)
+  if (is.null(manifest)) return(invisible(NULL)) # the message is already given
   release <- attr(manifest, "data_release")
   unknown <- setdiff(datasets, manifest$dataset)
   if (length(unknown) > 0) {
@@ -86,10 +89,11 @@ load_taxonomic_resources <- function(datasets,
   assets <- manifest$asset[match(datasets, manifest$dataset)]
   files <- if (is.null(path)) {
     # the version the manifest came from, so every file is from the same release
-    get_data_release_assets(assets, release, cache_dir, refresh_cache, quiet)
+    unavailable_as_null(get_data_release_assets(assets, release, cache_dir, refresh_cache, quiet))
   } else {
     file.path(path, assets)
   }
+  if (is.null(files)) return(invisible(NULL))
 
   result <- lapply(files, function(file) {
     reference <- dplyr::as_tibble(nanoparquet::read_parquet(file))
@@ -111,6 +115,7 @@ load_taxonomic_resources <- function(datasets,
 #'
 #' @return A tibble with one row per dataset: `dataset`, `asset` (the release file), `rows`, `source`,
 #'  `retrieved`, `licence` and `citation`. The release is recorded in its `"data_release"` attribute.
+#'  `NULL`, invisibly, with a message, if the release can't be had.
 #'
 #' @examples
 #' \donttest{
@@ -127,7 +132,9 @@ data_release_datasets <- function(version = NULL,
                                   cache_dir = tools::R_user_dir("taxonAlign", "cache"),
                                   quiet = FALSE) {
   if (is.null(path)) {
-    file <- get_data_release_assets("manifest.csv", version, cache_dir, refresh_cache, quiet)[[1]]
+    file <- unavailable_as_null(get_data_release_assets("manifest.csv", version, cache_dir, refresh_cache, quiet))
+    if (is.null(file)) return(invisible(NULL))
+    file <- file[[1]]
     release <- basename(dirname(file))
   } else {
     file <- file.path(path, "manifest.csv")

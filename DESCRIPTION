@@ -2,8 +2,8 @@ Package: taxonAlign
 Title: Align and Update Taxonomic Names Against Any Taxonomic Reference
 Version: 0.1.0
 Authors@R: c(
-    person(given = "Elizabeth", family = "Wenk", role = c("aut", "ctb", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
-    person(given = "Fonti", family = "Kar", role = c("aut", "cre"), email = "f.kar@unsw.edu.au", comment = c(ORCID = "0000-0002-2760-3974"))
+    person(given = "Elizabeth", family = "Wenk", role = c("aut", "cre", "cph"), email = "e.wenk@unsw.edu.au", comment = c(ORCID = "0000-0001-5640-5910")),
+    person(given = "Fonti", family = "Kar", role = c("aut"), email = "f.kar@unsw.edu.au", comment = c(ORCID = "0000-0002-2760-3974"))
     )
 Description: Matches lists of raw taxon names, including misspelt, informal and
   morphospecies names, to a taxonomic reference, and updates them to their currently accepted

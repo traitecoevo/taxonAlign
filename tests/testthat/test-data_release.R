@@ -13,7 +13,7 @@ test_that("data_release_versions keeps published, date-tagged releases, most rec
   expect_equal(data_release_versions(refresh = TRUE), c("2026-10-08", "2026-01-10"))
 })
 
-test_that("resolve_data_release_version: explicit > latest online > newest cached > clear error", {
+test_that("resolve_data_release_version: explicit > latest online > newest cached > a release-unavailable error", {
   cache <- withr::local_tempdir()
   expect_equal(resolve_data_release_version("2026-01-10", cache), "2026-01-10")
 
@@ -27,7 +27,7 @@ test_that("resolve_data_release_version: explicit > latest online > newest cache
   expect_message(v <- resolve_data_release_version(NULL, cache), "most recent locally cached")
   expect_equal(v, "2026-03-01")
 
-  expect_error(resolve_data_release_version(NULL, withr::local_tempdir()), "no release is cached")
+  expect_error(resolve_data_release_version(NULL, withr::local_tempdir()), "no release is cached", class = "taxonAlign_data_release_unavailable")
 })
 
 test_that("download_data_release_asset reuses an already-downloaded file", {
@@ -179,4 +179,34 @@ test_that("a manifest's quoted fields are trimmed, as readr did", {
   manifest[2] <- sub('"test"', '" test "', manifest[2], fixed = TRUE)
   writeLines(manifest, file.path(release, "manifest.csv"))
   expect_equal(data_release_datasets(path = release)$source[1], "test")
+})
+
+test_that("the exported loaders give a message and NULL, not an error, when the release can't be had", {
+  # as APCalign's loaders do: offline (or GitHub not answering) with nothing cached
+  local_mocked_bindings(data_release_versions = function(...) character(0))
+  cache <- withr::local_tempdir()
+  expect_message(out <- load_taxonomic_resources("NSL_fungi", cache_dir = cache), "Couldn't reach GitHub")
+  expect_null(out)
+  expect_message(out <- data_release_datasets(cache_dir = cache), "Couldn't reach GitHub")
+  expect_null(out)
+  expect_message(out <- download_data_release_files("manifest.csv", cache_dir = cache), "Couldn't reach GitHub")
+  expect_null(out)
+
+  # a named release that can't be downloaded
+  local_mocked_bindings(download.file = function(...) stop("Could not resolve host"), .package = "utils")
+  expect_message(out <- load_taxonomic_resources("NSL_fungi", version = "2026-11-14", cache_dir = cache), "Couldn't download manifest.csv")
+  expect_null(out)
+  expect_message(out <- download_data_release_files("nsl_fungi_taxon.parquet", version = "2026-11-14", cache_dir = cache), "Couldn't download")
+  expect_null(out)
+
+  # the manifest is cached but a dataset's file can't be downloaded
+  cached <- file.path(cache, "data_release", "2026-10-08")
+  dir.create(cached, recursive = TRUE)
+  file.copy(file.path(write_sample_release(), "manifest.csv"), cached)
+  expect_message(out <- load_taxonomic_resources("GBIF_AU", version = "2026-10-08", cache_dir = cache), "Couldn't download GBIF_AU.parquet")
+  expect_null(out)
+
+  # a mistake in the arguments still stops
+  expect_error(load_taxonomic_resources(character(0)), "must name at least one dataset")
+  expect_error(data_release_datasets(path = withr::local_tempdir()), "Couldn't find a data release manifest")
 })

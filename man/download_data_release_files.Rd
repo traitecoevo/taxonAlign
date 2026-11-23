@@ -30,7 +30,9 @@ downloaded.}
 \value{
 A named character vector of local file paths, one per file. Downloaded files are cached
 under \verb{<cache_dir>/data_release/<version>/}; if the latest release can't be downloaded, the newest
-release already cached that has every file is used instead (never when \code{version} is given).
+release already cached that has every file is used instead (never when \code{version} is given). If the
+files can't be had at all (offline with nothing cached, GitHub not answering, or no such release or
+file), \code{NULL}, invisibly, with a message saying why.
 }
 \description{
 Downloads (or finds already cached) any files from a data release -- the ready datasets
