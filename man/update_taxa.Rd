@@ -40,7 +40,7 @@ name, otherwise \code{NA}).
 
 It also has every column APCalign's \code{update_taxonomy()} returns, meaning the same thing, all
 describing the taxon \code{suggested_name} names (its accepted record, or for a split collapsed to genus,
-that genus's):
+the most likely candidate's, as in APCalign):
 \itemize{
 \item \code{taxon_ID}: that accepted record's ID (\code{NA} when the name doesn't resolve to an accepted name).
 The ID of the record the name \emph{matched} (a synonym's own ID, say), which \code{align_taxa()} returns as
@@ -80,8 +80,9 @@ then one published no later than the name itself, then the oldest, then the orde
 them in -- and the others are listed with their status, both in \code{suggested_name}
 (\code{"X [alternative possible names: Y (synonym) | Z (misapplied)]"}) and in a separate
 \code{alternative_possible_names} column. With \code{taxonomic_splits = "collapse_to_higher_taxon"}, a name
-whose candidates all share one genus is collapsed to that genus instead
-(\code{"Genus sp. [collapsed names: ...]"}, \code{taxon_rank = "genus"}, \code{accepted_name = NA}). Only a match
+whose candidates all share one genus is collapsed to that genus instead: \code{suggested_name} is
+\code{"Genus sp. [collapsed names: ...]"} and \code{accepted_name} \code{"Genus sp."}, while \code{taxon_rank} and the
+ID columns stay those of the most likely candidate, as in APCalign. Only a match
 to a synonym record is treated this way: a match to an accepted name, or to a name given with its
 authorship (which identifies one record, e.g. one of two homonyms), is not.
 

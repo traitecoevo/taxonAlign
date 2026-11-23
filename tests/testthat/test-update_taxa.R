@@ -123,7 +123,7 @@ test_that("a column named like one of update_taxa()'s own variables doesn't chan
   expected <- update_taxa(aligned, resources)
   locals <- c("resolved", "current", "collapsed", "alternatives", "usage_ID", "status_aligned",
               "n_collapsed", "genus_current", "genus_prior", "family_current", "family_prior",
-              "higher_rank_suffix", "all_taxa", "aligned_data", "is_collapsed", "accepted_genera",
+              "higher_rank_suffix", "all_taxa", "aligned_data", "accepted_genera",
               "genus_record", "record", "name_record")
   # FALSE and a missing string between them make every one of these change the result, by an
   # error or by a different value, unless the locals are protected from columns

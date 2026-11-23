@@ -79,10 +79,17 @@ test_that("the ID columns describe the suggested taxon, as in APCalign", {
   expect_equal(out$row_number, 1:5)
   # a split: 1 when one name is suggested, the number of candidates when collapsed to genus
   expect_equal(out$number_of_collapsed_taxa, c(NA, NA, NA, 1L, NA))
-  collapsed <- create_taxonomic_update_lookup("Eucalyptus ambigua", ref, taxonomic_splits = "collapse_to_higher_taxon")
+  collapsed <- create_taxonomic_update_lookup("Eucalyptus ambigua", ref, taxonomic_splits = "collapse_to_higher_taxon", full = TRUE)
   expect_equal(collapsed$number_of_collapsed_taxa, 2L)
-  expect_equal(collapsed$taxon_ID, "g1")
-  expect_equal(collapsed$scientific_name, "Eucalyptus L'Her.")
+  # as in APCalign (its #312): "Genus sp." as accepted_name, the rank and IDs of the most likely
+  # candidate (Eucalyptus globulus)
+  expect_equal(collapsed$accepted_name, "Eucalyptus sp.")
+  expect_equal(collapsed$taxon_rank, "species")
+  expect_equal(collapsed$taxon_ID, "s1")
+  expect_equal(collapsed$scientific_name, "Eucalyptus globulus Labill.")
+  expect_equal(collapsed$scientific_name_ID, "ipni:s1")
+  expect_equal(collapsed$taxon_distribution, "Tas, Vic")
+  expect_equal(collapsed$taxon_ID_genus, "g1")
 })
 
 test_that("create_taxonomic_update_lookup(full = TRUE) returns the fuller intermediate columns too", {

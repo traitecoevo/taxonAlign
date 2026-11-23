@@ -134,6 +134,27 @@ stored in a file's metadata (CatalogueOfLife_AU carries `key`, `doi`, `citation`
 `country` and two tibbles, `gbif_names` and `unmatched`); nanoparquet reads the data only. Nothing
 here read them, and the manifest has the citation.
 
+**Keeping in step with APCalign's later refactors** (checked 2026-11-23, up to APCalign 4386df9, #312):
+- No long chains of text substitutions, piped or nested: APCalign #301 rewrote `standardise_names()`'s
+  46-step `%>%` chain as a loop over a list of `c(find, replace)` rules (`gsub_perl_rules()`), because
+  each step of a chain adds to R's evaluation depth and webR in Safari ran out of stack. Write a long
+  run of substitutions as a list of rules and a loop (vendor `gsub_perl_rules()` from APCalign's
+  `R/utils.R` the first time one is needed). taxonAlign's own longest chain is 5 steps.
+- The vendored helpers in `R/strings.R` are identical to APCalign's (`word()` included, since
+  2026-11-23). `fuzzy_match()` (`match_taxa_helpers.R`) has APCalign's #295 (qualifier tokens) and #303
+  (no-letter words), but deliberately detects the qualifier tokens with its own space-delimited
+  `has_token()`, not APCalign's `whole_word()`: with hyphens kept (#311), `whole_word("x")` matches the
+  "x" of hyphenated epithets ("x-carinatus", "obscura-x"; 37 stripped names in the 2026-11-14 release),
+  a bug in APCalign's own `fuzzy_match()` too.
+- `strip_names_keep_hyphens()` does what APCalign's `strip_names()` does since #311 (identical output),
+  but CRAN's APCalign 2.0.1 predates #311. Drop it, and require that APCalign version, once it's on CRAN.
+- `collapse_to_higher_taxon` follows APCalign #312 (2026-11-23, user: "follow APCalign unless ... a
+  documented reason"): `accepted_name` `"Genus sp."`, `taxon_rank`/IDs of the most likely candidate.
+  Still taxonAlign's own: a name is collapsed only when all its candidates share a genus (APCalign
+  takes the most likely candidate's genus whatever the others').
+- Nothing to port from #309's input fixes (all-NA, blank, logical-NA and factor input already work),
+  and taxonAlign has no `output =` file cache.
+
 ### CI and the build
 
 `.github/workflows/R-CMD-check.yaml` (added 2026-11-15; there was no CI before) runs R CMD check
