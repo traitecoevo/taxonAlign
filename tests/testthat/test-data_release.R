@@ -199,6 +199,13 @@ test_that("the exported loaders give a message and NULL, not an error, when the 
   expect_message(out <- download_data_release_files("nsl_fungi_taxon.parquet", version = "2026-11-14", cache_dir = cache), "Couldn't download")
   expect_null(out)
 
+  # the manifest is cached but a dataset's file can't be downloaded
+  cached <- file.path(cache, "data_release", "2026-10-08")
+  dir.create(cached, recursive = TRUE)
+  file.copy(file.path(write_sample_release(), "manifest.csv"), cached)
+  expect_message(out <- load_taxonomic_resources("GBIF_AU", version = "2026-10-08", cache_dir = cache), "Couldn't download GBIF_AU.parquet")
+  expect_null(out)
+
   # a mistake in the arguments still stops
   expect_error(load_taxonomic_resources(character(0)), "must name at least one dataset")
   expect_error(data_release_datasets(path = withr::local_tempdir()), "Couldn't find a data release manifest")
