@@ -97,7 +97,7 @@ falls back to <code>aligned_name</code>), <code>taxonomic_status</code> (the <em
 name, otherwise <code>NA</code>).</p>
 <p>It also has every column APCalign's <code>update_taxonomy()</code> returns, meaning the same thing, all
 describing the taxon <code>suggested_name</code> names (its accepted record, or for a split collapsed to genus,
-that genus's):</p><ul><li><p><code>taxon_ID</code>: that accepted record's ID (<code>NA</code> when the name doesn't resolve to an accepted name).
+the most likely candidate's, as in APCalign):</p><ul><li><p><code>taxon_ID</code>: that accepted record's ID (<code>NA</code> when the name doesn't resolve to an accepted name).
 The ID of the record the name <em>matched</em> (a synonym's own ID, say), which <code><a href="align_taxa.html">align_taxa()</a></code> returns as
 <code>taxon_ID</code>, is kept as <code>aligned_taxon_ID</code>.</p></li>
 <li><p><code>taxon_ID_genus</code>: the ID of its genus's accepted record.</p></li>
@@ -129,8 +129,9 @@ then one published no later than the name itself, then the oldest, then the orde
 them in – and the others are listed with their status, both in <code>suggested_name</code>
 (<code>"X [alternative possible names: Y (synonym) | Z (misapplied)]"</code>) and in a separate
 <code>alternative_possible_names</code> column. With <code>taxonomic_splits = "collapse_to_higher_taxon"</code>, a name
-whose candidates all share one genus is collapsed to that genus instead
-(<code>"Genus sp. [collapsed names: ...]"</code>, <code>taxon_rank = "genus"</code>, <code>accepted_name = NA</code>). Only a match
+whose candidates all share one genus is collapsed to that genus instead: <code>suggested_name</code> is
+<code>"Genus sp. [collapsed names: ...]"</code> and <code>accepted_name</code> <code>"Genus sp."</code>, while <code>taxon_rank</code> and the
+ID columns stay those of the most likely candidate, as in APCalign. Only a match
 to a synonym record is treated this way: a match to an accepted name, or to a name given with its
 authorship (which identifies one record, e.g. one of two homonyms), is not.</p>
 <p>One thing this deliberately does <strong>not</strong> do, relative to APCalign's <code>update_taxonomy()</code>:</p><ul><li><p><strong>No genus-substring surgery.</strong> APCalign's <code>update_taxonomy_APC_genus()</code> reconstructs a species'

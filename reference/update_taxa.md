@@ -67,7 +67,8 @@ name that leads to more than one accepted name, otherwise `NA`).
 
 It also has every column APCalign's `update_taxonomy()` returns, meaning
 the same thing, all describing the taxon `suggested_name` names (its
-accepted record, or for a split collapsed to genus, that genus's):
+accepted record, or for a split collapsed to genus, the most likely
+candidate's, as in APCalign):
 
 - `taxon_ID`: that accepted record's ID (`NA` when the name doesn't
   resolve to an accepted name). The ID of the record the name *matched*
@@ -121,11 +122,13 @@ lists them in – and the others are listed with their status, both in
 (`"X [alternative possible names: Y (synonym) | Z (misapplied)]"`) and
 in a separate `alternative_possible_names` column. With
 `taxonomic_splits = "collapse_to_higher_taxon"`, a name whose candidates
-all share one genus is collapsed to that genus instead
-(`"Genus sp. [collapsed names: ...]"`, `taxon_rank = "genus"`,
-`accepted_name = NA`). Only a match to a synonym record is treated this
-way: a match to an accepted name, or to a name given with its authorship
-(which identifies one record, e.g. one of two homonyms), is not.
+all share one genus is collapsed to that genus instead: `suggested_name`
+is `"Genus sp. [collapsed names: ...]"` and `accepted_name`
+`"Genus sp."`, while `taxon_rank` and the ID columns stay those of the
+most likely candidate, as in APCalign. Only a match to a synonym record
+is treated this way: a match to an accepted name, or to a name given
+with its authorship (which identifies one record, e.g. one of two
+homonyms), is not.
 
 One thing this deliberately does **not** do, relative to APCalign's
 `update_taxonomy()`:
