@@ -196,13 +196,19 @@ convention, `"t-viride"`) rather than invented from scratch. `test-match_taxa_he
 direct `fuzzy_match()` unit tests for the same distance-type/first-letter/tie-breaking behaviour, one
 level below the full `align_taxa()` pipeline.
 
+`test-lookup_summary.R` covers three APCalign features ported in bb134cb and kept by the user
+(2026-11-23): `create_taxonomic_update_lookup()`'s closing summary (incl. both `taxonomic_splits`
+lines), `quiet`, and the data version stamped on `aligned_reason` (data release, a loader's own
+`version`, none, per dataset in a combined reference) -- fixture-only, unlike the removed
+`test-apcalign_ported.R`, which ran them against the whole live APC.
+
 `test-data_release.R` covers release-version resolution, caching and offline fallback (GitHub API and
 downloads mocked), and `load_taxonomic_resources()`/`data_release_datasets()` against a small
 release-shaped directory (`write_sample_release()`: a manifest with ready and raw rows, two ready
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-553 expectations, all passing as of the last `devtools::test()` run (2026-11-22), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
+572 expectations (553 at the last full `devtools::test()` run, 2026-11-22, plus `test-lookup_summary.R`'s 19, run on their own 2026-11-23), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
