@@ -329,9 +329,9 @@ align_taxa("Xylotoles costatus mixtus", resources) # a subspecies
 #> #   chars_changed <int>
 align_taxa("Chrysomelidae", resources)            # family only
 #> # A tibble: 1 × 12
-#>   original_name identifier cleaned_name  aligned_name          taxonomic_dataset
-#>   <chr>         <chr>      <chr>         <chr>                 <chr>            
-#> 1 Chrysomelidae NA         Chrysomelidae Chrysomelidae sp. [C… MY_DATA          
+#>   original_name identifier cleaned_name  aligned_name  taxonomic_dataset
+#>   <chr>         <chr>      <chr>         <chr>         <chr>            
+#> 1 Chrysomelidae NA         Chrysomelidae Chrysomelidae MY_DATA          
 #> # ℹ 7 more variables: taxon_rank <chr>, taxonomic_status <chr>, taxon_ID <chr>,
 #> #   accepted_name_usage_ID <chr>, aligned_reason <chr>, alignment_code <chr>,
 #> #   chars_changed <int>
@@ -379,13 +379,13 @@ align_taxa(
 ) |>
   select(original_name, aligned_name, taxon_rank)
 #> # A tibble: 5 × 3
-#>   original_name             aligned_name                      taxon_rank
-#>   <chr>                     <chr>                             <chr>     
-#> 1 Aporocera t-viride        Aporocera t-viride                species   
-#> 2 Aporocera viridipenis     Aporocera viridipennis            species   
-#> 3 Xylotoles costatus mixtus Xylotoles costatus mixtus         subspecies
-#> 4 Chrysomelidae             Chrysomelidae sp. [Chrysomelidae] family    
-#> 5 Xylotoles sp. 1           Xylotoles sp. [Xylotoles sp. 1]   genus
+#>   original_name             aligned_name                    taxon_rank
+#>   <chr>                     <chr>                           <chr>     
+#> 1 Aporocera t-viride        Aporocera t-viride              species   
+#> 2 Aporocera viridipenis     Aporocera viridipennis          species   
+#> 3 Xylotoles costatus mixtus Xylotoles costatus mixtus       subspecies
+#> 4 Chrysomelidae             Chrysomelidae                   family    
+#> 5 Xylotoles sp. 1           Xylotoles sp. [Xylotoles sp. 1] genus
 ```
 
 In practice your names usually live in a column of a data frame, not a
@@ -568,7 +568,7 @@ create_taxonomic_update_lookup(
 #> 2 Aporocera viridipen… Aporocera v… Aporocera t-… accepted         Updated to t…
 #> 3 Chalcolampra viridis Chalcolampr… Aporocera t-… accepted         Updated to t…
 #> 4 Xylotoles costatus … Xylotoles c… Xylotoles co… accepted         Aligned name…
-#> 5 Chrysomelidae        Chrysomelid… Chrysomelidae accepted         Updated to t…
+#> 5 Chrysomelidae        Chrysomelid… Chrysomelidae accepted         Aligned name…
 ```
 
 ## Putting it together: updating a list of names
@@ -605,7 +605,7 @@ lookup |> select(original_name, identifier, suggested_name, taxonomic_status, up
 #> 1 Aporocera viridipenn… Site A     Aporocera t-v… accepted         Updated to t…
 #> 2 Aporocera viridipenis Site B     Aporocera t-v… accepted         Updated to t…
 #> 3 Xylotoles costatus m… Site A     Xylotoles cos… accepted         Aligned name…
-#> 4 Chrysomelidae         Site C     Chrysomelidae… accepted         Updated to t…
+#> 4 Chrysomelidae         Site C     Chrysomelidae  accepted         Aligned name…
 #> 5 Aporocera sp. 1       Site B     Aporocera sp.… accepted         Updated to t…
 #> 6 Totally unknown beet… Site B     NA             unknown          NA
 ```
@@ -628,7 +628,7 @@ field_data |> left_join(lookup, by = "original_name")
 #> 1 Aporocera vi… Site… Aporocera v… Aporocera t-… Aporocera t-v… Apor… species   
 #> 2 Aporocera vi… Site… Aporocera v… Aporocera t-… Aporocera t-v… Apor… species   
 #> 3 Xylotoles co… Site… Xylotoles c… Xylotoles co… Xylotoles cos… Xylo… subspecies
-#> 4 Chrysomelidae Site… Chrysomelid… Chrysomelidae Chrysomelidae… NA    family    
+#> 4 Chrysomelidae Site… Chrysomelid… Chrysomelidae Chrysomelidae  NA    family    
 #> 5 Aporocera sp… Site… Aporocera s… Aporocera     Aporocera sp.… NA    genus     
 #> 6 Totally unkn… Site… NA           NA            NA             NA    NA        
 #> # ℹ 14 more variables: taxonomic_dataset <chr>, taxonomic_status <chr>,

@@ -45,6 +45,7 @@
 <code><a href="../reference/load_taxonomic_resources.html">load_taxonomic_resources()</a></code> loads versioned reference lists from taxonAlign’s data releases (the National Species List groups and the Catalogue of Life for Australian animals); <code><a href="../reference/data_release_versions.html">data_release_versions()</a></code>, <code><a href="../reference/data_release_datasets.html">data_release_datasets()</a></code> and <code><a href="../reference/download_data_release_files.html">download_data_release_files()</a></code> list and fetch them.</li>
 <li>
 <code><a href="../reference/taxonomic_reference_schema.html">taxonomic_reference_schema()</a></code>, <code><a href="../reference/check_taxonomic_reference.html">check_taxonomic_reference()</a></code> and <code><a href="../reference/prepare_taxonomic_resources.html">prepare_taxonomic_resources()</a></code> let you use your own reference tables.</li>
+<li>A name that is nothing more than a genus, family or other higher-rank name stays as written (<code>"Banksia"</code>), where APCalign gives <code>"Banksia sp. [Banksia]"</code>: the input didn’t say <code>"sp."</code>. <code>include_bracketed_info = TRUE</code> treats it as though it had ended in <code>"sp."</code>: <code>"Banksia sp. [&lt;identifier&gt;]"</code>.</li>
 </ul></div>
   </main></div>
 

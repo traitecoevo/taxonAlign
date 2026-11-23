@@ -428,9 +428,9 @@ first and then at each higher rank present in
 <span><span class="co">#&gt; <span style="color: #949494;">#   chars_changed &lt;int&gt;</span></span></span>
 <span><span class="fu"><a href="../reference/align_taxa.html">align_taxa</a></span><span class="op">(</span><span class="st">"Chrysomelidae"</span>, <span class="va">resources</span><span class="op">)</span>            <span class="co"># family only</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 12</span></span></span>
-<span><span class="co">#&gt;   original_name identifier cleaned_name  aligned_name          taxonomic_dataset</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                 <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Chrysomelidae <span style="color: #BB0000;">NA</span>         Chrysomelidae Chrysomelidae sp. [C… MY_DATA          </span></span>
+<span><span class="co">#&gt;   original_name identifier cleaned_name  aligned_name  taxonomic_dataset</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Chrysomelidae <span style="color: #BB0000;">NA</span>         Chrysomelidae Chrysomelidae MY_DATA          </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 7 more variables: taxon_rank &lt;chr&gt;, taxonomic_status &lt;chr&gt;, taxon_ID &lt;chr&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   accepted_name_usage_ID &lt;chr&gt;, aligned_reason &lt;chr&gt;, alignment_code &lt;chr&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   chars_changed &lt;int&gt;</span></span></span></code></pre></div>
@@ -468,13 +468,13 @@ actually has:</p>
 <span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">original_name</span>, <span class="va">aligned_name</span>, <span class="va">taxon_rank</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 5 × 3</span></span></span>
-<span><span class="co">#&gt;   original_name             aligned_name                      taxon_rank</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                             <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Aporocera t-viride        Aporocera t-viride                species   </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Aporocera viridipenis     Aporocera viridipennis            species   </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> Xylotoles costatus mixtus Xylotoles costatus mixtus         subspecies</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Chrysomelidae             Chrysomelidae sp. [Chrysomelidae] family    </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> Xylotoles sp. 1           Xylotoles sp. [Xylotoles sp. 1]   genus</span></span></code></pre></div>
+<span><span class="co">#&gt;   original_name             aligned_name                    taxon_rank</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                           <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Aporocera t-viride        Aporocera t-viride              species   </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Aporocera viridipenis     Aporocera viridipennis          species   </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> Xylotoles costatus mixtus Xylotoles costatus mixtus       subspecies</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Chrysomelidae             Chrysomelidae                   family    </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> Xylotoles sp. 1           Xylotoles sp. [Xylotoles sp. 1] genus</span></span></code></pre></div>
 <p>In practice your names usually live in a column of a data frame, not
 a bare vector – just pass that column straight in:</p>
 <div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
@@ -633,7 +633,7 @@ call:</p>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Aporocera viridipen… Aporocera v… Aporocera t-… accepted         Updated to t…</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> Chalcolampra viridis Chalcolampr… Aporocera t-… accepted         Updated to t…</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Xylotoles costatus … Xylotoles c… Xylotoles co… accepted         Aligned name…</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> Chrysomelidae        Chrysomelid… Chrysomelidae accepted         Updated to t…</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> Chrysomelidae        Chrysomelid… Chrysomelidae accepted         Aligned name…</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="putting-it-together-updating-a-list-of-names">Putting it together: updating a list of names<a class="anchor" aria-label="anchor" href="#putting-it-together-updating-a-list-of-names"></a>
@@ -668,7 +668,7 @@ including a couple of names nothing will match.</p>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Aporocera viridipenn… Site A     Aporocera t-v… accepted         Updated to t…</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Aporocera viridipenis Site B     Aporocera t-v… accepted         Updated to t…</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> Xylotoles costatus m… Site A     Xylotoles cos… accepted         Aligned name…</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Chrysomelidae         Site C     Chrysomelidae… accepted         Updated to t…</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Chrysomelidae         Site C     Chrysomelidae  accepted         Aligned name…</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> Aporocera sp. 1       Site B     Aporocera sp.… accepted         Updated to t…</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">6</span> Totally unknown beet… Site B     <span style="color: #BB0000;">NA</span>             unknown          <span style="color: #BB0000;">NA</span></span></span></code></pre></div>
 <p><code>identifier</code> (here, <code>site</code>) is threaded through
@@ -686,7 +686,7 @@ unidentified morphospecies from different sites into one.</p>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Aporocera vi… Site… Aporocera v… Aporocera t-… Aporocera t-v… Apor… species   </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Aporocera vi… Site… Aporocera v… Aporocera t-… Aporocera t-v… Apor… species   </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> Xylotoles co… Site… Xylotoles c… Xylotoles co… Xylotoles cos… Xylo… subspecies</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Chrysomelidae Site… Chrysomelid… Chrysomelidae Chrysomelidae… <span style="color: #BB0000;">NA</span>    family    </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Chrysomelidae Site… Chrysomelid… Chrysomelidae Chrysomelidae  <span style="color: #BB0000;">NA</span>    family    </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> Aporocera sp… Site… Aporocera s… Aporocera     Aporocera sp.… <span style="color: #BB0000;">NA</span>    genus     </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">6</span> Totally unkn… Site… <span style="color: #BB0000;">NA</span>           <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>             <span style="color: #BB0000;">NA</span>    <span style="color: #BB0000;">NA</span>        </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 14 more variables: taxonomic_dataset &lt;chr&gt;, taxonomic_status &lt;chr&gt;,</span></span></span>

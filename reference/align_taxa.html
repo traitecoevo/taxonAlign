@@ -67,7 +67,7 @@ full sequence of match attempts.</p>
 <span>  hybrids <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  intergrades_affinis <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  consider_english_name_endings <span class="op">=</span> <span class="cn">FALSE</span>,</span>
-<span>  include_bracketed_info <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  include_bracketed_info <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  progress <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  full <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  quiet <span class="op">=</span> <span class="cn">FALSE</span></span>
@@ -142,12 +142,13 @@ formal Latin equivalent and attempt an exact match on the corrected name. Defaul
 
 
 <dt id="arg-include-bracketed-info">include_bracketed_info<a class="anchor" aria-label="anchor" href="#arg-include-bracketed-info"></a></dt>
-<dd><p>Logical; <code>TRUE</code> (the default) gives every higher-rank-only match
-APCalign's <code>"&lt;rank name&gt; sp. [&lt;original name&gt;; &lt;identifier&gt;]"</code> form, e.g. <code>"Banksia sp. [Banksia]"</code>
-for a bare <code>"Banksia"</code>. <code>FALSE</code> drops the brackets when the name is nothing more than the matched
-rank's own name (a bare single word, or a bare <code>"Genus (Subgenus)"</code>), giving just <code>"Banksia"</code>;
-<code>original_name</code> keeps the raw input either way, and a name with anything more keeps the brackets
-regardless. See <code>?match_taxa</code>.</p></dd>
+<dd><p>Logical. <code>FALSE</code> (the default) leaves a name that is nothing more
+than a genus, family or other higher-rank name (a bare <code>"Banksia"</code>, or a bare <code>"Genus (Subgenus)"</code>)
+as that name: <code>"Banksia"</code>, with no <code>" sp."</code> added, since the input didn't say <code>"sp."</code>. <code>TRUE</code> treats
+it as though it had ended in <code>"sp."</code>: <code>"Banksia sp. [&lt;identifier&gt;]"</code>, the same as <code>"Banksia sp."</code>
+gives either way (APCalign gives <code>"Banksia sp. [Banksia; &lt;identifier&gt;]"</code>). A name with more than
+the higher-rank name (<code>"Banksia sp. 1"</code>, <code>"Banksia aff. ericifolia"</code>) keeps it in brackets either
+way (<code>"Banksia sp. [Banksia sp. 1; &lt;identifier&gt;]"</code>).</p></dd>
 
 
 <dt id="arg-progress">progress<a class="anchor" aria-label="anchor" href="#arg-progress"></a></dt>

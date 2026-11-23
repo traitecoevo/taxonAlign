@@ -23,7 +23,7 @@ align_taxa(
   hybrids = TRUE,
   intergrades_affinis = TRUE,
   consider_english_name_endings = FALSE,
-  include_bracketed_info = TRUE,
+  include_bracketed_info = FALSE,
   progress = FALSE,
   full = FALSE,
   quiet = FALSE
@@ -106,14 +106,16 @@ align_taxa(
 
 - include_bracketed_info:
 
-  Logical; `TRUE` (the default) gives every higher-rank-only match
-  APCalign's `"<rank name> sp. [<original name>; <identifier>]"` form,
-  e.g. `"Banksia sp. [Banksia]"` for a bare `"Banksia"`. `FALSE` drops
-  the brackets when the name is nothing more than the matched rank's own
-  name (a bare single word, or a bare `"Genus (Subgenus)"`), giving just
-  `"Banksia"`; `original_name` keeps the raw input either way, and a
-  name with anything more keeps the brackets regardless. See
-  `?match_taxa`.
+  Logical. `FALSE` (the default) leaves a name that is nothing more than
+  a genus, family or other higher-rank name (a bare `"Banksia"`, or a
+  bare `"Genus (Subgenus)"`) as that name: `"Banksia"`, with no `" sp."`
+  added, since the input didn't say `"sp."`. `TRUE` treats it as though
+  it had ended in `"sp."`: `"Banksia sp. [<identifier>]"`, the same as
+  `"Banksia sp."` gives either way (APCalign gives
+  `"Banksia sp. [Banksia; <identifier>]"`). A name with more than the
+  higher-rank name (`"Banksia sp. 1"`, `"Banksia aff. ericifolia"`)
+  keeps it in brackets either way
+  (`"Banksia sp. [Banksia sp. 1; <identifier>]"`).
 
 - progress:
 
