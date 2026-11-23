@@ -40,8 +40,9 @@ test_that("taxonomic_splits = 'collapse_to_higher_taxon' collapses a split withi
   resources <- prepare_taxonomic_resources(dplyr::mutate(split_reference(), taxonomic_dataset = "T"))
   out <- create_taxonomic_update_lookup("Oldgenus alba", resources, taxonomic_splits = "collapse_to_higher_taxon")
   expect_equal(out$suggested_name, "Newgenus sp. [collapsed names: Newgenus alba (synonym) | Newgenus beta (synonym)]")
-  expect_equal(out$taxon_rank, "genus")
-  expect_true(is.na(out$accepted_name))
+  # as in APCalign (its #312): "Genus sp." as accepted_name, and the rank of the most likely candidate
+  expect_equal(out$accepted_name, "Newgenus sp.")
+  expect_equal(out$taxon_rank, "species")
 })
 
 test_that("a name matched with its authorship isn't treated as a split", {

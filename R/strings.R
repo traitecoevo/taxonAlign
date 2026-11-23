@@ -243,19 +243,19 @@ word <- function(string, start = 1L, end = start, sep = " ") {
     w2 <- split_i(string, sep, start + 1)
     out <- paste(w1, w2)
     out[is.na(w2)] <- NA_character_
-    out
+    return(out)
   } else if (end == start + 2) {
     w1 <- split_i(string, sep, start)
     w2 <- split_i(string, sep, start + 1)
     w3 <- split_i(string, sep, start + 2)
     out <- paste(w1, w2, w3)
     out[is.na(w2) | is.na(w3)] <- NA_character_
-    out
+    return(out)
   } else {
     i <- seq(start, end)
     txt <- split_all(string, sep)
     out <- vapply(txt, function(.x) paste(.x[i], collapse = " "), character(1))
     out[lengths(txt) < end | is.na(string)] <- NA_character_
-    out
+    return(out)
   }
 }

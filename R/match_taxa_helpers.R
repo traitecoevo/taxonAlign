@@ -65,6 +65,11 @@ fuzzy_match <- function(txt, accepted_list,
   ## otherwise the qualifier slots into an unrelated word's position by first-letter coincidence
   ## ("acacia aff aneura" confirmed against "acacia aptaneura").
   qualifier_tokens <- c("aff", "cf", "x")
+  # A space-delimited token, not APCalign's re_detect(txt, whole_word(q)): with hyphens now kept
+  # (APCalign #311, strip_names_keep_hyphens() here), whole_word() reads the "x" of a hyphenated
+  # epithet ("epitetrastichus x-carinatus", "drosophila obscura-x") as a hybrid marker. On every
+  # stripped name in the 2026-11-14 release the two agree for "aff" and "cf", and differ only there,
+  # 37 names, for "x" (2026-11-23).
   has_token <- function(s, q) grepl(paste0("(^|\\s)", q, "($|\\s)"), s, ignore.case = TRUE)
   txt_qualifiers <- qualifier_tokens[vapply(qualifier_tokens, function(q) has_token(txt, q), logical(1))]
 
@@ -300,6 +305,9 @@ extract_genus <- function(taxon_name) {
 # bare "Neo-uvaria" crashed match_10a, and "Polygonia c-album" and "Polygonia c-aureum" shared the
 # binomial "polygonia c". Found aligning a Malaysian plant list against the WCVP
 # (traitecoevo/taxonAlign.dataprep#1). The placeholder is letters only, so strip_names() leaves it be.
+# APCalign's own strip_names() keeps these hyphens since its #311 (2026-11-14; identical output), but
+# not in APCalign 2.0.1, the CRAN version. Once a release with #311 is on CRAN, require it in
+# DESCRIPTION and call APCalign::strip_names() directly.
 strip_names_keep_hyphens <- function(taxon_names) {
   placeholder <- "zqhyphenqz"
   taxon_names |>
