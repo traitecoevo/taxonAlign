@@ -96,7 +96,9 @@ downloaded.</p></dd>
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A named character vector of local file paths, one per file. Downloaded files are cached
 under <code>&lt;cache_dir&gt;/data_release/&lt;version&gt;/</code>; if the latest release can't be downloaded, the newest
-release already cached that has every file is used instead (never when <code>version</code> is given).</p>
+release already cached that has every file is used instead (never when <code>version</code> is given). If the
+files can't be had at all (offline with nothing cached, GitHub not answering, or no such release or
+file), <code>NULL</code>, invisibly, with a message saying why.</p>
     </div>
 
     <div class="section level2">
@@ -107,8 +109,8 @@ release already cached that has every file is used instead (never when <code>ver
 <span class="r-in"><span>  <span class="fu">download_data_release_files</span><span class="op">(</span><span class="st">"manifest.csv"</span>, version <span class="op">=</span> <span class="st">"2026-11-14"</span>, cache_dir <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">}</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Downloading manifest.csv (data release 2026-11-14)...</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                                                            manifest.csv </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> "/tmp/RtmpMQSjOd/file19e9347410f6/data_release/2026-11-14/manifest.csv" </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                           manifest.csv </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> "/tmp/RtmpoDyT7t/file1a6bdaf8fca/data_release/2026-11-14/manifest.csv" </span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 <span class="r-in"><span></span></span>
 </code></pre></div>

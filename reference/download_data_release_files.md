@@ -53,7 +53,10 @@ download_data_release_files(
 A named character vector of local file paths, one per file. Downloaded
 files are cached under `<cache_dir>/data_release/<version>/`; if the
 latest release can't be downloaded, the newest release already cached
-that has every file is used instead (never when `version` is given).
+that has every file is used instead (never when `version` is given). If
+the files can't be had at all (offline with nothing cached, GitHub not
+answering, or no such release or file), `NULL`, invisibly, with a
+message saying why.
 
 ## Examples
 
@@ -64,7 +67,7 @@ if (curl::has_internet()) {
   download_data_release_files("manifest.csv", version = "2026-11-14", cache_dir = tempfile())
 }
 #> Downloading manifest.csv (data release 2026-11-14)...
-#>                                                            manifest.csv 
-#> "/tmp/RtmpMQSjOd/file19e9347410f6/data_release/2026-11-14/manifest.csv" 
+#>                                                           manifest.csv 
+#> "/tmp/RtmpoDyT7t/file1a6bdaf8fca/data_release/2026-11-14/manifest.csv" 
 # }
 ```

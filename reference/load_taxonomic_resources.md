@@ -68,7 +68,9 @@ A named list of tibbles, one per dataset, each in taxonAlign's reference
 format (see
 [`taxonomic_reference_schema()`](https://traitecoevo.github.io/taxonAlign/reference/taxonomic_reference_schema.md)).
 The release it came from is recorded in each tibble's `"data_release"`
-attribute.
+attribute. If the release can't be had (offline with nothing cached,
+GitHub not answering, or no such release), `NULL`, invisibly, with a
+message saying why, as APCalign's `load_taxonomic_resources()` does.
 
 ## Details
 

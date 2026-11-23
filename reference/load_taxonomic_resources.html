@@ -105,7 +105,9 @@ the <code>&lt;dataset&gt;.parquet</code> files). <code>version</code> is then ig
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A named list of tibbles, one per dataset, each in taxonAlign's reference format (see
 <code><a href="taxonomic_reference_schema.html">taxonomic_reference_schema()</a></code>). The release it came from is recorded in each tibble's
-<code>"data_release"</code> attribute.</p>
+<code>"data_release"</code> attribute. If the release can't be had (offline with nothing cached, GitHub not
+answering, or no such release), <code>NULL</code>, invisibly, with a message saying why, as APCalign's
+<code>load_taxonomic_resources()</code> does.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

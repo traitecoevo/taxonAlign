@@ -50,7 +50,8 @@ data_release_datasets(
 
 A tibble with one row per dataset: `dataset`, `asset` (the release
 file), `rows`, `source`, `retrieved`, `licence` and `citation`. The
-release is recorded in its `"data_release"` attribute.
+release is recorded in its `"data_release"` attribute. `NULL`,
+invisibly, with a message, if the release can't be had.
 
 ## Examples
 

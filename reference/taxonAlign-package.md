@@ -20,14 +20,13 @@ Useful links:
 
 ## Author
 
-**Maintainer**: Fonti Kar <f.kar@unsw.edu.au>
-([ORCID](https://orcid.org/0000-0002-2760-3974))
+**Maintainer**: Elizabeth Wenk <e.wenk@unsw.edu.au>
+([ORCID](https://orcid.org/0000-0001-5640-5910)) \[copyright holder\]
 
 Authors:
 
+- Elizabeth Wenk <e.wenk@unsw.edu.au>
+  ([ORCID](https://orcid.org/0000-0001-5640-5910)) \[copyright holder\]
+
 - Fonti Kar <f.kar@unsw.edu.au>
   ([ORCID](https://orcid.org/0000-0002-2760-3974))
-
-- Elizabeth Wenk <e.wenk@unsw.edu.au>
-  ([ORCID](https://orcid.org/0000-0001-5640-5910)) \[contributor,
-  copyright holder\]
