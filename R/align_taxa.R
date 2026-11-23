@@ -38,10 +38,11 @@
 #'  `?match_taxa`.
 #' @param include_bracketed_info Logical. `FALSE` (the default) leaves a name that is nothing more
 #'  than a genus, family or other higher-rank name (a bare `"Banksia"`, or a bare `"Genus (Subgenus)"`)
-#'  as that name: `"Banksia"`, with no `" sp."` added, since the input didn't say `"sp."`. `TRUE` gives
-#'  it APCalign's form, `"Banksia sp. [Banksia; <identifier>]"`. A name with anything more than the
-#'  higher-rank name (`"Banksia sp."`, `"Banksia sp. 1"`, `"Banksia aff. ericifolia"`) gets APCalign's
-#'  form either way (`"Banksia sp. [Banksia sp. 1; <identifier>]"`), which keeps that extra text.
+#'  as that name: `"Banksia"`, with no `" sp."` added, since the input didn't say `"sp."`. `TRUE` treats
+#'  it as though it had ended in `"sp."`: `"Banksia sp. [<identifier>]"`, the same as `"Banksia sp."`
+#'  gives either way (APCalign gives `"Banksia sp. [Banksia; <identifier>]"`). A name with more than
+#'  the higher-rank name (`"Banksia sp. 1"`, `"Banksia aff. ericifolia"`) keeps it in brackets either
+#'  way (`"Banksia sp. [Banksia sp. 1; <identifier>]"`).
 #' @param quiet Accepted for compatibility with APCalign's function of the same name; this
 #'  function prints nothing either way.
 #' @param progress Logical; if `TRUE`, prints a text progress bar tracking what fraction of

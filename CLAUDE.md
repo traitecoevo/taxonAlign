@@ -202,7 +202,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-550 expectations, all passing as of the last `devtools::test()` run (2026-11-22), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
+553 expectations, all passing as of the last `devtools::test()` run (2026-11-22), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -253,14 +253,18 @@ Several statements further down describe the earlier port and are superseded whe
   MYtraits.build#195/#196, where bare flora family/genus names came out in two different forms. The
   user rejected deciding by dataset type (taxonAlign isn't plant-specific, and its input is just a name
   list) and kept the argument rather than removing it. Only *bare* names change; anything more
-  (`"Genus BF01"`, `"Genus aff. x"`) keeps APCalign's bracketed form. The APC parity tests pass
-  `include_bracketed_info = TRUE`.
+  (`"Genus BF01"`, `"Genus aff. x"`) keeps APCalign's bracketed form. With `include_bracketed_info =
+  TRUE` a bare name is treated as though it had ended in "sp.": `"Rutaceae sp. [Turner_2014]"`, the
+  same as `"Rutaceae sp."` gives, not APCalign's `"Rutaceae sp. [Rutaceae; Turner_2014]"` (user,
+  2026-11-22: the dataset ID is wanted, the repeated name isn't). The APC parity tests pass `TRUE` and
+  put APCalign's output through `apcalign_bare_form()` (`helper-apc.R`) before comparing.
 - `update_taxa()`: a name aligned above species keeps its "sp. [...]"/"x [...]" detail with the
   accepted (or followed) name spliced in ("Ptilinopus sp. [Megaloprepia magnifica]"); a synonym leading
   to a non-accepted taxon (APC "excluded") suggests that taxon, `accepted_name` NA.
 - `hybrids`/`intergrades_affinis` default to `TRUE` (user, 2026-11-14; APCalign always detects them).
 - **Approved differences from APCalign** (user, 2026-11-14; the bare-name one 2026-11-22), and the only ones: a bare
-  higher-rank name stays bare by default (see `include_bracketed_info` above); `accepted_name`/IDs
+  higher-rank name stays bare by default, and with `include_bracketed_info = TRUE` is "Name sp. [id]",
+  not "Name sp. [Name; id]" (see `include_bracketed_info` above); `accepted_name`/IDs
   filled for genus-level matches ("for some animal groups id-ing to genus is as good as it gets"); no
   alternatives for a match to an *accepted* name that is also another record's synonym (APCalign lists
   them, "Acaena x ovina"; on the AFD that added them to 5 plain accepted vertebrate names); taxonAlign's

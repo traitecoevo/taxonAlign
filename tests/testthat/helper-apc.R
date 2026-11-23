@@ -57,3 +57,17 @@ load_apc_resources_for_test <- function() {
   apc_test_cache$loaded <- list(APC = APC, resources = prepare_taxonomic_resources(flat))
   apc_test_cache$loaded
 }
+
+# APCalign's form for a bare higher-rank name, "Banksia sp. [Banksia; id]" (or "Banksia sp. [Banksia]"
+# without an identifier), as taxonAlign gives it with include_bracketed_info = TRUE: as though the name
+# had ended in "sp." -- "Banksia sp. [id]", "Banksia sp." (user, 2026-11-22: an approved difference).
+# Bare: one word, or a "Genus (Subgenus)" that aligned to that subgenus ("Asystasia (voucher)" aligns
+# to the genus, and keeps "(voucher)" in brackets), as match_taxa()'s bare_one_word() counts it.
+apcalign_bare_form <- function(name, original_name) {
+  cleaned <- trimws(APCalign::standardise_names(original_name))
+  bare <- !is.na(name) & grepl(" sp\\. \\[[^]]*\\]$", name) &
+    (grepl("^\\S+$", cleaned) | (grepl("^\\S+ \\([^ )]+\\)$", cleaned) & grepl("^\\S+ \\(", name)))
+  name[bare] <- sub(" \\[[^];]*\\]$", "", name[bare])
+  name[bare] <- sub(" \\[[^];]*; ", " [", name[bare])
+  name
+}

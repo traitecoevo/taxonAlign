@@ -113,14 +113,14 @@ test_that("create_taxonomic_update_lookup forwards include_bracketed_info to ali
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
 
   # a bare name stays bare by default (user's decision, 2026-11-22: the input didn't say "sp.");
-  # TRUE gives APCalign's bracketed form
+  # TRUE gives it as though it had ended in "sp."
   out_default <- create_taxonomic_update_lookup("Boronia", resources)
   out_bracketed <- create_taxonomic_update_lookup("Boronia", resources, include_bracketed_info = TRUE)
 
   expect_equal(out_default$aligned_name, "Boronia")
-  expect_equal(out_bracketed$aligned_name, "Boronia sp. [Boronia]")
+  expect_equal(out_bracketed$aligned_name, "Boronia sp.")
   expect_equal(out_default$suggested_name, "Boronia")
-  expect_equal(out_bracketed$suggested_name, "Boronia sp. [Boronia]")
+  expect_equal(out_bracketed$suggested_name, "Boronia sp.")
   # the update step is unaffected either way -- it resolves via taxon_ID, not the aligned_name string
   expect_equal(out_default$accepted_name, "Boronia")
   expect_equal(out_bracketed$accepted_name, "Boronia")

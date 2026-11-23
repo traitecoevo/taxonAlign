@@ -66,10 +66,11 @@ formal Latin equivalent and attempt an exact match on the corrected name. Defaul
 
 \item{include_bracketed_info}{Logical. \code{FALSE} (the default) leaves a name that is nothing more
 than a genus, family or other higher-rank name (a bare \code{"Banksia"}, or a bare \code{"Genus (Subgenus)"})
-as that name: \code{"Banksia"}, with no \code{" sp."} added, since the input didn't say \code{"sp."}. \code{TRUE} gives
-it APCalign's form, \code{"Banksia sp. [Banksia; <identifier>]"}. A name with anything more than the
-higher-rank name (\code{"Banksia sp."}, \code{"Banksia sp. 1"}, \code{"Banksia aff. ericifolia"}) gets APCalign's
-form either way (\code{"Banksia sp. [Banksia sp. 1; <identifier>]"}), which keeps that extra text.}
+as that name: \code{"Banksia"}, with no \code{" sp."} added, since the input didn't say \code{"sp."}. \code{TRUE} treats
+it as though it had ended in \code{"sp."}: \code{"Banksia sp. [<identifier>]"}, the same as \code{"Banksia sp."}
+gives either way (APCalign gives \code{"Banksia sp. [Banksia; <identifier>]"}). A name with more than
+the higher-rank name (\code{"Banksia sp. 1"}, \code{"Banksia aff. ericifolia"}) keeps it in brackets either
+way (\code{"Banksia sp. [Banksia sp. 1; <identifier>]"}).}
 
 \item{progress}{Logical; if \code{TRUE}, prints a text progress bar tracking what fraction of
 \code{original_name} has been resolved so far. Useful for large inputs, where matching can take a while.

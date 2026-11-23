@@ -13,4 +13,4 @@ First release.
   let you use your own reference tables.
 * A name that is nothing more than a genus, family or other higher-rank name stays as written
   (`"Banksia"`), where APCalign gives `"Banksia sp. [Banksia]"`: the input didn't say `"sp."`.
-  `include_bracketed_info = TRUE` gives APCalign's form.
+  `include_bracketed_info = TRUE` treats it as though it had ended in `"sp."`: `"Banksia sp. [<identifier>]"`.
