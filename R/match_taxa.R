@@ -97,7 +97,7 @@ higher_rank_name <- function(taxa, i, stem, marker = " sp.", bare = FALSE, brack
   out <- paste0(stem, marker, " [", taxa$tocheck$cleaned_name[i],
                 ifelse(is.na(identifier), "", identifier), "]")
   bare <- rep_len(bare, length(out))
-  rows <- if (is.logical(i)) which(i) else i
+  rows <- seq_len(nrow(taxa$tocheck))[i] # row numbers, whether `i` is logical or an index
   out[bare] <- if (bracketed) genus_sp_name(taxa, rows[bare], stem[bare]) else stem[bare]
   out
 }
