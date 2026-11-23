@@ -31,6 +31,7 @@ the \verb{<dataset>.parquet} files). \code{version} is then ignored.}
 \value{
 A tibble with one row per dataset: \code{dataset}, \code{asset} (the release file), \code{rows}, \code{source},
 \code{retrieved}, \code{licence} and \code{citation}. The release is recorded in its \code{"data_release"} attribute.
+\code{NULL}, invisibly, with a message, if the release can't be had.
 }
 \description{
 Reads a data release's manifest: the datasets \code{\link[=load_taxonomic_resources]{load_taxonomic_resources()}} can load from it, and

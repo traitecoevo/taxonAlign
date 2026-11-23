@@ -38,7 +38,9 @@ the \verb{<dataset>.parquet} files). \code{version} is then ignored.}
 \value{
 A named list of tibbles, one per dataset, each in taxonAlign's reference format (see
 \code{\link[=taxonomic_reference_schema]{taxonomic_reference_schema()}}). The release it came from is recorded in each tibble's
-\code{"data_release"} attribute.
+\code{"data_release"} attribute. If the release can't be had (offline with nothing cached, GitHub not
+answering, or no such release), \code{NULL}, invisibly, with a message saying why, as APCalign's
+\code{load_taxonomic_resources()} does.
 }
 \description{
 Downloads one or more taxonomic reference datasets from a dated taxonAlign data release, ready to

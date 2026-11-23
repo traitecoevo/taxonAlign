@@ -11,6 +11,27 @@ taxonAlign_data_release_repo <- "traitecoevo/taxonAlign.dataprep"
 # session cache for the release list, so the GitHub API isn't queried on every load
 .taxonAlign_release_cache <- new.env(parent = emptyenv())
 
+# A data release that can't be had: no connection, GitHub not answering, or a release or file that
+# isn't there, with no cached copy to fall back on. Internal functions signal it as an error of its own
+# class; the exported ones turn it into a message and an invisible NULL (unavailable_as_null()), as
+# APCalign's loaders do, so a script or a CRAN check machine without GitHub doesn't stop with an error.
+# Mistakes in the arguments (an unknown dataset, a missing local manifest) still stop.
+#' @noRd
+data_release_unavailable <- function(...) {
+  stop(structure(
+    class = c("taxonAlign_data_release_unavailable", "error", "condition"),
+    list(message = paste0(...), call = NULL)
+  ))
+}
+
+#' @noRd
+unavailable_as_null <- function(expr) {
+  tryCatch(expr, taxonAlign_data_release_unavailable = function(e) {
+    message(conditionMessage(e))
+    invisible(NULL)
+  })
+}
+
 #' List the available taxonAlign data releases
 #'
 #' The reference data [load_taxonomic_resources()] loads is published as dated releases, so that an
@@ -69,10 +90,9 @@ resolve_data_release_version <- function(version, cache_dir, quiet = FALSE) {
     if (!quiet) message("Couldn't reach GitHub; using the most recent locally cached data release, ", local[1], ".")
     return(local[1])
   }
-  stop(
+  data_release_unavailable(
     "Couldn't reach GitHub to find the latest taxonAlign data release, and no release is cached ",
-    "locally. Connect to the internet, or pass `path` to load your own copy of the release files.",
-    call. = FALSE
+    "locally. Connect to the internet, or pass `path` to load your own copy of the release files."
   )
 }
 
@@ -96,10 +116,9 @@ download_data_release_asset <- function(asset, version, cache_dir, refresh_cache
   if (ok) ok <- file.rename(partial, dest)
   if (!ok) {
     unlink(partial)
-    stop(
+    data_release_unavailable(
       "Couldn't download ", asset, " from taxonAlign data release ", version, " (", url, "). ",
-      "Check the version exists (see `data_release_versions()`) and that you're online.",
-      call. = FALSE
+      "Check the version exists (see `data_release_versions()`) and that you're online."
     )
   }
   dest
@@ -141,7 +160,9 @@ get_data_release_assets <- function(assets, version, cache_dir, refresh_cache = 
 #'
 #' @return A named character vector of local file paths, one per file. Downloaded files are cached
 #'  under `<cache_dir>/data_release/<version>/`; if the latest release can't be downloaded, the newest
-#'  release already cached that has every file is used instead (never when `version` is given).
+#'  release already cached that has every file is used instead (never when `version` is given). If the
+#'  files can't be had at all (offline with nothing cached, GitHub not answering, or no such release or
+#'  file), `NULL`, invisibly, with a message saying why.
 #'
 #' @examples
 #' \donttest{
@@ -157,5 +178,5 @@ download_data_release_files <- function(files,
                                         refresh_cache = FALSE,
                                         cache_dir = tools::R_user_dir("taxonAlign", "cache"),
                                         quiet = FALSE) {
-  get_data_release_assets(files, version, cache_dir, refresh_cache, quiet)
+  unavailable_as_null(get_data_release_assets(files, version, cache_dir, refresh_cache, quiet))
 }
