@@ -89,14 +89,16 @@ genus_sp_name <- function(taxa, i, stem) {
 }
 
 # "Acacia sp. [Acacia aff. dealbata; Royal NP]", or with marker = " x", "Acacia x [...]": for a name
-# with more below the rank it aligned to, which is kept in brackets. `bare` (see ?match_taxa's
-# include_bracketed_info) gives just the stem instead.
-higher_rank_name <- function(taxa, i, stem, marker = " sp.", bare = FALSE) {
+# with more below the rank it aligned to, which is kept in brackets. Where `bare` (the name is nothing
+# more than the rank's own name), it gives just the stem, or with `bracketed` (?match_taxa's
+# include_bracketed_info), the stem as though the name had ended in "sp.": "Acacia sp. [Royal NP]".
+higher_rank_name <- function(taxa, i, stem, marker = " sp.", bare = FALSE, bracketed = FALSE) {
   identifier <- taxa$tocheck$identifier_string2[i]
   out <- paste0(stem, marker, " [", taxa$tocheck$cleaned_name[i],
                 ifelse(is.na(identifier), "", identifier), "]")
   bare <- rep_len(bare, length(out))
-  out[bare] <- stem[bare]
+  rows <- if (is.logical(i)) which(i) else i
+  out[bare] <- if (bracketed) genus_sp_name(taxa, rows[bare], stem[bare]) else stem[bare]
   out
 }
 
@@ -255,11 +257,11 @@ match_special_case_to_genus <- function(taxa, resources, detect_fn, bracket_sep,
 #'  rather than a specific genus. Defaults to `FALSE`.
 #' @param identifier A dataset, location or other identifier,
 #'  which defaults to NA.
-#' @param include_bracketed_info Logical; `TRUE` (the default) gives every higher-rank-only match
-#'  APCalign's `"<rank name> sp. [<original name>; <identifier>]"` form. `FALSE` drops the brackets when
-#'  the name is nothing more than the matched rank's own name (a bare `"Banksia"`, or a bare
-#'  `"Genus (Subgenus)"`), giving just that name; a name with anything more keeps the brackets either
-#'  way.
+#' @param include_bracketed_info Logical; `FALSE` (the default) leaves a name that is nothing more
+#'  than the matched rank's own name (a bare `"Banksia"`, or a bare `"Genus (Subgenus)"`) as that name.
+#'  `TRUE` gives it as though it had ended in `"sp."`: `"<rank name> sp. [<identifier>]"` (APCalign gives
+#'  `"<rank name> sp. [<original name>; <identifier>]"`). A name with anything more keeps it in brackets
+#'  either way.
 #' @param progress Logical; if `TRUE`, prints a text progress bar (`utils::txtProgressBar()`) tracking
 #'  what fraction of `taxa$tocheck` has been resolved so far, updated after every match block. Defaults
 #'  to `FALSE`.
@@ -277,7 +279,7 @@ match_taxa <- function(
     intergrades_affinis = TRUE,
     consider_english_name_endings = FALSE,
     identifier = NA_character_,
-    include_bracketed_info = TRUE,
+    include_bracketed_info = FALSE,
     progress = FALSE
 ) {
 
@@ -362,9 +364,9 @@ match_taxa <- function(
   is_genus_sp <- function(x) {
     re_detect(x, "[\\s\\p{Z}\\x85]sp\\.$") & count_fixed(x, " ") %in% c(1, 2)
   }
-  # TRUE where the name is nothing more than one word -- see include_bracketed_info.
+  # TRUE where the name is nothing more than `words` words -- see include_bracketed_info.
   bare_one_word <- function(taxa, i, words = 1) {
-    !include_bracketed_info & re_count(trim(taxa$tocheck$cleaned_name[i]), "[^\\s\\p{Z}\\x85]+") == words
+    re_count(trim(taxa$tocheck$cleaned_name[i]), "[^\\s\\p{Z}\\x85]+") == words
   }
 
   # ---- match_01: exact matches -----------------------------------------------------------------------
@@ -445,7 +447,7 @@ match_taxa <- function(
       i <- is_marker_subgenus(taxa$tocheck$cleaned_name) & key %in% sv2$genus_and_subgenus
       ii <- match(key[i], sv2$genus_and_subgenus)
       taxa <- apply_match(taxa, i, sv2, ii,
-                          higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bare = bare_one_word(taxa, i, 3)),
+                          higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bracketed = include_bracketed_info, bare = bare_one_word(taxa, i, 3)),
                           "Exact match of a \"Genus subg. Subgenusname\" name to a subgenus",
                           "match_02x_marker_exact_subgenus", taxon_rank = "subgenus", pb = pb)
       if (done(taxa)) return(finish_match_taxa(taxa))
@@ -457,7 +459,7 @@ match_taxa <- function(
       i <- detected & !is.na(hit)
       ii <- match(hit[i], sv2$genus_and_subgenus)
       taxa <- apply_match(taxa, i, sv2, ii,
-                          higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bare = bare_one_word(taxa, i, 3)),
+                          higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bracketed = include_bracketed_info, bare = bare_one_word(taxa, i, 3)),
                           "Fuzzy match of a \"Genus subg. Subgenusname\" name to a subgenus",
                           "match_02x_marker_fuzzy_subgenus", taxon_rank = "subgenus",
                           chars_changed = stringdist::stringdist(key[i], hit[i], method = "dl"), pb = pb)
@@ -487,7 +489,7 @@ match_taxa <- function(
       i <- is_bracketed_subgenus(taxa$tocheck$cleaned_name) & pair %in% sv2$genus_and_subgenus
       ii <- match(pair[i], sv2$genus_and_subgenus)
       taxa <- apply_match(taxa, i, sv2, ii,
-                          higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bare = bare_one_word(taxa, i, 2)),
+                          higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bracketed = include_bracketed_info, bare = bare_one_word(taxa, i, 2)),
                           "Exact match of a bracketed genus (subgenus) to a subgenus",
                           "match_02y_bracket_exact_subgenus", taxon_rank = "subgenus", pb = pb)
       if (done(taxa)) return(finish_match_taxa(taxa))
@@ -499,7 +501,7 @@ match_taxa <- function(
       i <- detected & !is.na(hit)
       ii <- match(hit[i], sv2$genus_and_subgenus)
       taxa <- apply_match(taxa, i, sv2, ii,
-                          higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bare = bare_one_word(taxa, i, 2)),
+                          higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bracketed = include_bracketed_info, bare = bare_one_word(taxa, i, 2)),
                           "Fuzzy match of a bracketed genus (subgenus) to a subgenus",
                           "match_02y_bracket_fuzzy_subgenus", taxon_rank = "subgenus",
                           chars_changed = stringdist::stringdist(pair[i], hit[i], method = "dl"), pb = pb)
@@ -548,7 +550,7 @@ match_taxa <- function(
       i <- !is.na(candidate) & candidate != taxa$tocheck$word_one_stripped & candidate %in% tbl$canonical_name
       ii <- match(candidate[i], tbl$canonical_name)
       taxa <- apply_match(taxa, i, tbl, ii,
-                          higher_rank_name(taxa, i, candidate[i], bare = bare_one_word(taxa, i)),
+                          higher_rank_name(taxa, i, candidate[i], bracketed = include_bracketed_info, bare = bare_one_word(taxa, i)),
                           paste0("Matched by substituting the formal ", sub$rank, " name ending for the English vernacular one"),
                           "match_02z_english_ending_accepted", taxon_rank = sub$rank, pb = pb)
       if (done(taxa)) return(finish_match_taxa(taxa))
@@ -771,7 +773,7 @@ match_taxa <- function(
     i <- re_detect(second_word(taxa$tocheck$cleaned_name), "^\\(.*\\)$") & pair %in% sv2$genus_and_subgenus
     ii <- match(pair[i], sv2$genus_and_subgenus)
     taxa <- apply_match(taxa, i, sv2, ii,
-                        higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bare = bare_one_word(taxa, i, 2)),
+                        higher_rank_name(taxa, i, sv2$genus_and_subgenus[ii], bracketed = include_bracketed_info, bare = bare_one_word(taxa, i, 2)),
                         "Exact match of a genus (subgenus) to a subgenus",
                         "match_12a_exact_subgenus_accepted_or_synonym", taxon_rank = "subgenus", pb = pb)
     if (done(taxa)) return(finish_match_taxa(taxa))
@@ -786,7 +788,7 @@ match_taxa <- function(
     i <- taxa$tocheck$word_one_stripped %in% tbl$word_one_stripped
     ii <- match(taxa$tocheck$word_one_stripped[i], tbl$word_one_stripped)
     taxa <- apply_match(taxa, i, tbl, ii,
-                        higher_rank_name(taxa, i, tbl$word_one_stripped[ii], bare = bare_one_word(taxa, i)),
+                        higher_rank_name(taxa, i, tbl$word_one_stripped[ii], bracketed = include_bracketed_info, bare = bare_one_word(taxa, i)),
                         paste0("Exact match of the first word of the taxon name to a ", ranks),
                         "match_12b_higher_rank_exact_accepted", taxon_rank = ranks, pb = pb)
     if (done(taxa)) return(finish_match_taxa(taxa))
@@ -801,7 +803,7 @@ match_taxa <- function(
       i <- fz$rank %in% ranks
       ii <- fz$row[i]
       taxa <- apply_match(taxa, i, tbl, ii,
-                          higher_rank_name(taxa, i, fz$name[i], bare = bare_one_word(taxa, i)),
+                          higher_rank_name(taxa, i, fz$name[i], bracketed = include_bracketed_info, bare = bare_one_word(taxa, i)),
                           paste0("Fuzzy match of the first word of the taxon name to a", if (status == "accepted") "n accepted " else " synonymous ", ranks),
                           paste0("match_12c_higher_rank_fuzzy_", status), taxon_rank = ranks,
                           chars_changed = stringdist::stringdist(taxa$tocheck$word_one_stripped[i], fz$name[i], method = "dl"),

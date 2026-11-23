@@ -38,8 +38,12 @@ test_that("update_taxa resolves a genus-level synonym forward (not just species)
 
   expect_equal(aligned$taxon_rank, "genus")
   expect_equal(out$accepted_name, "Boronia")
-  expect_equal(out$suggested_name, "Boronia sp. [Boronella]")
+  expect_equal(out$suggested_name, "Boronia")
   expect_equal(out$taxon_rank, "genus")
+  # with include_bracketed_info = TRUE, the accepted genus with "sp.", as for "Boronella sp."
+  bracketed <- update_taxa(align_taxa("Boronella", resources, include_bracketed_info = TRUE), resources)
+  expect_equal(bracketed$suggested_name, "Boronia sp.")
+  expect_equal(update_taxa(align_taxa("Boronella sp.", resources), resources)$suggested_name, "Boronia sp.")
   expect_equal(out$taxonomic_status_aligned, "synonym")
   expect_equal(out$taxonomic_status, "accepted")
 })
@@ -51,7 +55,7 @@ test_that("update_taxa resolves a synonym at a third, arbitrary higher rank ('or
 
   expect_equal(aligned$taxon_rank, "order")
   expect_equal(out$accepted_name, "Sapindales")
-  expect_equal(out$suggested_name, "Sapindales sp. [Oldorderia]")
+  expect_equal(out$suggested_name, "Sapindales")
   expect_equal(out$taxon_rank, "order")
   expect_equal(out$taxonomic_status_aligned, "synonym")
   expect_equal(out$taxonomic_status, "accepted")

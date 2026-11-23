@@ -319,14 +319,26 @@ test_that("include_bracketed_info = FALSE keeps the bracketed format whenever th
   expect_true(grepl("^Boronia sp\\. \\[Boronia sp\\. 1\\]$", out_morphospecies$aligned_name))
 })
 
-test_that("include_bracketed_info = TRUE always uses the bracketed format, matching APCalign's convention", {
+test_that("include_bracketed_info = TRUE gives a bare name as though it had ended in 'sp.'", {
   resources <- prepare_taxonomic_resources(sample_taxonomic_resources())
+  names <- c("Rutaceae", "Rutaceae sp.", "Boronia", "Boronia sp.", "Boronela", "Boronia (Valvatae)",
+             "Boronia subg. Valvatae", "Boronia unresolvedepithet")
 
-  out_genus <- align_taxa("Boronia", resources, include_bracketed_info = TRUE)
-  out_subgenus_bracket <- align_taxa("Boronia (Valvatae)", resources, include_bracketed_info = TRUE)
+  out <- align_taxa(names, resources, identifier = "Turner_2014", include_bracketed_info = TRUE)
+  # not APCalign's "Boronia sp. [Boronia; Turner_2014]" (user, 2026-11-22): the name is already
+  # aligned_name's own stem, so only the identifier goes in brackets
+  expect_equal(out$aligned_name, c(
+    "Rutaceae sp. [Turner_2014]", "Rutaceae sp. [Turner_2014]", "Boronia sp. [Turner_2014]",
+    "Boronia sp. [Turner_2014]", "Boronia sp. [Turner_2014]", "Boronia (Valvatae) sp. [Turner_2014]",
+    "Boronia (Valvatae) sp. [Turner_2014]", "Boronia sp. [Boronia unresolvedepithet; Turner_2014]"
+  ))
+  # the same as the names written with "sp."
+  expect_equal(out$aligned_name[1], out$aligned_name[2])
+  expect_equal(out$aligned_name[3], out$aligned_name[4])
 
-  expect_equal(out_genus$aligned_name, "Boronia sp. [Boronia]")
-  expect_equal(out_subgenus_bracket$aligned_name, "Boronia (Valvatae) sp. [Boronia (Valvatae)]")
+  # without an identifier, just "sp."
+  out_no_id <- align_taxa(c("Boronia", "Boronia (Valvatae)"), resources, include_bracketed_info = TRUE)
+  expect_equal(out_no_id$aligned_name, c("Boronia sp.", "Boronia (Valvatae) sp."))
 })
 
 # Fuzzy higher-rank matching defaults to broadest-first, the reverse of exact matching (issue #12) --

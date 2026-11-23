@@ -16,7 +16,7 @@ align_taxa(
   hybrids = TRUE,
   intergrades_affinis = TRUE,
   consider_english_name_endings = FALSE,
-  include_bracketed_info = TRUE,
+  include_bracketed_info = FALSE,
   progress = FALSE,
   full = FALSE,
   quiet = FALSE
@@ -64,12 +64,13 @@ a recognised informal English vernacular name ending (e.g. \code{"-id"}, \code{"
 formal Latin equivalent and attempt an exact match on the corrected name. Defaults to \code{FALSE}. See
 \code{?match_taxa}.}
 
-\item{include_bracketed_info}{Logical; \code{TRUE} (the default) gives every higher-rank-only match
-APCalign's \code{"<rank name> sp. [<original name>; <identifier>]"} form, e.g. \code{"Banksia sp. [Banksia]"}
-for a bare \code{"Banksia"}. \code{FALSE} drops the brackets when the name is nothing more than the matched
-rank's own name (a bare single word, or a bare \code{"Genus (Subgenus)"}), giving just \code{"Banksia"};
-\code{original_name} keeps the raw input either way, and a name with anything more keeps the brackets
-regardless. See \code{?match_taxa}.}
+\item{include_bracketed_info}{Logical. \code{FALSE} (the default) leaves a name that is nothing more
+than a genus, family or other higher-rank name (a bare \code{"Banksia"}, or a bare \code{"Genus (Subgenus)"})
+as that name: \code{"Banksia"}, with no \code{" sp."} added, since the input didn't say \code{"sp."}. \code{TRUE} treats
+it as though it had ended in \code{"sp."}: \code{"Banksia sp. [<identifier>]"}, the same as \code{"Banksia sp."}
+gives either way (APCalign gives \code{"Banksia sp. [Banksia; <identifier>]"}). A name with more than
+the higher-rank name (\code{"Banksia sp. 1"}, \code{"Banksia aff. ericifolia"}) keeps it in brackets either
+way (\code{"Banksia sp. [Banksia sp. 1; <identifier>]"}).}
 
 \item{progress}{Logical; if \code{TRUE}, prints a text progress bar tracking what fraction of
 \code{original_name} has been resolved so far. Useful for large inputs, where matching can take a while.
