@@ -109,9 +109,9 @@ has since been ported into real functions, and the original file now lives at
 its non-portable filename otherwise trips a `checking for portable file names` `R CMD check` WARNING).
 
 `DESCRIPTION` Depends: `R (>= 4.5.0)` (Daniel, 2026-11-15; the code itself needs only 4.1, for the native
-pipe). Imports: `APCalign`, `cli`, `curl`, `dplyr`, `jsonlite`, `nanoparquet`, `rlang`, `stats`,
-`stringdist`, `tools`, `utils` (with `Remotes: traitecoevo/APCalign`, which installs APCalign's GitHub
-master). Every one of these but `APCalign` itself is already an APCalign dependency, so taxonAlign adds
+pipe). Imports: `APCalign (>= 2.1.0)`, `cli`, `curl`, `dplyr`, `jsonlite`, `nanoparquet`, `rlang`, `stats`,
+`stringdist`, `tools`, `utils`, all from CRAN (`Remotes: traitecoevo/APCalign` was dropped on
+2026-11-24, the day APCalign 2.1.0 reached CRAN with the post-2.0.1 fixes, `ss`/`s.lat.` (#309) among them). Every one of these but `APCalign` itself is already an APCalign dependency, so taxonAlign adds
 nothing to an install. `readr` is a suggested package, needed only to read a reference from a CSV path
 (`rlang::check_installed()` first). `rgbif`, `parallel` and the `taxadb`/`duckdb`/`DBI` Suggests went to
 dataprep with the code that used them.
@@ -143,11 +143,16 @@ here read them, and the manifest has the citation.
 - The vendored helpers in `R/strings.R` are identical to APCalign's (`word()` included, since
   2026-11-23). `fuzzy_match()` (`match_taxa_helpers.R`) has APCalign's #295 (qualifier tokens) and #303
   (no-letter words), but deliberately detects the qualifier tokens with its own space-delimited
-  `has_token()`, not APCalign's `whole_word()`: with hyphens kept (#311), `whole_word("x")` matches the
+  `has_token()`, not APCalign's `whole_word()`: with hyphens kept (#310), `whole_word("x")` matches the
   "x" of hyphenated epithets ("x-carinatus", "obscura-x"; 37 stripped names in the 2026-11-14 release),
   a bug in APCalign's own `fuzzy_match()` too.
-- `strip_names_keep_hyphens()` does what APCalign's `strip_names()` does since #311 (identical output),
-  but CRAN's APCalign 2.0.1 predates #311. Drop it, and require that APCalign version, once it's on CRAN.
+- `strip_names_keep_hyphens()` stays (user, 2026-11-24), though #31 planned to drop it for APCalign
+  2.1.0's `strip_names()`, which also keeps a letter-hyphen-letter hyphen (#310) -- except after a
+  word it reads as a qualifier or rank marker (`x`, `f`, `sp`, `var`, ...). That suits APC voucher names
+  but breaks real animal epithets: "Scinax x-signata" -> "scinax x signata" (binomial "scinax x",
+  shared with *S. x-signatus*), "Vanessa f-album" -> "vanessa album". Measured: the two differ on 26 of
+  the 2026-11-14 release's 1.57M names, all animal; on all 124,116 APC/APNI 2026-11-15 names they
+  agree, so it is no APCalign issue. `test-hyphenated_names.R` pins both cases.
 - `collapse_to_higher_taxon` follows APCalign #312 (2026-11-23, user: "follow APCalign unless ... a
   documented reason"): `accepted_name` `"Genus sp."`, `taxon_rank`/IDs of the most likely candidate.
   Still taxonAlign's own: a name is collapsed only when all its candidates share a genus (APCalign
@@ -160,7 +165,7 @@ here read them, and the manifest has the citation.
 `.github/workflows/R-CMD-check.yaml` (added 2026-11-15; there was no CI before) runs R CMD check
 `--as-cran` on macOS, Windows and Ubuntu (R devel, release, oldrel-1), with `NOT_CRAN=true` so the live
 APC parity tests in `test-apc_equivalence.R` run too, and fails on any ERROR or WARNING. It installs
-APCalign from GitHub master (`Remotes`). To keep the check clean, `.Rbuildignore` keeps out of the
+APCalign from CRAN, like every other dependency. To keep the check clean, `.Rbuildignore` keeps out of the
 built package everything that isn't package content: `vignettes/` (none is a registered vignette: the
 `.qmd` files are rendered with Quarto), `data/` (only untracked local AFD exports; nothing calls `data()`),
 `CLAUDE.md`, `.github/`, `cran-comments.md` and
@@ -229,7 +234,7 @@ release-shaped directory (`write_sample_release()`: a manifest with ready and ra
 parquet files) -- including a full `create_taxonomic_update_lookup()` run on the loaded list.
 `test-taxonomic_reference_schema.R` covers the schema and every `check_taxonomic_reference()` problem.
 
-572 expectations (553 at the last full `devtools::test()` run, 2026-11-22, plus `test-lookup_summary.R`'s 19, run on their own 2026-11-23), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
+592 expectations at the last full `devtools::test()` run (2026-11-24, against CRAN's APCalign 2.1.0, none skipped), with `APCalign` installed and network access available, so `test-apc_equivalence.R`'s live tests ran too (`devtools::test()` sets `NOT_CRAN` itself). taxonAlign.dataprep's own suite (245 expectations) holds the tests that moved with the builders.
 
 `test-apc_equivalence.R` (issue #10) is the one exception to "no network, no APCalign-package-data
 download" above -- it needs a real, live `APCalign::load_taxonomic_resources()` snapshot to compare
@@ -391,7 +396,7 @@ Architecture of the matching engine itself:
   one string at a time either way). `extract_genus()` handles the `x Genus` hybrid-naming convention.
 - `match_taxa()`/`prepare_taxonomic_resources()` call `APCalign::standardise_names()`,
   `APCalign::strip_names()`, `APCalign::strip_names_extra()`, `APCalign::standardise_taxon_rank()` —
-  all exported by APCalign, now a formal `Imports`/`Remotes` dependency (previously unresolved).
+  all exported by APCalign, now a formal `Imports` dependency (`APCalign (>= 2.1.0)`).
   `fuzzy_match()`, `redistribute()` and `extract_genus()` in `match_taxa_helpers.R` are, by contrast,
   **intentionally vendored** local copies (with a comment explaining why) rather than imported, because
   APCalign keeps its own equivalents (`APCalign:::fuzzy_match` etc.) internal/unexported.
@@ -938,7 +943,7 @@ Architecture of the matching engine itself:
   `canonical_name` (= `suggested_name`, as in APCalign), `row_number`, `number_of_collapsed_taxa`. The
   lookup's slim output has APCalign's slim columns first, in its order, then taxonAlign's (incl.
   `taxon_ID`/`taxon_ID_genus`/`scientific_name_ID`, which APCalign only gives with `full = TRUE`).
-  `test-create_taxonomic_update_lookup.R` pins APCalign 2.0.1's column lists; `test-apc_equivalence.R`
+  `test-create_taxonomic_update_lookup.R` pins APCalign 2.1.0's column lists (2.1.0 added `chars_changed`, after `number_of_collapsed_taxa`, so it moved up there in the slim output); `test-apc_equivalence.R`
   checks the six value columns against APCalign's on live APC data (all agree). Requested via
   [dataprep#1](https://github.com/traitecoevo/taxonAlign.dataprep/issues/1) (traits.build taxon lists
   need `taxon_ID`/`scientific_name_ID`). `align_taxa()` lacks only APCalign's APNI-specific

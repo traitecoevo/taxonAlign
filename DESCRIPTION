@@ -20,7 +20,7 @@ Roxygen: list(markdown = TRUE)
 Depends:
     R (>= 4.5.0)
 Imports:
-    APCalign,
+    APCalign (>= 2.1.0),
     cli,
     curl,
     dplyr,
@@ -41,7 +41,5 @@ Suggests:
     tibble,
     withr
 VignetteBuilder: knitr
-Remotes:
-    traitecoevo/APCalign
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0

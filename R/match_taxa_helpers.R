@@ -66,7 +66,7 @@ fuzzy_match <- function(txt, accepted_list,
   ## ("acacia aff aneura" confirmed against "acacia aptaneura").
   qualifier_tokens <- c("aff", "cf", "x")
   # A space-delimited token, not APCalign's re_detect(txt, whole_word(q)): with hyphens now kept
-  # (APCalign #311, strip_names_keep_hyphens() here), whole_word() reads the "x" of a hyphenated
+  # (APCalign #310, strip_names_keep_hyphens() here), whole_word() reads the "x" of a hyphenated
   # epithet ("epitetrastichus x-carinatus", "drosophila obscura-x") as a hybrid marker. On every
   # stripped name in the 2026-11-14 release the two agree for "aff" and "cf", and differ only there,
   # 37 names, for "x" (2026-11-23).
@@ -305,9 +305,13 @@ extract_genus <- function(taxon_name) {
 # bare "Neo-uvaria" crashed match_10a, and "Polygonia c-album" and "Polygonia c-aureum" shared the
 # binomial "polygonia c". Found aligning a Malaysian plant list against the WCVP
 # (traitecoevo/taxonAlign.dataprep#1). The placeholder is letters only, so strip_names() leaves it be.
-# APCalign's own strip_names() keeps these hyphens since its #311 (2026-11-14; identical output), but
-# not in APCalign 2.0.1, the CRAN version. Once a release with #311 is on CRAN, require it in
-# DESCRIPTION and call APCalign::strip_names() directly.
+# APCalign 2.1.0's strip_names() keeps these hyphens too (its #310), but not after a word it reads as
+# a qualifier or rank marker ("x", "f", "sp", "var", ...), which suits APC voucher names
+# ("Acacia sp-Mt Magnet") but breaks real zoological epithets: "Scinax x-signata" becomes
+# "scinax x signata" (a hybrid, by its look, with the binomial "scinax x" shared with
+# Scinax x-signatus) and "Vanessa f-album" "vanessa album". Kept for that (user, 2026-11-24): on the
+# 2026-11-14 release the two differ on 26 of 1.57M names, all such animal names; on every
+# APC/APNI 2026-11-15 name (124,116) they agree, so APC alignments are APCalign's.
 strip_names_keep_hyphens <- function(taxon_names) {
   placeholder <- "zqhyphenqz"
   taxon_names |>
