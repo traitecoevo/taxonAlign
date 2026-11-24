@@ -410,7 +410,7 @@ before publishing one.
   the release still used the old route.
 
 See the repository’s
-[`CLAUDE.md`](https://github.com/traitecoevo/taxonAlign/blob/main/CLAUDE.md)
+[`CLAUDE.md`](https://github.com/traitecoevo/taxonAlign/blob/master/CLAUDE.md)
 for the full technical detail behind every claim in this document, and
 the closed issues on the [GitHub
 repository](https://github.com/traitecoevo/taxonAlign/issues?q=is%3Aissue)

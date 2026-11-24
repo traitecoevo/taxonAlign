@@ -68,6 +68,6 @@ if (curl::has_internet()) {
 }
 #> Downloading manifest.csv (data release 2026-11-14)...
 #>                                                            manifest.csv 
-#> "/tmp/Rtmp8Zlu1H/file1a1c32da213f/data_release/2026-11-14/manifest.csv" 
+#> "/tmp/RtmpJraiDk/file1979307de678/data_release/2026-11-14/manifest.csv" 
 # }
 ```

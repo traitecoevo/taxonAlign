@@ -116,7 +116,8 @@ create_taxonomic_update_lookup(
 #> 3 Boronia sp.      Boronia sp.     Boronia       Boronia sp.    Boro… genus     
 #> # ℹ 14 more variables: taxonomic_dataset <chr>, taxonomic_status <chr>,
 #> #   scientific_name <chr>, aligned_reason <chr>, update_reason <chr>,
-#> #   number_of_collapsed_taxa <int>, taxon_ID <chr>, taxon_ID_genus <chr>,
-#> #   scientific_name_ID <chr>, family <chr>, taxonomic_status_aligned <chr>,
-#> #   alternative_possible_names <chr>, chars_changed <int>, identifier <chr>
+#> #   number_of_collapsed_taxa <int>, chars_changed <int>, taxon_ID <chr>,
+#> #   taxon_ID_genus <chr>, scientific_name_ID <chr>, family <chr>,
+#> #   taxonomic_status_aligned <chr>, alternative_possible_names <chr>,
+#> #   identifier <chr>
 ```

@@ -633,9 +633,10 @@ field_data |> left_join(lookup, by = "original_name")
 #> 6 Totally unkn… Site… NA           NA            NA             NA    NA        
 #> # ℹ 14 more variables: taxonomic_dataset <chr>, taxonomic_status <chr>,
 #> #   scientific_name <chr>, aligned_reason <chr>, update_reason <chr>,
-#> #   number_of_collapsed_taxa <int>, taxon_ID <chr>, taxon_ID_genus <chr>,
-#> #   scientific_name_ID <chr>, family <chr>, taxonomic_status_aligned <chr>,
-#> #   alternative_possible_names <chr>, chars_changed <int>, identifier <chr>
+#> #   number_of_collapsed_taxa <int>, chars_changed <int>, taxon_ID <chr>,
+#> #   taxon_ID_genus <chr>, scientific_name_ID <chr>, family <chr>,
+#> #   taxonomic_status_aligned <chr>, alternative_possible_names <chr>,
+#> #   identifier <chr>
 ```
 
 From here, the rows worth a closer look are the ones where
@@ -656,7 +657,8 @@ lookup |> filter(is.na(suggested_name) | taxonomic_status == "unknown")
 #> 1 Totally unknown be… NA           NA            NA             NA    NA        
 #> # ℹ 14 more variables: taxonomic_dataset <chr>, taxonomic_status <chr>,
 #> #   scientific_name <chr>, aligned_reason <chr>, update_reason <chr>,
-#> #   number_of_collapsed_taxa <int>, taxon_ID <chr>, taxon_ID_genus <chr>,
-#> #   scientific_name_ID <chr>, family <chr>, taxonomic_status_aligned <chr>,
-#> #   alternative_possible_names <chr>, chars_changed <int>, identifier <chr>
+#> #   number_of_collapsed_taxa <int>, chars_changed <int>, taxon_ID <chr>,
+#> #   taxon_ID_genus <chr>, scientific_name_ID <chr>, family <chr>,
+#> #   taxonomic_status_aligned <chr>, alternative_possible_names <chr>,
+#> #   identifier <chr>
 ```
