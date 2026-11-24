@@ -1,11 +1,11 @@
 # Workflow derived from https://github.com/r-lib/actions/tree/v2/examples, in the same form as
 # APCalign's. Builds the site on every pull request (to catch breakage) and deploys it to the
-# gh-pages branch, served by GitHub Pages, on a push to main or a release.
+# gh-pages branch, served by GitHub Pages, on a push to master or a release.
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
   release:
     types: [published]
   workflow_dispatch:

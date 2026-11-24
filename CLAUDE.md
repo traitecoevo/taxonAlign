@@ -168,7 +168,7 @@ the pkgdown files. So `devtools::check()` needs no flags. taxonAlign is headed f
 list is [issue #31](https://github.com/traitecoevo/taxonAlign/issues/31).
 
 **pkgdown site** (`_pkgdown.yml`, `.github/workflows/pkgdown.yaml`, as APCalign's): built on every PR,
-deployed to the `gh-pages` branch on a push to `main`, served at https://traitecoevo.github.io/taxonAlign/.
+deployed to the `gh-pages` branch on a push to `master`, served at https://traitecoevo.github.io/taxonAlign/.
 The "Get started" page is the registered vignette `vignettes/taxonAlign.Rmd` (pkgdown puts a vignette
 named after the package there); `development-history.qmd` is an article; pkgdown skips any vignette whose
 name starts with `_`, which keeps `_demo-align-Prendergast.qmd` (reads `../../austraits.build`) out. pkgdown publishes *every* top-level `.md`, so the workflow
