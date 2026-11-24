@@ -10,7 +10,7 @@
 ## Citation
 
 Source:
-[`DESCRIPTION`](https://github.com/traitecoevo/taxonAlign/blob/main/DESCRIPTION)
+[`DESCRIPTION`](https://github.com/traitecoevo/taxonAlign/blob/master/DESCRIPTION)
 
 Wenk E, Kar F (2026). *taxonAlign: Align and Update Taxonomic Names
 Against Any Taxonomic Reference*. R package version 0.1.0,

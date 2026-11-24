@@ -67,7 +67,7 @@ if (curl::has_internet()) {
   download_data_release_files("manifest.csv", version = "2026-11-14", cache_dir = tempfile())
 }
 #> Downloading manifest.csv (data release 2026-11-14)...
-#>                                                           manifest.csv 
-#> "/tmp/RtmpoDyT7t/file1a6bdaf8fca/data_release/2026-11-14/manifest.csv" 
+#>                                                            manifest.csv 
+#> "/tmp/Rtmp8Zlu1H/file1a1c32da213f/data_release/2026-11-14/manifest.csv" 
 # }
 ```
