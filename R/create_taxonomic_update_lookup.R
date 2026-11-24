@@ -99,11 +99,11 @@ create_taxonomic_update_lookup <- function(original_name,
         # APCalign's own create_taxonomic_update_lookup() columns, in its order...
         "original_name", "aligned_name", "accepted_name", "suggested_name", "genus", "taxon_rank",
         "taxonomic_dataset", "taxonomic_status", "scientific_name", "aligned_reason", "update_reason",
-        "number_of_collapsed_taxa",
+        "number_of_collapsed_taxa", "chars_changed",
         # ...then taxonAlign's: the IDs traits.build taxon lists need (APCalign has these only with
         # `full = TRUE`), and the rest
         "taxon_ID", "taxon_ID_genus", "scientific_name_ID", "family", "taxonomic_status_aligned",
-        "alternative_possible_names", "chars_changed", "identifier"
+        "alternative_possible_names", "identifier"
       )
   }
 

@@ -34,11 +34,11 @@ test_that("create_taxonomic_update_lookup's default output has the documented sl
 
 test_that("every column APCalign's lookup returns, taxonAlign's does too", {
   # the user's rule: taxonAlign's output includes everything APCalign's does (and may add more).
-  # APCalign 2.0.1's create_taxonomic_update_lookup() columns, without and with `full = TRUE`
+  # APCalign 2.1.0's create_taxonomic_update_lookup() columns, without and with `full = TRUE`
   apcalign_slim <- c(
     "original_name", "aligned_name", "accepted_name", "suggested_name", "genus", "taxon_rank",
     "taxonomic_dataset", "taxonomic_status", "scientific_name", "aligned_reason", "update_reason",
-    "number_of_collapsed_taxa"
+    "number_of_collapsed_taxa", "chars_changed"
   )
   apcalign_full <- c(
     apcalign_slim, "family", "taxonomic_status_aligned", "subclass", "taxon_distribution", "taxon_ID",

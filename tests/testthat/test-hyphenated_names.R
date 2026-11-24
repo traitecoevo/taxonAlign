@@ -25,6 +25,29 @@ test_that("strip_names_keep_hyphens() keeps a hyphen between letters, and strips
   )
 })
 
+test_that("strip_names_keep_hyphens() keeps the hyphen of an epithet starting with a single letter, as APCalign 2.1.0 doesn't", {
+  # real animal names: APCalign::strip_names() reads the "x" as a hybrid marker and the "f" as forma,
+  # giving "scinax x signata" and "vanessa album"
+  expect_equal(
+    strip_names_keep_hyphens(c("Scinax x-signata", "Scinax x-signatus", "Vanessa f-album")),
+    c("scinax x-signata", "scinax x-signatus", "vanessa f-album")
+  )
+})
+
+test_that("two epithets that differ only after an \"x-\" align to their own species", {
+  ref <- tibble::tribble(
+    ~canonical_name, ~taxon_rank, ~taxonomic_status, ~genus, ~taxon_ID, ~accepted_name_usage_ID,
+    "Scinax", "genus", "accepted", "Scinax", "g1", "g1",
+    "Scinax x-signata", "species", "accepted", "Scinax", "s1", "s1",
+    "Scinax x-signatus", "species", "accepted", "Scinax", "s2", "s2"
+  ) |>
+    dplyr::mutate(scientific_name = canonical_name, taxonomic_dataset = "TEST")
+  out <- align_taxa(c("Scinax x-signata", "Scinax x-signatus"), prepare_taxonomic_resources(ref))
+
+  expect_equal(out$taxon_ID, c("s1", "s2"))
+  expect_equal(out$taxon_rank, c("species", "species"))
+})
+
 test_that("a bare hyphenated genus aligns to the genus, rather than crashing", {
   res <- prepare_taxonomic_resources(hyphen_reference())
   out <- align_taxa(c("Neo-uvaria", "Uvaria grandiflora"), res)
