@@ -1000,6 +1000,17 @@ Architecture of the matching engine itself:
   `aligned_name` changes; 20 `suggested_name`s change -- 9 lose a self-listed alternative, 11 now
   follow the AFD's taxonomy where GBIF's "accepted" record used to win (*Conoderus* -> *Monocrepidus*
   for 7 names, *Goniocolletes* -> *Leioproctus (Goniocolletes)*, *Pachycoelia* -> *Lepispilus*).
+- **The match step outranks list order** (user, 2026-11-24 -- don't re-litigate): each match block
+  searches every combined reference at once, and the sort above only decides between references
+  *within* a block. So an exact or accepted-name match in a later reference beats a fuzzy or synonym
+  match in an earlier one (AFD then CoL vertebrates: *Crinia nimbus* goes to the CoL's exact name, not
+  the AFD's fuzzy *C. nimba*; *Cacatua leadbeateri* to the CoL's accepted name, not the AFD's synonym
+  of *Lophochroa leadbeateri*). User: "it is appropriate for the first match to do all references
+  first; then second match for all references etc. It is not correct to run through all matches on
+  ref 1, then all matches on ref 2." A one-reference-at-a-time `align_taxa()` was implemented on that
+  misunderstanding and dropped (PR #47's first version; kept locally as branch
+  `reference-order-one-at-a-time`). The docs (`align_taxa()` Details, `load_taxonomic_resources()`,
+  the vignette, README) say "the first listed wins" only for the same match attempt.
 - **`match_02x` (issue #25): a second, marker-abbreviation input syntax for the bracketed-subgenus
   concept.** Found loading the new National Species List (NSL) reference data (`load_NSL_resources()`,
   see Architecture #4 below): NSL writes an infrageneric name as `"Genus subg. Subgenusname"` (e.g.

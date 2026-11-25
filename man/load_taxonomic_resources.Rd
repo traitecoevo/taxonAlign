@@ -58,7 +58,8 @@ names GBIF has Australian records of, plus their synonyms. \code{\link[=data_rel
 release holds, with each dataset's source, retrieval date, licence and citation.
 
 When several datasets are loaded, they're returned in the order given, which is the order they're
-preferred in when a name appears in more than one.
+preferred in when the same match attempt finds a name in more than one (see \code{\link[=align_taxa]{align_taxa()}}'s
+Details).
 
 Some datasets flag extinct taxa (an \code{extinct} column; \code{"GBIF_AU"}). (\code{"CatalogueOfLife_AU"} has no
 flag; it leaves out names GBIF knows only from fossil specimens instead.) GBIF's occurrence

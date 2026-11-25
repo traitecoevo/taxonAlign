@@ -6,6 +6,16 @@
 #' first and then at each higher taxonomic rank present in `resources`. See `match_taxa()` for the
 #' full sequence of match attempts.
 #'
+#' @details
+#' # Several references combined
+#'
+#' When `resources` combines several references, each match attempt searches all of them at once,
+#' and the references' order only decides between them when the same attempt finds the name in more
+#' than one: the first-listed reference's record wins. So a later reference can align a name an
+#' earlier one also has, if it matches the name at an earlier attempt: an exact match in the second
+#' reference beats a fuzzy match in the first, and an accepted name in the second beats a synonym in
+#' the first.
+#'
 #' @param original_name Character vector of raw taxon names to align.
 #' @param resources The taxonomic reference to align against: the nested list produced by
 #'  [prepare_taxonomic_resources()], or a reference table (or a list of them, such as

@@ -102,6 +102,15 @@ authorship, then canonical name), then progressively more lenient fuzzy matches,
 first and then at each higher taxonomic rank present in \code{resources}. See \code{match_taxa()} for the
 full sequence of match attempts.
 }
+\section{Several references combined}{
+When \code{resources} combines several references, each match attempt searches all of them at once,
+and the references' order only decides between them when the same attempt finds the name in more
+than one: the first-listed reference's record wins. So a later reference can align a name an
+earlier one also has, if it matches the name at an earlier attempt: an exact match in the second
+reference beats a fuzzy match in the first, and an accepted name in the second beats a synonym in
+the first.
+}
+
 \examples{
 reference <- data.frame(
   canonical_name = c("Boronia", "Boronia serrulata", "Boronia oldname"),
