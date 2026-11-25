@@ -98,8 +98,8 @@ reference (species, genus, family, or anything else) can be matched.
 For Australian taxa, load one or more of the released reference lists.
 Each is downloaded the first time and stored on your computer, so after
 that it works offline; naming the release (`version`) makes an alignment
-reproducible. When a name appears in more than one list, the first
-listed wins:
+reproducible. When the same match attempt finds a name in more than one
+list, the first listed wins:
 
 ``` r
 library(taxonAlign)
