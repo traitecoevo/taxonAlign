@@ -4,7 +4,7 @@ pkgdown_sha: ~
 articles:
   development-history: development-history.html
   taxonAlign: taxonAlign.html
-last_built: 2026-11-25T02:05Z
+last_built: 2026-11-25T06:42Z
 urls:
   reference: https://traitecoevo.github.io/taxonAlign/reference
   article: https://traitecoevo.github.io/taxonAlign/articles
