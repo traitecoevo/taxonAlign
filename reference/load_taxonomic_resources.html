@@ -119,7 +119,8 @@ Life Extended Release, so later releases have <code>"CatalogueOfLife_AU"</code> 
 names GBIF has Australian records of, plus their synonyms. <code><a href="data_release_datasets.html">data_release_datasets()</a></code> lists what a
 release holds, with each dataset's source, retrieval date, licence and citation.</p>
 <p>When several datasets are loaded, they're returned in the order given, which is the order they're
-preferred in when a name appears in more than one.</p>
+preferred in when the same match attempt finds a name in more than one (see <code><a href="align_taxa.html">align_taxa()</a></code>'s
+Details).</p>
 <p>Some datasets flag extinct taxa (an <code>extinct</code> column; <code>"GBIF_AU"</code>). (<code>"CatalogueOfLife_AU"</code> has no
 flag; it leaves out names GBIF knows only from fossil specimens instead.) GBIF's occurrence
 records include fossil specimens, so these are left out by default, as they only produce spurious

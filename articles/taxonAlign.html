@@ -182,9 +182,11 @@ can go straight into any of the matching functions:</p>
 <code class="sourceCode R"><span><span class="va">animals</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/load_taxonomic_resources.html">load_taxonomic_resources</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"NSL_animals"</span>, <span class="st">"CatalogueOfLife_AU"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/create_taxonomic_update_lookup.html">create_taxonomic_update_lookup</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Pardalotus striatus"</span>, <span class="st">"Cynthia cardui"</span><span class="op">)</span>, <span class="va">animals</span><span class="op">)</span></span></code></pre></div>
 <p>When you load more than one dataset, the order you name them in is
-their priority: a name found in <code>"NSL_animals"</code> is matched
-there, and <code>"CatalogueOfLife_AU"</code> is only used for names the
-AFD doesn’t have.</p>
+their priority. Each match attempt (exact matches before fuzzy ones,
+accepted names before synonyms, species before genus) searches both, and
+where it finds the name in both, <code>"NSL_animals"</code>’s record
+wins. A name the AFD has only as a misspelling or a synonym can still go
+to an exact, accepted name in <code>"CatalogueOfLife_AU"</code>.</p>
 <p>GBIF’s occurrence records include fossil specimens, so taxa GBIF
 flags as extinct are left out by default, as they would otherwise
 produce spurious matches. GBIF’s flag doesn’t distinguish fossils from
@@ -381,10 +383,12 @@ through mapping them onto the format (in the style of
 </h3>
 <p><code><a href="../reference/prepare_taxonomic_resources.html">prepare_taxonomic_resources()</a></code> (and the matching
 functions) also accept a list of tables, combining them with a priority
-order: when the same name appears in more than one table, whichever
-table is listed <em>first</em> wins, whatever taxonomic status each
-gives it (within one table, the most reliable status wins). This is how
-you’d combine released lists with your own data:</p>
+order. Each match attempt searches all the tables, and when the same
+attempt finds the name in more than one, whichever table is listed
+<em>first</em> wins (within one table, the most reliable status wins).
+An earlier attempt in any table still beats a later one: an exact match
+in the second table beats a fuzzy match in the first. This is how you’d
+combine released lists with your own data:</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># your own list first, then the AFD, then GBIF for anything neither of those has</span></span>
 <span><span class="va">resources</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/prepare_taxonomic_resources.html">prepare_taxonomic_resources</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>

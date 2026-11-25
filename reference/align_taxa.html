@@ -181,6 +181,15 @@ differed between the name being matched and the reference name it matched – <c
 match, the actual edit distance (Damerau-Levenshtein) for a fuzzy match, and <code>NA</code> when nothing
 matched at all.</p>
     </div>
+    <div class="section level2">
+    <h2 id="several-references-combined">Several references combined<a class="anchor" aria-label="anchor" href="#several-references-combined"></a></h2>
+    <p>When <code>resources</code> combines several references, each match attempt searches all of them at once,
+and the references' order only decides between them when the same attempt finds the name in more
+than one: the first-listed reference's record wins. So a later reference can align a name an
+earlier one also has, if it matches the name at an earlier attempt: an exact match in the second
+reference beats a fuzzy match in the first, and an accepted name in the second beats a synonym in
+the first.</p>
+    </div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>

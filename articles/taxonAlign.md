@@ -93,8 +93,11 @@ create_taxonomic_update_lookup(c("Pardalotus striatus", "Cynthia cardui"), anima
 ```
 
 When you load more than one dataset, the order you name them in is their
-priority: a name found in `"NSL_animals"` is matched there, and
-`"CatalogueOfLife_AU"` is only used for names the AFD doesn’t have.
+priority. Each match attempt (exact matches before fuzzy ones, accepted
+names before synonyms, species before genus) searches both, and where it
+finds the name in both, `"NSL_animals"`’s record wins. A name the AFD
+has only as a misspelling or a synonym can still go to an exact,
+accepted name in `"CatalogueOfLife_AU"`.
 
 GBIF’s occurrence records include fossil specimens, so taxa GBIF flags
 as extinct are left out by default, as they would otherwise produce
@@ -279,10 +282,12 @@ mapping them onto the format (in the style of `traits.build`’s
 
 [`prepare_taxonomic_resources()`](https://traitecoevo.github.io/taxonAlign/reference/prepare_taxonomic_resources.md)
 (and the matching functions) also accept a list of tables, combining
-them with a priority order: when the same name appears in more than one
-table, whichever table is listed *first* wins, whatever taxonomic status
-each gives it (within one table, the most reliable status wins). This is
-how you’d combine released lists with your own data:
+them with a priority order. Each match attempt searches all the tables,
+and when the same attempt finds the name in more than one, whichever
+table is listed *first* wins (within one table, the most reliable status
+wins). An earlier attempt in any table still beats a later one: an exact
+match in the second table beats a fuzzy match in the first. This is how
+you’d combine released lists with your own data:
 
 ``` r
 
